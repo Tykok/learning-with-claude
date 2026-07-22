@@ -33,8 +33,9 @@ case "$FP" in
 esac
 
 matched=0
+# word splitting of $GLOBS and the unquoted $g pattern are intentional (globs).
+# shellcheck disable=SC2086,SC2254
 for g in $GLOBS; do
-  # shellcheck disable=SC2254 -- $g is a glob pattern on purpose
   case "$FP" in $g) matched=1; break ;; esac
 done
 [ "$matched" = 1 ] || exit 0

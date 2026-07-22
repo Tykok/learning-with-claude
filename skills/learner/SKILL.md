@@ -1,6 +1,6 @@
 ---
 description: Learning mode for this project. Invoke as "learner" with a subcommand — "config" (view/edit settings in .claude/learner.local.json), "quiz" (on-demand Q&A about the current branch), "status" (concise bullet summary of what to improve + level), or "improve" (coach the dev to master one weak spot, drawing on past quiz sessions + the real code). Trigger on "learner", "learner config", "learner quiz", "learner status", "learner improve", "mode apprentissage", "change mon niveau", "configurer le quiz", "règle les questions", "quiz", "quiz me on the branch", "interroge-moi", "session de questions", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "monter en compétence", "m'améliorer sur".
-allowed-tools: Read Write Grep Bash(jq *) Bash(cat *) Bash(test *) Bash(git *)
+allowed-tools: Read Write Edit Grep Bash
 ---
 
 # Learner

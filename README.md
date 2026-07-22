@@ -1,5 +1,6 @@
 # Claude Learning Mode
 
+[![CI](https://github.com/Tykok/learning-with-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/Tykok/learning-with-claude/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-hooks%20%2B%20skill-8A63D2)
 ![Shell](https://img.shields.io/badge/shell-POSIX%20sh-4EAA25?logo=gnu-bash&logoColor=white)
@@ -22,9 +23,12 @@ Three question styles: `code` (what a function does), `archi` (which module/laye
 `trou` (interactive fill-in — Claude blanks part of a real function, you write it back
 in-editor, Claude restores + validates).
 
-## Install
+## Requirements
 
-Requires **jq**.
+- **jq** on `PATH` (the hooks use it; without it they are inert and the SessionStart hook says so).
+- POSIX `sh` — **macOS / Linux / WSL**. Native Windows (no `sh`) is not supported.
+
+## Install
 
 ```bash
 ./install.sh /path/to/your/repo      # or run with no arg inside the target repo
@@ -69,6 +73,15 @@ file every time — no restart).
 Remove the three `.claude/hooks/learner-*.sh` files, the `.claude/skills/learner` folder,
 the three `learner-*` blocks from `.claude/settings.json`, and the per-dev files. Or set
 `"enabled": false` to keep everything but silence the automatic quiz.
+
+## Development
+
+```bash
+./test.sh                                   # hook + installer tests (needs jq, git)
+shellcheck --severity=warning hooks/*.sh install.sh test.sh
+```
+
+CI (`.github/workflows/ci.yml`) runs both on every push and PR.
 
 ## License
 
