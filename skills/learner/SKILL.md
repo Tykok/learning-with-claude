@@ -103,15 +103,17 @@ Edit the learning-mode settings stored (gitignored, per-developer) in
 | `recapEvery`   | integer ≥ 1                              | `3`      | A session-wide **synthesis** question every N quiz. |
 | `questionStyles` | `"auto"` or array of `code`/`trou`/`archi` | `"auto"` | Allowed formats. `auto` = Claude varies. |
 | `language`     | `fr` \| `en`                             | `fr`     | Language the question is asked in. |
-| `trouBlanks`   | integer ≥ 1                              | `2`      | Number of `// TODO` holes left for the dev in an interactive `trou` (fill-in) exercise. |
+| `trouBlanks`   | integer ≥ 1                              | `2`      | Number of `// LEARNER-TODO` holes left for the dev in an interactive `trou` (fill-in) exercise. |
 | `trackGlobs`   | array of shell globs                     | common source globs | Which edited files the hooks record as quiz material (outside build/vendor dirs). |
 
 **About the `trou` (fill-in) format:** it is **interactive and happens in the real source file**, not
 in chat. Claude picks a short function that was just written/edited, removes `trouBlanks` key part(s)
-of its body (replacing them with `// TODO: <hint>` comments), and the developer writes the missing
-code **directly in the file**. Claude then reviews, **restores a correct version and checks it is valid
-(focused compile/lint/test for the language)** — never leaving the source broken or with leftover
-`// TODO`.
+of its body (replacing them with `// LEARNER-TODO: <hint>` comments), and the developer writes the
+missing code **directly in the file**. Claude then reviews, **restores a correct version and checks it
+is valid (focused compile/lint/test for the language)** — never leaving the source broken or with
+leftover `// LEARNER-TODO`. A mechanical guardrail backs this up: the Stop hook re-blocks the end of a
+session while any `// LEARNER-TODO` marker remains in a tracked file, so a crashed exercise can't leave
+the tree broken.
 
 **Two learning files (both gitignored, per-dev; create them if missing):**
 
@@ -198,12 +200,13 @@ test -f .claude/learner.local.json && cat .claude/learner.local.json || echo "NO
 - `enabled=false` does **not** block an explicit quiz request — the user asked for it directly.
 
 For a **`trou`** question: pick a short function from the branch diff, edit its real source file to
-replace `trouBlanks` key part(s) of the body with `// TODO: <hint>` comments (keep the signature and
-surrounding code), tell the dev which file/function and ask them to write the missing code **directly
-in the file**, then wait. Keep the correct version in mind (it is in git / the branch diff). After they
-answer, review, then **restore a correct version and verify it is valid (focused compile/lint/test)** —
-never end the turn with the source broken or with leftover `// TODO`. Since this edits real source,
-prefer it only when the user is set up to edit locally; otherwise fall back to `code`/`archi`.
+replace `trouBlanks` key part(s) of the body with `// LEARNER-TODO: <hint>` comments (keep the signature
+and surrounding code), tell the dev which file/function and ask them to write the missing code
+**directly in the file**, then wait. Keep the correct version in mind (it is in git / the branch diff).
+After they answer, review, then **restore a correct version and verify it is valid (focused
+compile/lint/test)** — never end the turn with the source broken or with leftover `// LEARNER-TODO`
+(the Stop hook re-blocks while any such marker remains). Since this edits real source, prefer it only
+when the user is set up to edit locally; otherwise fall back to `code`/`archi`.
 
 ## Q2 — Compute the branch diff
 

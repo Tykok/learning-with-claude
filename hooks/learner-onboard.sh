@@ -31,7 +31,7 @@ enabled (default true) = turn the quizzes on; \
 recapEvery (default 3) = a synthesis question every N quizzes; \
 questionStyles (default \"auto\") = allowed formats among code / trou / archi, or \"auto\" (you choose); \
 language (default \"fr\") = language the questions are asked in, fr or en; \
-trouBlanks (default 2) = number of // TODO holes left for the dev in a trou (fill-in) exercise; \
+trouBlanks (default 2) = number of // LEARNER-TODO holes left for the dev in a trou (fill-in) exercise; \
 trackGlobs (default: common source globs, see learner.local.json.example) = which edited file types count for questions. \
 Two gitignored files are kept automatically: .claude/learner-memory.md (quiz working memory, weak spots) and .claude/learner-recap.md (readable dashboard: to improve, mastered, session history). \
 As soon as they answer, create .claude/learner.local.json with a JSON containing level + the options (defaults for those they don't customise), e.g. \

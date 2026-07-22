@@ -20,8 +20,10 @@ stack-agnostic.
   improve), `improve` (coach a weak spot to mastery), `config` (settings).
 
 Three question styles: `code` (what a function does), `archi` (which module/layer/why),
-`trou` (interactive fill-in — Claude blanks part of a real function, you write it back
-in-editor, Claude restores + validates).
+`trou` (interactive fill-in — Claude blanks part of a real function with `// LEARNER-TODO`
+markers, you write it back in-editor, Claude restores + validates). A mechanical guardrail
+re-blocks the Stop hook while any `// LEARNER-TODO` marker survives, so a crashed exercise
+can't leave the tree broken. On **SessionEnd** the per-session scratch files are cleaned up.
 
 ## Requirements
 
@@ -31,14 +33,26 @@ in-editor, Claude restores + validates).
 ## Install
 
 ```bash
-./install.sh /path/to/your/repo      # or run with no arg inside the target repo
+./install.sh /path/to/your/repo             # or run with no arg inside the target repo
+./install.sh --level senior /path/to/repo   # write config now, skip the interactive prompt
 ```
 
 This copies the skill + hooks into `<repo>/.claude/`, merges the hook wiring into
 `.claude/settings.json` (idempotent — safe to re-run), and gitignores the per-dev files.
 
-Then start a new Claude Code session — the SessionStart hook prompts for your level — or run
-`learner config`.
+Without `--level`, start a new Claude Code session — the SessionStart hook prompts for your
+level — or run `learner config`.
+
+## Uninstall
+
+```bash
+./uninstall.sh /path/to/your/repo           # keeps your progress data
+./uninstall.sh --purge /path/to/your/repo   # also deletes learner.local.json / memory / recap
+```
+
+Removes the hooks, the skill, the `learner-*` blocks from `.claude/settings.json`, and the
+`.gitignore` entries. Or just set `"enabled": false` to silence the automatic quiz without
+uninstalling.
 
 ## Files installed
 
@@ -47,7 +61,8 @@ Then start a new Claude Code session — the SessionStart hook prompts for your 
 | `.claude/skills/learner/SKILL.md` | The `learner` skill (quiz/status/improve/config) | yes |
 | `.claude/hooks/learner-onboard.sh` | SessionStart: onboard/level prompt | yes |
 | `.claude/hooks/learner-record-edit.sh` | PostToolUse: record edited files | yes |
-| `.claude/hooks/learner-quiz.sh` | Stop: pose the quiz question | yes |
+| `.claude/hooks/learner-quiz.sh` | Stop: pose the quiz question + trou guardrail | yes |
+| `.claude/hooks/learner-cleanup.sh` | SessionEnd: delete per-session scratch files | yes |
 | `.claude/settings.json` | Hook wiring (merged) | yes |
 | `.claude/learner.local.json` | Your settings (level, language, styles…) | **no** (gitignored) |
 | `.claude/learner-memory.md` | Working memory: open weak spots (drives questions) | **no** |
@@ -68,17 +83,11 @@ Then start a new Claude Code session — the SessionStart hook prompts for your 
 See `learner.local.json.example`. Changes take effect on the next quiz (hooks re-read the
 file every time — no restart).
 
-## Uninstall
-
-Remove the three `.claude/hooks/learner-*.sh` files, the `.claude/skills/learner` folder,
-the three `learner-*` blocks from `.claude/settings.json`, and the per-dev files. Or set
-`"enabled": false` to keep everything but silence the automatic quiz.
-
 ## Development
 
 ```bash
 ./test.sh                                   # hook + installer tests (needs jq, git)
-shellcheck --severity=warning hooks/*.sh install.sh test.sh
+shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh test.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs both on every push and PR.

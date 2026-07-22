@@ -18,6 +18,20 @@ LEVEL_FILE="$PROJECT_DIR/.claude/learner.local.json"
 LEVEL=$(jq -r '.level // empty' "$LEVEL_FILE" 2>/dev/null)
 [ -n "$LEVEL" ] || exit 0
 
+# Mechanical trou guardrail (runs regardless of the enabled switch): a fill-in
+# exercise injects distinctive `// LEARNER-TODO:` markers into real source. If any
+# survive — e.g. the session died mid-exercise — block and force a restore before
+# anything else, so we never leave the working tree broken.
+if command -v git >/dev/null 2>&1; then
+  HOLES=$(cd "$PROJECT_DIR" 2>/dev/null && git grep -l 'LEARNER-TODO' 2>/dev/null | head -n 20 | tr '\n' ' ')
+  if [ -n "$HOLES" ]; then
+    GR="🎓 Mode apprentissage — un exercice « fonction à trou » n'a pas été restauré : ces fichiers contiennent encore des marqueurs // LEARNER-TODO : $HOLES. AVANT toute autre chose, restaure la version correcte (git diff / diff de branche), retire TOUS les // LEARNER-TODO, et vérifie que ça compile/lint/teste. Ne termine pas tant qu'il en reste."
+    jq -n --arg r "$GR" '{decision:"block", reason:$r}' 2>/dev/null \
+      || printf '{"decision":"block","reason":"Restore files still containing // LEARNER-TODO markers before finishing: %s"}\n' "$HOLES"
+    exit 0
+  fi
+fi
+
 # Master switch: enabled defaults to true; only an explicit false turns it off.
 # NB: use bare .enabled, not `.enabled // true` — jq's // treats false as absent,
 # so `false // true` would wrongly yield true and the switch would never work.
@@ -65,7 +79,7 @@ case "$TROU_BLANKS" in ''|*[!0-9]*) TROU_BLANKS=2 ;; esac
 
 # The "trou" (fill-in) format is INTERACTIVE and happens in the real source file:
 # Claude removes part of a real function and the dev writes it back, in-editor.
-TROU_DESC="exercice « fonction à trou » INTERACTIF, écrit dans le VRAI fichier source (pas en chat) : choisis UNE fonction courte parmi les fichiers modifiés ci-dessus, puis édite ce fichier pour remplacer $TROU_BLANKS endroit(s) clé(s) de son corps par des commentaires « // TODO: <indice décrivant ce qui doit aller là> » (garde la signature et le code alentour intacts). GARDE-FOU : avant de percer les trous, mémorise la version correcte (elle est dans git / le diff) ; ne perce QUE cette fonction. Annonce au dev le fichier + la fonction, demande-lui d'écrire le code manquant DIRECTEMENT dans le fichier, puis ATTENDS sa réponse — n'écris pas le code à sa place. Quand il a fini (ou dit « skip »), compare à l'implémentation correcte, donne un retour bref (correct / à corriger), puis RESTAURE une version correcte et VÉRIFIE qu'elle est valide (compile/lint/test ciblé selon le langage). NE TERMINE JAMAIS le tour en laissant le fichier cassé ou avec des // TODO résiduels."
+TROU_DESC="exercice « fonction à trou » INTERACTIF, écrit dans le VRAI fichier source (pas en chat) : choisis UNE fonction courte parmi les fichiers modifiés ci-dessus, puis édite ce fichier pour remplacer $TROU_BLANKS endroit(s) clé(s) de son corps par des commentaires « // LEARNER-TODO: <indice décrivant ce qui doit aller là> » (garde la signature et le code alentour intacts). GARDE-FOU : avant de percer les trous, mémorise la version correcte (elle est dans git / le diff) ; ne perce QUE cette fonction. Annonce au dev le fichier + la fonction, demande-lui d'écrire le code manquant DIRECTEMENT dans le fichier, puis ATTENDS sa réponse — n'écris pas le code à sa place. Quand il a fini (ou dit « skip »), compare à l'implémentation correcte, donne un retour bref (correct / à corriger), puis RESTAURE une version correcte et VÉRIFIE qu'elle est valide (compile/lint/test ciblé selon le langage). NE TERMINE JAMAIS le tour en laissant le fichier cassé ou avec des // LEARNER-TODO résiduels (un garde-fou automatique bloquera la fin de session tant qu'il en reste)."
 
 if [ "$STYLES" = "auto" ]; then
   STYLE_DIRECTIVE="Varie le format d'une fois sur l'autre, choisis le plus pertinent :
