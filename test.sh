@@ -87,10 +87,10 @@ out=$(printf '{"session_id":"%s","stop_hook_active":false}' "fresh-sid" | sh "$Q
 
 # --- installer idempotency --------------------------------------------------
 R="$(mktemp -d)"; git -C "$R" init -q
-sh "$ROOT/install.sh" "$R" >/dev/null 2>&1
+bash "$ROOT/install.sh" "$R" >/dev/null 2>&1
 count() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$R/.claude/settings.json"; }
 n1=$(count)
-sh "$ROOT/install.sh" "$R" >/dev/null 2>&1
+bash "$ROOT/install.sh" "$R" >/dev/null 2>&1
 n2=$(count)
 { [ "$n1" = 3 ] && [ "$n2" = 3 ]; } \
   && ok "install merge is idempotent (3 learner hooks)" \
