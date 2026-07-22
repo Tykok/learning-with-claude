@@ -57,8 +57,9 @@ the memory/recap files.
    ```
 3. Print, in the configured `language` (default `fr`):
    - one line with the **level** (`Niveau : <level>`);
-   - a short **bulleted list** of what to improve, grouped by domain, keeping only non-empty domains
-     (skip anything already under `Acquis`); a handful of bullets max — summarise, don't dump the file;
+   - a short **bulleted list** of what to improve as **broad competency themes** (not fine-grained
+     one-off concepts), grouped by domain, keeping only non-empty domains (skip anything already under
+     `Acquis`); a handful of bullets max — summarise, don't dump the file;
    - if nothing is recorded yet, a one-line note that no weak spot has been captured (do a `quiz` to start).
 
 Keep it to a compact, skimmable message — no tables, no history dump.
@@ -121,13 +122,20 @@ the tree broken.
    line (`- [Domaine] concept — vu: date`). The hooks and Quiz mode **read** it to prefer a still-open
    weak spot (spaced repetition) and **update** it (add when missed, remove when mastered). This is the
    ONLY file that drives question selection.
-2. **`.claude/learner-recap.md` — readable dashboard (dev-facing).** Sections `À améliorer` per domain
-   (`Code`, `Architecture`, `Tests`, `CI/Build`, `Données & DB`, `Intégrations`), `Acquis`, and
-   `Historique des sessions` (`Date | Domaine | Style | Verdict | Note`). Claude **only writes/updates**
-   it — it is **never read to pick a question**. It exists so the developer can see their progress.
+2. **`.claude/learner-recap.md` — readable dashboard (dev-facing).** Sections `À améliorer` and
+   `Acquis` grouped by domain (`Code`, `Architecture`, `Tests`, `CI/Build`, `Données & DB`,
+   `Intégrations`), then `Historique des sessions` (`Date | Domaine | Style | Verdict | Note`). Claude
+   **only writes/updates** it — it is **never read to pick a question**. It exists so the developer can
+   see their progress. **In `À améliorer`/`Acquis`, phrase entries as broad competency themes** (e.g.
+   "Accès aux données et performance des requêtes", "Gestion des erreurs et exceptions", "Découpage en
+   couches et responsabilités des modules") — **not** the precise concept of a single question. Roll
+   several related weak spots up under one theme; aim for a handful of themes per domain, not a list
+   that keeps growing. The fine-grained detail lives in `learner-memory.md`; the recap is the zoomed-out
+   "what should I level up on overall" view. Only `Historique des sessions` keeps per-question detail.
 
-After each answer, update **both**: the weak spot in `learner-memory.md`, and `learner-recap.md`
-(append a history row + reflect the point under `À améliorer`/`Acquis`).
+After each answer, update **both**: the precise weak spot in `learner-memory.md`, and `learner-recap.md`
+(append a history row + attach the point to its **broad theme** under `À améliorer`/`Acquis`, creating
+the theme only if it doesn't exist yet).
 
 ## Step 1 — Read current config
 
@@ -235,9 +243,9 @@ on code you have not read. Ignore pure-docs/test-scaffolding churn unless it is 
 - After each answer, give **brief** feedback (correct / à corriger + the missing bit) before moving on.
 - **Read `.claude/learner-memory.md`** first (the working memory — create if missing): prefer a
   still-open weak spot when relevant (spaced repetition). Never read `learner-recap.md` to pick a
-  question. **After each answer**, update `learner-memory.md` (add/remove the weak spot) AND write to
-  `learner-recap.md` (append a `Historique des sessions` row with today's date + reflect the point under
-  `À améliorer`/`Acquis`).
+  question. **After each answer**, update `learner-memory.md` (add/remove the precise weak spot) AND
+  write to `learner-recap.md` (append a `Historique des sessions` row with today's date + attach the
+  point to its **broad competency theme** under `À améliorer`/`Acquis` — not a per-question entry).
 - **Spread coverage** across the branch's distinct areas (data model, persistence, core logic, error
   handling, external integrations, config/build) — don't re-ask about the same file.
 - Default to **~5 questions**, then a final **synthesis** question ("réexplique en 2-3 phrases…").
