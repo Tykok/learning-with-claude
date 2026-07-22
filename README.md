@@ -1,5 +1,9 @@
 # Claude Learning Mode
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![Claude Code](https://img.shields.io/badge/Claude%20Code-hooks%20%2B%20skill-8A63D2)
+![Shell](https://img.shields.io/badge/shell-POSIX%20sh-4EAA25?logo=gnu-bash&logoColor=white)
+
 Turn any repo into a **learning loop**. While Claude Code writes code with you, it
 periodically stops to quiz you on what was just built — at your level, in your language —
 and keeps a per-developer record of your weak spots and progress. Language- and
@@ -65,3 +69,7 @@ file every time — no restart).
 Remove the three `.claude/hooks/learner-*.sh` files, the `.claude/skills/learner` folder,
 the three `learner-*` blocks from `.claude/settings.json`, and the per-dev files. Or set
 `"enabled": false` to keep everything but silence the automatic quiz.
+
+## License
+
+[MIT](./LICENSE) © Tykok
