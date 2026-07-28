@@ -1,71 +1,137 @@
 #!/usr/bin/env bash
-# Install "learning mode" (learner skill + hooks) into a target repository.
+# Install the learner skill + hooks at Claude Code user level (all repos).
 #
 # Usage:
-#   ./install.sh [--level junior|intermediaire|senior] [TARGET_REPO]
+#   ./install.sh [--level D|J|C|S|E] [--synthesis off|rare|normal|often]
+#                [--blanks N] [--dry-run] [--yes]
 #
-#   --level L   Write .claude/learner.local.json immediately with level L (skips the
-#               interactive SessionStart prompt). Omit to let the first session ask.
-#   TARGET_REPO Defaults to the current directory.
+#   --level L      Your level. Full words (junior, senior, …) are accepted.
+#   --synthesis W  How often a synthesis question replaces a granular one.
+#   --blanks N     Holes left in a fill-in exercise.
+#   --dry-run      Print what would be written, write nothing.
+#   --yes          Never prompt; use defaults for anything not passed.
 #
-# Idempotent: re-running re-copies files and re-merges the hook config without
-# creating duplicate hook entries. Requires: jq.
+# Idempotent: re-running re-copies the files and re-merges the hook wiring
+# without duplicating entries, and never overwrites an existing config.
+# Requires: Claude Code. Strongly recommends: jq.
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
-LEVEL=""
-TARGET=""
+CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+# shellcheck source=hooks/learner-config.sh
+. "$SRC_DIR/hooks/learner-config.sh"
+
+LEVEL=""; SYNTH=""; BLANKS=""; DRY=0; YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --level) LEVEL="${2:-}"; shift 2 ;;
-    --level=*) LEVEL="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) TARGET="$1"; shift ;;
+    --level)     LEVEL="${2:-}"; shift 2 ;;
+    --level=*)   LEVEL="${1#*=}"; shift ;;
+    --synthesis) SYNTH="${2:-}"; shift 2 ;;
+    --synthesis=*) SYNTH="${1#*=}"; shift ;;
+    --blanks)    BLANKS="${2:-}"; shift 2 ;;
+    --blanks=*)  BLANKS="${1#*=}"; shift ;;
+    --dry-run)   DRY=1; shift ;;
+    --yes|-y)    YES=1; shift ;;
+    -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "error: unexpected argument '$1' (learner installs globally, not per repo)"; exit 1 ;;
   esac
 done
-TARGET="${TARGET:-$PWD}"
-TARGET="$(cd "$TARGET" && pwd)"
 
-if [ -n "$LEVEL" ]; then
-  case "$LEVEL" in
-    junior|intermediaire|senior) ;;
-    *) echo "error: --level must be junior | intermediaire | senior"; exit 1 ;;
+# 1) Claude Code must exist — installing without it does nothing useful.
+if ! command -v claude >/dev/null 2>&1 && [ ! -d "$CFG_DIR" ]; then
+  echo "error: Claude Code not found (no 'claude' on PATH and no $CFG_DIR)."
+  echo "       Install it first: https://claude.com/claude-code"
+  exit 1
+fi
+
+# 2) jq is required by every hook, but its absence is recoverable.
+HAVE_JQ=1
+command -v jq >/dev/null 2>&1 || HAVE_JQ=0
+
+# 3) A settings.json we cannot parse is a hard stop, before touching anything.
+SETTINGS="$CFG_DIR/settings.json"
+if [ -f "$SETTINGS" ] && [ "$HAVE_JQ" = 1 ]; then
+  jq -e . "$SETTINGS" >/dev/null 2>&1 || {
+    echo "error: $SETTINGS is not valid JSON — fix or move it, then re-run."
+    exit 1
+  }
+fi
+if [ "$HAVE_JQ" = 0 ]; then
+  echo "error: jq is required to merge the hook wiring (brew install jq / apt install jq)."
+  exit 1
+fi
+
+CONFIG="$CFG_DIR/learner.json"
+CONFIG_EXISTS=0
+[ -f "$CONFIG" ] && CONFIG_EXISTS=1
+
+# 4) Onboarding — only for values not passed as flags, only when we have a TTY.
+if [ "$CONFIG_EXISTS" = 0 ]; then
+  if [ -z "$LEVEL" ] && [ -t 0 ] && [ "$YES" = 0 ]; then
+    echo "Your level on the code you will be writing:"
+    echo "  D Discovering   J Junior   C Competent   S Senior   E Expert"
+    printf 'level [C]: '; read -r LEVEL || LEVEL=""
+    LEVEL="${LEVEL:-C}"
+  fi
+  if [ -z "$SYNTH" ] && [ -t 0 ] && [ "$YES" = 0 ]; then
+    printf 'synthesis question every … (off / rare / normal / often) [normal]: '
+    read -r SYNTH || SYNTH=""
+  fi
+  if [ -z "$BLANKS" ] && [ -t 0 ] && [ "$YES" = 0 ]; then
+    printf 'holes per fill-in exercise [2]: '
+    read -r BLANKS || BLANKS=""
+  fi
+  SYNTH="${SYNTH:-normal}"
+  BLANKS="${BLANKS:-2}"
+  [ -n "$LEVEL" ] || { echo "error: --level is required (D|J|C|S|E)"; exit 1; }
+fi
+
+# 5) Validate.
+if [ "$CONFIG_EXISTS" = 0 ]; then
+  NORM="$(learner_level "$LEVEL")"
+  [ -n "$NORM" ] || { echo "error: --level must be D|J|C|S|E (or the full word)"; exit 1; }
+  case "$SYNTH" in off|rare|normal|often) ;;
+    *) echo "error: --synthesis must be off | rare | normal | often"; exit 1 ;;
   esac
+  case "$BLANKS" in ''|*[!0-9]*) echo "error: --blanks must be an integer >= 1"; exit 1 ;; esac
+  [ "$BLANKS" -ge 1 ] || { echo "error: --blanks must be an integer >= 1"; exit 1; }
 fi
 
-command -v jq >/dev/null 2>&1 || { echo "error: jq is required (brew install jq / apt install jq)"; exit 1; }
-
-echo "→ Installing learning mode into: $TARGET"
-
-if [ ! -d "$TARGET/.git" ]; then
-  echo "  ⚠  $TARGET is not a git repo root (continuing anyway)."
+echo "→ Installing learner into: $CFG_DIR"
+if [ "$DRY" = 1 ]; then
+  echo "  (dry run — nothing will be written)"
+  echo "  would copy 5 hooks    → $CFG_DIR/hooks/"
+  echo "  would copy the skill  → $CFG_DIR/skills/learner/"
+  echo "  would merge 4 hooks   → $SETTINGS"
+  if [ "$CONFIG_EXISTS" = 1 ]; then
+    echo "  would keep existing   → $CONFIG"
+  else
+    echo "  would write config    → $CONFIG (level=$NORM, synthesis=$SYNTH, blanks=$BLANKS)"
+  fi
+  exit 0
 fi
 
-CLAUDE_DIR="$TARGET/.claude"
-mkdir -p "$CLAUDE_DIR/hooks" "$CLAUDE_DIR/skills/learner"
+mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills/learner/references" "$CFG_DIR/learner"
 
-# 1) Hooks
-for h in learner-onboard.sh learner-record-edit.sh learner-quiz.sh learner-cleanup.sh; do
-  cp "$SRC_DIR/hooks/$h" "$CLAUDE_DIR/hooks/$h"
-  chmod +x "$CLAUDE_DIR/hooks/$h"
+for h in learner-config.sh learner-onboard.sh learner-record-edit.sh \
+         learner-quiz.sh learner-cleanup.sh; do
+  cp "$SRC_DIR/hooks/$h" "$CFG_DIR/hooks/$h"
+  chmod +x "$CFG_DIR/hooks/$h"
 done
-echo "  ✓ hooks → .claude/hooks/"
+echo "  ✓ hooks → $CFG_DIR/hooks/"
 
-# 2) Skill
-cp "$SRC_DIR/skills/learner/SKILL.md" "$CLAUDE_DIR/skills/learner/SKILL.md"
-echo "  ✓ skill → .claude/skills/learner/SKILL.md"
+cp "$SRC_DIR/skills/learner/SKILL.md" "$CFG_DIR/skills/learner/SKILL.md"
+cp "$SRC_DIR"/skills/learner/references/*.md "$CFG_DIR/skills/learner/references/"
+echo "  ✓ skill → $CFG_DIR/skills/learner/"
 
-# 3) Merge hook config into .claude/settings.json (idempotent).
-SETTINGS="$CLAUDE_DIR/settings.json"
-SNIPPET="$SRC_DIR/hooks/settings.snippet.json"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-
+cp "$SETTINGS" "$SETTINGS.bak"
 TMP="$(mktemp)"
 jq -n \
   --argjson base "$(cat "$SETTINGS")" \
-  --argjson add "$(cat "$SNIPPET")" '
-  # For each event the snippet defines, drop any existing "learner-" hook
-  # entries then append the fresh ones — so re-running never duplicates.
+  --argjson add "$(cat "$SRC_DIR/hooks/settings.snippet.json")" '
+  # For each event the snippet defines, drop existing "learner-" entries then
+  # append the fresh ones, so re-running never duplicates.
   reduce ($add.hooks | keys[]) as $ev (
     $base;
     .hooks[$ev] = (
@@ -76,43 +142,21 @@ jq -n \
   )
 ' > "$TMP"
 mv "$TMP" "$SETTINGS"
-echo "  ✓ hook config merged → .claude/settings.json"
+echo "  ✓ hook wiring merged → $SETTINGS (backup: settings.json.bak)"
 
-# 4) Config: write it now if --level was given, else drop the example for reference.
-CONFIG="$CLAUDE_DIR/learner.local.json"
-if [ -n "$LEVEL" ]; then
-  if [ -f "$CONFIG" ]; then
-    echo "  • .claude/learner.local.json already present — left untouched (ignoring --level)"
-  else
-    jq -n --arg lvl "$LEVEL" \
-      '{level:$lvl, enabled:true, recapEvery:3, questionStyles:"auto", language:"fr", trouBlanks:2}' \
-      > "$CONFIG"
-    echo "  ✓ config written → .claude/learner.local.json (level=$LEVEL)"
-  fi
-elif [ -f "$CONFIG" ]; then
-  echo "  • .claude/learner.local.json already present — left untouched"
+if [ "$CONFIG_EXISTS" = 1 ]; then
+  echo "  • $CONFIG already exists — left untouched"
 else
-  cp "$SRC_DIR/learner.local.json.example" "$CLAUDE_DIR/learner.local.json.example"
-  echo "  • no config yet — the SessionStart hook will prompt you on the next session"
-  echo "    (or: re-run with --level, or copy .claude/learner.local.json.example)"
+  jq -n --arg lvl "$NORM" --arg syn "$SYNTH" --argjson bl "$BLANKS" '{
+    level: $lvl, enabled: true, questionStyles: "auto",
+    synthesisFrequency: $syn, blanksPerExercise: $bl,
+    untrackGlobs: [], disabledPaths: []
+  }' > "$CONFIG"
+  echo "  ✓ config → $CONFIG (level=$NORM, synthesis=$SYNTH, blanks=$BLANKS)"
 fi
-
-# 5) Gitignore the per-developer files.
-GI="$TARGET/.gitignore"
-add_ignore() {
-  local pat="$1"
-  grep -qxF "$pat" "$GI" 2>/dev/null || echo "$pat" >> "$GI"
-}
-touch "$GI"
-add_ignore ".claude/learner.local.json"
-add_ignore ".claude/learner-memory.md"
-add_ignore ".claude/learner-recap.md"
-echo "  ✓ .gitignore updated (per-dev files ignored)"
 
 echo
-if [ -n "$LEVEL" ] || [ -f "$CONFIG" ]; then
-  echo "Done. Learning mode is active — start coding, or run: learner status"
-else
-  echo "Done. Start a new Claude Code session in $TARGET — the SessionStart hook will"
-  echo "prompt for your level, or run: learner config"
-fi
+echo "Done. Learner is active in every git repo you open with Claude Code."
+echo "  learner status        what to improve"
+echo "  learner quiz          quiz me on this branch"
+echo "  learner off           silence it in the current repo"

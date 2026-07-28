@@ -1,0 +1,9 @@
+{
+  "level": "C",
+  "enabled": true,
+  "questionStyles": "auto",
+  "synthesisFrequency": "normal",
+  "blanksPerExercise": 2,
+  "untrackGlobs": ["*.md", "*.json"],
+  "disabledPaths": []
+}
