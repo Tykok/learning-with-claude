@@ -8,8 +8,6 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
-# shellcheck disable=SC2034  # consumed once task 4 rewrites the onboarding section
-CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -29,8 +27,6 @@ export CLAUDE_PROJECT_DIR="$WORK/proj"
 export TMPDIR="$WORK/tmp"
 GCFG="$WORK/cfg/learner.json"
 PCFG="$WORK/proj/.claude/learner.local.json"
-# Alias kept for the onboarding section below (task 4 owns its rewrite).
-CFG="$PCFG"
 edits() { echo "$TMPDIR/claude-learner-$1.edits"; }
 
 # Run a snippet with learner-config.sh sourced.
@@ -138,15 +134,30 @@ cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
   || ok "learner_active fails under a disabled path"
 
 # --- onboarding -------------------------------------------------------------
+rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | sh "$ONB")
-echo "$out" | grep -q 'additionalContext' \
-  && ok "onboard prompts for level when unconfigured" \
-  || ko "onboard prompts for level when unconfigured"
+echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("learner config")' >/dev/null 2>&1 \
+  && ok "onboard nags when no level is configured" \
+  || ko "onboard nags when no level is configured"
 
-echo '{"level":"junior"}' > "$CFG"
+printf '%s' "$out" | grep -qiE 'recapEvery|trouBlanks|language|trackGlobs' \
+  && ko "onboard mentions no removed config key" \
+  || ok "onboard mentions no removed config key"
+
+echo '{"level":"S"}' > "$GCFG"
 out=$(printf '{}' | sh "$ONB")
 [ -z "$out" ] && ok "onboard silent once a level is set" \
              || ko "onboard silent once a level is set"
+
+echo '{"level":"S","enabled":false}' > "$GCFG"
+out=$(printf '{}' | sh "$ONB")
+[ -z "$out" ] && ok "onboard silent when deliberately disabled" \
+             || ko "onboard silent when deliberately disabled"
+
+out=$(printf '{}' | CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$ONB")
+[ -z "$out" ] && ok "onboard silent outside a git repo" \
+             || ko "onboard silent outside a git repo"
+echo '{"level":"S"}' > "$GCFG"
 
 # --- record-edit ------------------------------------------------------------
 echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
