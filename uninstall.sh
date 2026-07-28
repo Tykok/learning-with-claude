@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     --purge) PURGE=1; shift ;;
     --project) PROJECT="${2:-}"; shift 2 ;;
     --project=*) PROJECT="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unexpected argument '$1'"; exit 1 ;;
   esac
 done
