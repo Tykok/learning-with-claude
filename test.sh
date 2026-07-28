@@ -8,8 +8,6 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
-# shellcheck disable=SC2034 # reserved for Task 2's rewrite of the record-edit section
-CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -67,6 +65,20 @@ out=$(cfgsh 'learner_config' | jq -r '.synthesisFrequency')
   || ko "invalid global config falls back to defaults"
 
 echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+# learner_config must fail clean (no stderr noise, empty stdout, nonzero exit)
+# when jq is not on PATH, so a `set -u` caller can tell "no config" apart from
+# a real merge without ever touching an unbound variable. sh must stay
+# resolvable, so only jq is excluded from PATH (an empty dir), not the shell.
+NOJQ_PATH="$WORK/tmp/no-jq-path"
+mkdir -p "$NOJQ_PATH"
+noJqErr="$WORK/tmp/no-jq.stderr"
+out=$(PATH="$NOJQ_PATH" /bin/sh -c '. "$1"; learner_config' _ "$ROOT/hooks/learner-config.sh" 2>"$noJqErr")
+rc=$?
+err=$(cat "$noJqErr")
+{ [ -z "$err" ] && [ -z "$out" ] && [ "$rc" -ne 0 ]; } \
+  && ok "learner_config fails clean (no stderr, empty stdout) when jq is missing" \
+  || ko "learner_config fails clean (no stderr, empty stdout) when jq is missing (out='$out' rc=$rc err='$err')"
 
 for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
   raw="${pair%%:*}"; want="${pair##*:}"

@@ -30,10 +30,11 @@ _learner_read_json() {
 # `//` treats `false` as absent, which would break "enabled": false.
 # `*` also replaces arrays instead of concatenating them — intentional.
 learner_config() {
+  command -v jq >/dev/null 2>&1 || return 1
   _lg=$(_learner_read_json "$LEARNER_CFG_DIR/learner.json")
   _lp=$(_learner_read_json "${CLAUDE_PROJECT_DIR:-.}/.claude/learner.local.json")
   jq -nc --argjson d "$LEARNER_DEFAULTS" --argjson g "$_lg" --argjson p "$_lp" \
-    '$d * $g * $p'
+    '$d * $g * $p' 2>/dev/null
 }
 
 learner_level() {
