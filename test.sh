@@ -372,6 +372,49 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$
   || ko "uninstall removes hooks, skill and settings wiring (left=$left)"
 rm -rf "$R"
 
+# --- skill content ----------------------------------------------------------
+SK="$ROOT/skills/learner/SKILL.md"
+REFS="$ROOT/skills/learner/references"
+
+for f in hook-quiz.md quiz.md improve.md data.md; do
+  [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
+done
+
+n=$(wc -l < "$SK" | tr -d ' ')
+[ "$n" -le 120 ] \
+  && ok "SKILL.md stays under 120 lines (it is always loaded)" \
+  || ko "SKILL.md stays under 120 lines (got $n)"
+
+grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"' "$SK" "$REFS"/*.md \
+  && ko "skill mentions no removed config key" \
+  || ok "skill mentions no removed config key"
+
+grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md \
+  && ko "skill uses the new data paths, not the old per-project names" \
+  || ok "skill uses the new data paths, not the old per-project names"
+
+for k in level enabled questionStyles synthesisFrequency blanksPerExercise untrackGlobs disabledPaths; do
+  grep -q "$k" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+done
+
+for l in D J C S E; do
+  grep -qE "^\| \`?$l\`? " "$SK" && ok "SKILL.md documents level $l" || ko "SKILL.md documents level $l"
+done
+
+grep -q 'references/hook-quiz.md' "$SK" \
+  && ok "SKILL.md routes the hook trigger to references/hook-quiz.md" \
+  || ko "SKILL.md routes the hook trigger to references/hook-quiz.md"
+
+grep -q 'references/data.md' "$REFS/hook-quiz.md" \
+  && grep -q 'references/data.md' "$REFS/quiz.md" \
+  && grep -q 'references/data.md' "$REFS/improve.md" \
+  && ok "the three quiz modes all defer to references/data.md" \
+  || ko "the three quiz modes all defer to references/data.md"
+
+grep -q 'CLAUDE_CONFIG_DIR' "$REFS/data.md" \
+  && ok "data.md resolves the config dir from CLAUDE_CONFIG_DIR" \
+  || ko "data.md resolves the config dir from CLAUDE_CONFIG_DIR"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
