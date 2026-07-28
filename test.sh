@@ -433,16 +433,44 @@ echo '{"level":"S"}' > "$GCFG"
 rm -rf "$G"
 
 # --- uninstall reverses install ---------------------------------------------
-R="$(mktemp -d)"; git -C "$R" init -q
-bash "$ROOT/install.sh" "$R" >/dev/null 2>&1
-bash "$ROOT/uninstall.sh" "$R" >/dev/null 2>&1
-left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$R/.claude/settings.json" 2>/dev/null || echo 0)
+U="$WORK/uninst"; mkdir -p "$U"
+CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+printf '# notes\n' > "$U/learner/memory.md"
+CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
+left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
 { [ "$left" = 0 ] \
-  && [ ! -e "$R/.claude/hooks/learner-quiz.sh" ] \
-  && [ ! -d "$R/.claude/skills/learner" ]; } \
-  && ok "uninstall removes hooks, skill and settings wiring" \
-  || ko "uninstall removes hooks, skill and settings wiring (left=$left)"
-rm -rf "$R"
+  && [ ! -e "$U/hooks/learner-quiz.sh" ] \
+  && [ ! -e "$U/hooks/learner-config.sh" ] \
+  && [ ! -d "$U/skills/learner" ]; } \
+  && ok "uninstall removes hooks, skill and wiring" \
+  || ko "uninstall removes hooks, skill and wiring (left=$left)"
+
+{ [ -f "$U/learner.json" ] && [ -f "$U/learner/memory.md" ]; } \
+  && ok "uninstall keeps config and progress data by default" \
+  || ko "uninstall keeps config and progress data by default"
+
+CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" --purge >/dev/null 2>&1
+{ [ ! -e "$U/learner.json" ] && [ ! -e "$U/learner" ]; } \
+  && ok "--purge deletes config and progress data" \
+  || ko "--purge deletes config and progress data"
+
+# legacy per-project layout
+L="$(mktemp -d)"; git -C "$L" init -q
+mkdir -p "$L/.claude/hooks" "$L/.claude/skills/learner"
+touch "$L/.claude/hooks/learner-quiz.sh" "$L/.claude/skills/learner/SKILL.md"
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"sh .claude/hooks/learner-quiz.sh"}]}]}}\n' \
+  > "$L/.claude/settings.json"
+printf '.claude/learner.local.json\n.claude/learner-memory.md\nbuild/\n' > "$L/.gitignore"
+bash "$ROOT/uninstall.sh" --project "$L" >/dev/null 2>&1
+left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$L/.claude/settings.json")
+{ [ "$left" = 0 ] \
+  && [ ! -e "$L/.claude/hooks/learner-quiz.sh" ] \
+  && [ ! -d "$L/.claude/skills/learner" ] \
+  && ! grep -q 'learner-memory' "$L/.gitignore" \
+  && grep -q 'build/' "$L/.gitignore"; } \
+  && ok "--project cleans the legacy per-repo layout, keeps other gitignore lines" \
+  || ko "--project cleans the legacy per-repo layout, keeps other gitignore lines (left=$left)"
+rm -rf "$L"
 
 # --- skill content ----------------------------------------------------------
 SK="$ROOT/skills/learner/SKILL.md"
