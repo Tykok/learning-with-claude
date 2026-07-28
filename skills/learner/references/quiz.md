@@ -9,6 +9,10 @@ on-demand counterpart to the Stop-hook quiz.
 Load config the same way as `SKILL.md` § Config. An explicit `learner quiz` runs even
 when `enabled` is `false` — the dev asked for it directly.
 
+`level` sets difficulty (level table in `SKILL.md`); `questionStyles` limits the
+formats, `auto` = vary; `blanksPerExercise` supplies `blanks` for a `fill` exercise
+(protocol in `references/hook-quiz.md`).
+
 ## Compute the branch diff
 
 Pick the base ref from `$ARGUMENTS` if one is given, else fall back through the
@@ -31,6 +35,10 @@ test-scaffolding churn unless it is the point of the branch.
 
 ## Run the session
 
+First read `references/data.md`: `memory.md` is the only file that drives question
+selection, so read it before choosing the first question — prefer a still-open weak
+spot when relevant (spaced repetition).
+
 - One question at a time. Wait for each answer before asking the next; never answer
   for the dev.
 - Brief feedback (correct / to fix, plus the missing bit) after each answer.
@@ -42,7 +50,8 @@ test-scaffolding churn unless it is the point of the branch.
 - Stop early on repeated `skip` or on `stop`.
 - For a `fill`-style question, follow the protocol in `references/hook-quiz.md`.
 
-Then apply `references/data.md`.
+After each answer, update `references/data.md`: record the outcome in `memory.md`
+and `recap.md`.
 
 ## Wrap up
 
