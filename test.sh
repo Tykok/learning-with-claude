@@ -8,6 +8,8 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
+# shellcheck disable=SC2034 # reserved for Task 2's rewrite of the record-edit section
+CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -16,14 +18,109 @@ ko()  { FAIL=$((FAIL + 1)); printf '  FAIL - %s\n' "$1"; }
 command -v jq  >/dev/null 2>&1 || { echo "jq required"; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "git required"; exit 2; }
 
-# Isolated project dir + tmp so session state can't collide with a real session.
+# Isolated config dir + project repo + tmp so nothing collides with a real session.
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/.claude" "$WORK/tmp"
-export CLAUDE_PROJECT_DIR="$WORK"
+mkdir -p "$WORK/cfg" "$WORK/proj/.claude" "$WORK/tmp"
+git -C "$WORK/proj" init -q
+export CLAUDE_CONFIG_DIR="$WORK/cfg"
+export CLAUDE_PROJECT_DIR="$WORK/proj"
 export TMPDIR="$WORK/tmp"
-CFG="$WORK/.claude/learner.local.json"
+GCFG="$WORK/cfg/learner.json"
+PCFG="$WORK/proj/.claude/learner.local.json"
+# Alias kept for the pre-existing sections below (Tasks 2-4 own their rewrite).
+CFG="$PCFG"
 edits() { echo "$TMPDIR/claude-learner-$1.edits"; }
+
+# Run a snippet with learner-config.sh sourced.
+cfgsh() { sh -c '. "$1"; shift; eval "$@"' _ "$ROOT/hooks/learner-config.sh" "$@"; }
+
+# --- config resolution ------------------------------------------------------
+echo '{"level":"senior","blanksPerExercise":3}' > "$GCFG"
+rm -f "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .level)" = "senior" ] \
+  && [ "$(echo "$out" | jq -r .blanksPerExercise)" = "3" ] \
+  && [ "$(echo "$out" | jq -r .synthesisFrequency)" = "normal" ]; } \
+  && ok "global config merges over defaults" \
+  || ko "global config merges over defaults"
+
+echo '{"blanksPerExercise":1,"enabled":false}' > "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .blanksPerExercise)" = "1" ] \
+  && [ "$(echo "$out" | jq -r .enabled)" = "false" ] \
+  && [ "$(echo "$out" | jq -r .level)" = "senior" ]; } \
+  && ok "project config wins key by key, keeps enabled=false" \
+  || ko "project config wins key by key, keeps enabled=false"
+
+echo '{"level":"S","untrackGlobs":["*.md"]}' > "$GCFG"
+echo '{"untrackGlobs":["*.sql"]}' > "$PCFG"
+out=$(cfgsh 'learner_config' | jq -c '.untrackGlobs')
+[ "$out" = '["*.sql"]' ] \
+  && ok "arrays are replaced by the project layer, not merged" \
+  || ko "arrays are replaced by the project layer, not merged (got $out)"
+
+printf '{ not json' > "$GCFG"
+out=$(cfgsh 'learner_config' | jq -r '.synthesisFrequency')
+[ "$out" = "normal" ] \
+  && ok "invalid global config falls back to defaults" \
+  || ko "invalid global config falls back to defaults"
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
+  raw="${pair%%:*}"; want="${pair##*:}"
+  got=$(cfgsh "learner_level $raw")
+  [ "$got" = "$want" ] \
+    && ok "level '$raw' normalises to '$want'" \
+    || ko "level '$raw' normalises to '$want' (got '$got')"
+done
+
+for pair in "off:0" "rare:8" "normal:4" "often:2" "banana:4"; do
+  raw="${pair%%:*}"; want="${pair##*:}"
+  got=$(cfgsh "learner_synthesis_n $raw")
+  [ "$got" = "$want" ] \
+    && ok "synthesisFrequency '$raw' -> $want" \
+    || ko "synthesisFrequency '$raw' -> $want (got '$got')"
+done
+
+out=$(cfgsh 'learner_repo_root')
+[ "$out" = "$(cd "$WORK/proj" && pwd -P)" ] \
+  && ok "repo root resolves inside a git repo" \
+  || ko "repo root resolves inside a git repo (got '$out')"
+
+out=$(CLAUDE_PROJECT_DIR="$WORK/tmp" cfgsh 'learner_repo_root')
+[ -z "$out" ] \
+  && ok "repo root is empty outside a git repo" \
+  || ko "repo root is empty outside a git repo (got '$out')"
+
+cfgsh 'learner_path_disabled "/a/b/c" "{\"disabledPaths\":[\"/a/b\"]}"' \
+  && ok "disabledPaths matches a parent prefix" \
+  || ko "disabledPaths matches a parent prefix"
+
+cfgsh 'learner_path_disabled "/a/bee" "{\"disabledPaths\":[\"/a/b\"]}"' \
+  && ko "disabledPaths does not match a sibling with a shared prefix" \
+  || ok "disabledPaths does not match a sibling with a shared prefix"
+
+cfgsh 'learner_active "{\"level\":\"S\",\"enabled\":true}" "/a/b"' \
+  && ok "learner_active passes with a level, enabled, inside a repo" \
+  || ko "learner_active passes with a level, enabled, inside a repo"
+
+cfgsh 'learner_active "{\"enabled\":true}" "/a/b"' \
+  && ko "learner_active fails without a valid level" \
+  || ok "learner_active fails without a valid level"
+
+cfgsh 'learner_active "{\"level\":\"S\",\"enabled\":false}" "/a/b"' \
+  && ko "learner_active fails when enabled is false" \
+  || ok "learner_active fails when enabled is false"
+
+cfgsh 'learner_active "{\"level\":\"S\",\"enabled\":true}" ""' \
+  && ko "learner_active fails outside a git repo" \
+  || ok "learner_active fails outside a git repo"
+
+cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
+  && ko "learner_active fails under a disabled path" \
+  || ok "learner_active fails under a disabled path"
 
 # --- onboarding -------------------------------------------------------------
 out=$(printf '{}' | sh "$ONB")
