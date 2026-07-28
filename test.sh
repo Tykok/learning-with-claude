@@ -8,6 +8,7 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
+CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -18,6 +19,7 @@ command -v git >/dev/null 2>&1 || { echo "git required"; exit 2; }
 
 # Isolated config dir + project repo + tmp so nothing collides with a real session.
 WORK="$(mktemp -d)"
+WORK="$(cd "$WORK" && pwd -P)"  # Resolve symlinks (macOS /tmp → /private/tmp)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/cfg" "$WORK/proj/.claude" "$WORK/tmp"
 git -C "$WORK/proj" init -q
@@ -146,30 +148,64 @@ out=$(printf '{}' | sh "$ONB")
              || ko "onboard silent once a level is set"
 
 # --- record-edit ------------------------------------------------------------
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+rec() { printf '{"session_id":"%s","tool_input":{"file_path":"%s"}}' "$1" "$2" | sh "$REC"; }
+
 SID=rec1
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/src/Foo.kt"}}' "$SID" "$WORK" | sh "$REC"
+rec "$SID" "$WORK/proj/src/Foo.kt"
 grep -q 'Foo.kt' "$(edits "$SID")" 2>/dev/null \
-  && ok "records a tracked source file (.kt)" \
-  || ko "records a tracked source file (.kt)"
+  && ok "records an ordinary source file" \
+  || ko "records an ordinary source file"
 
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/build/Gen.kt"}}' "$SID" "$WORK" | sh "$REC"
-grep -q 'build/Gen.kt' "$(edits "$SID")" 2>/dev/null \
-  && ko "ignores files under build/" \
-  || ok "ignores files under build/"
+rec "$SID" "$WORK/proj/docs/notes.md"
+grep -q 'notes.md' "$(edits "$SID")" 2>/dev/null \
+  && ok "records any extension by default (exclusion-list model)" \
+  || ko "records any extension by default (exclusion-list model)"
 
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/notes.txt"}}' "$SID" "$WORK" | sh "$REC"
-grep -q 'notes.txt' "$(edits "$SID")" 2>/dev/null \
-  && ko "ignores untracked extension (.txt)" \
-  || ok "ignores untracked extension (.txt)"
+for p in build/Gen.kt node_modules/x/index.js dist/app.js vendor/lib.php \
+         coverage/report.html __snapshots__/a.snap pnpm-lock.yaml app.min.js \
+         schema.generated.ts Cargo.lock; do
+  SIDF="floor-$(echo "$p" | tr '/.' '--')"
+  rec "$SIDF" "$WORK/proj/$p"
+  [ -s "$(edits "$SIDF")" ] \
+    && ko "exclusion floor drops $p" \
+    || ok "exclusion floor drops $p"
+done
 
-# opt-out: no config file => record-edit is a no-op
-mv "$CFG" "$CFG.bak"
-SID2=rec2
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/src/Bar.kt"}}' "$SID2" "$WORK" | sh "$REC"
-[ -s "$(edits "$SID2")" ] \
-  && ko "no-op when learning mode is not configured" \
-  || ok "no-op when learning mode is not configured"
-mv "$CFG.bak" "$CFG"
+echo '{"level":"S","untrackGlobs":["*.md","*/generated/*"]}' > "$GCFG"
+SID3=rec3
+rec "$SID3" "$WORK/proj/README.md"
+rec "$SID3" "$WORK/proj/src/generated/api.ts"
+rec "$SID3" "$WORK/proj/src/Real.kt"
+{ ! grep -q 'README.md' "$(edits "$SID3")" 2>/dev/null \
+  && ! grep -q 'generated/api.ts' "$(edits "$SID3")" 2>/dev/null \
+  && grep -q 'Real.kt' "$(edits "$SID3")" 2>/dev/null; } \
+  && ok "untrackGlobs excludes on top of the floor" \
+  || ko "untrackGlobs excludes on top of the floor"
+echo '{"level":"S"}' > "$GCFG"
+
+SID4=rec4
+rm -f "$GCFG"
+rec "$SID4" "$WORK/proj/src/Bar.kt"
+[ -s "$(edits "$SID4")" ] \
+  && ko "no-op when no level is configured" \
+  || ok "no-op when no level is configured"
+echo '{"level":"S"}' > "$GCFG"
+
+SID5=rec5
+printf '{"session_id":"%s","tool_input":{"file_path":"%s"}}' "$SID5" "$WORK/tmp/loose.kt" \
+  | CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$REC"
+[ -s "$(edits "$SID5")" ] \
+  && ko "no-op outside a git repo" \
+  || ok "no-op outside a git repo"
+
+SID6=rec6
+echo '{"level":"S","disabledPaths":["'"$WORK/proj"'"]}' > "$GCFG"
+rec "$SID6" "$WORK/proj/src/Baz.kt"
+[ -s "$(edits "$SID6")" ] \
+  && ko "no-op when the repo is under disabledPaths" \
+  || ok "no-op when the repo is under disabledPaths"
+echo '{"level":"S"}' > "$GCFG"
 
 # --- quiz (Stop hook) -------------------------------------------------------
 out=$(printf '{"session_id":"%s","stop_hook_active":false}' "$SID" | sh "$QUIZ")
