@@ -5,6 +5,12 @@ Followed when the Stop hook blocks with a trigger line of the form
 Read `level`, `mode`, `styles`, `blanks` and `files` straight off that line — the
 trigger carries only parameters, this file is the protocol.
 
+## Before choosing the question
+
+First read `references/data.md`: `memory.md` is the only file that drives question
+selection, so read it before choosing what to ask — prefer a still-open weak spot
+among the listed files when relevant (spaced repetition).
+
 ## `mode: granular`
 
 Ask ONE short question about the listed `files`, at the difficulty matching `level`
@@ -57,4 +63,5 @@ Prefer another style when the dev cannot edit locally.
 Ask ONE question, then wait for the answer. `skip` moves on without insisting. Give
 brief feedback (correct / to fix, plus the missing bit) before continuing.
 
-Then apply `references/data.md`.
+After the answer, update `references/data.md`: record the outcome in `memory.md`
+and `recap.md`.
