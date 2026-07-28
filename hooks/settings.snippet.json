@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/learner-onboard.sh\"",
+            "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/learner-onboard.sh\"",
             "timeout": 10
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/learner-record-edit.sh\"",
+            "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/learner-record-edit.sh\"",
             "timeout": 10
           }
         ]
@@ -28,9 +28,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/learner-quiz.sh\"",
+            "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/learner-quiz.sh\"",
             "timeout": 10,
-            "statusMessage": "Learning mode: checking understanding..."
+            "statusMessage": "Learner: checking understanding..."
           }
         ]
       }
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/learner-cleanup.sh\"",
+            "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/learner-cleanup.sh\"",
             "timeout": 10
           }
         ]

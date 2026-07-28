@@ -305,17 +305,97 @@ out=$(quiz "no-edits-sid")
 [ -z "$out" ] && ok "quiz silent when nothing was edited" \
              || ko "quiz silent when nothing was edited"
 
-# --- installer idempotency --------------------------------------------------
-R="$(mktemp -d)"; git -C "$R" init -q
-bash "$ROOT/install.sh" "$R" >/dev/null 2>&1
-count() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$R/.claude/settings.json"; }
-n1=$(count)
-bash "$ROOT/install.sh" "$R" >/dev/null 2>&1
-n2=$(count)
+# --- installer --------------------------------------------------------------
+inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
+hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
+
+I="$WORK/inst"; mkdir -p "$I"
+inst "$I" --level S --synthesis often --blanks 3 >/dev/null 2>&1
+{ [ -f "$I/hooks/learner-config.sh" ] \
+  && [ -f "$I/hooks/learner-quiz.sh" ] \
+  && [ -f "$I/skills/learner/SKILL.md" ] \
+  && [ -f "$I/skills/learner/references/data.md" ]; } \
+  && ok "install copies hooks, skill and references" \
+  || ko "install copies hooks, skill and references"
+
+jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise == 3' \
+  "$I/learner.json" >/dev/null 2>&1 \
+  && ok "install writes the global config from flags" \
+  || ko "install writes the global config from flags"
+
+n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
+[ "$n" = 5 ] \
+  && ok "install lays down 5 hook files" \
+  || ko "install lays down 5 hook files (got $n)"
+
+# Only 4 are wired: learner-config.sh is sourced, never invoked by Claude Code.
+n1=$(hookcount "$I")
+inst "$I" --level S >/dev/null 2>&1
+n2=$(hookcount "$I")
 { [ "$n1" = 4 ] && [ "$n2" = 4 ]; } \
-  && ok "install merge is idempotent (4 learner hooks)" \
-  || ko "install merge is idempotent (got $n1 then $n2, want 4/4)"
-rm -rf "$R"
+  && ok "hook merge is idempotent (4 wired hooks)" \
+  || ko "hook merge is idempotent (got $n1 then $n2, want 4/4)"
+
+jq -e '[.. | .command? // empty | select(contains("learner-"))]
+       | all(contains("CLAUDE_CONFIG_DIR"))' "$I/settings.json" >/dev/null 2>&1 \
+  && ok "hook commands resolve CLAUDE_CONFIG_DIR at run time" \
+  || ko "hook commands resolve CLAUDE_CONFIG_DIR at run time"
+
+I2="$WORK/inst2"; mkdir -p "$I2"
+inst "$I2" --level senior >/dev/null 2>&1
+jq -e '.level == "S"' "$I2/learner.json" >/dev/null 2>&1 \
+  && ok "install normalises --level senior to S" \
+  || ko "install normalises --level senior to S"
+
+I3="$WORK/inst3"; mkdir -p "$I3"
+inst "$I3" --level wizard >/dev/null 2>&1 \
+  && ko "install rejects an invalid level" \
+  || ok "install rejects an invalid level"
+
+I4="$WORK/inst4"; mkdir -p "$I4"
+inst "$I4" >/dev/null 2>&1 </dev/null \
+  && ko "install aborts non-interactively without --level" \
+  || ok "install aborts non-interactively without --level"
+
+I5="$WORK/inst5"; mkdir -p "$I5"
+echo '{ broken' > "$I5/settings.json"
+inst "$I5" --level S >/dev/null 2>&1 \
+  && ko "install aborts on invalid settings.json" \
+  || ok "install aborts on invalid settings.json"
+grep -q 'broken' "$I5/settings.json" \
+  && ok "install leaves an invalid settings.json untouched" \
+  || ko "install leaves an invalid settings.json untouched"
+
+I6="$WORK/inst6"; mkdir -p "$I6"
+inst "$I6" --level S --dry-run >/dev/null 2>&1
+{ [ ! -e "$I6/learner.json" ] && [ ! -e "$I6/hooks" ]; } \
+  && ok "--dry-run writes nothing" \
+  || ko "--dry-run writes nothing"
+
+I7="$WORK/inst7"
+out=$(PATH="/usr/bin:/bin" HOME="$WORK/nohome" CLAUDE_CONFIG_DIR="$I7" \
+      bash "$ROOT/install.sh" --level S 2>&1) \
+  && ko "install aborts when Claude Code is absent" \
+  || ok "install aborts when Claude Code is absent"
+printf '%s' "$out" | grep -qi 'claude' \
+  && ok "the abort message names Claude Code" \
+  || ko "the abort message names Claude Code"
+
+I8="$WORK/inst8"; mkdir -p "$I8"
+inst "$I8" --level S >/dev/null 2>&1
+inst "$I8" --level D >/dev/null 2>&1
+jq -e '.level == "S"' "$I8/learner.json" >/dev/null 2>&1 \
+  && ok "re-install keeps an existing config" \
+  || ko "re-install keeps an existing config"
+
+jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths"] | length == 0' \
+  "$ROOT/learner.json.example" >/dev/null 2>&1 \
+  && ok "learner.json.example carries only supported keys" \
+  || ko "learner.json.example carries only supported keys"
+
+[ ! -e "$ROOT/learner.local.json.example" ] \
+  && ok "the old example file is gone" \
+  || ko "the old example file is gone"
 
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
@@ -351,14 +431,6 @@ echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
   || ko "guardrail fires even with no config at all"
 echo '{"level":"S"}' > "$GCFG"
 rm -rf "$G"
-
-# --- install --level writes config immediately ------------------------------
-R="$(mktemp -d)"; git -C "$R" init -q
-bash "$ROOT/install.sh" --level senior "$R" >/dev/null 2>&1
-jq -e '.level == "senior"' "$R/.claude/learner.local.json" >/dev/null 2>&1 \
-  && ok "install --level writes learner.local.json" \
-  || ko "install --level writes learner.local.json"
-rm -rf "$R"
 
 # --- uninstall reverses install ---------------------------------------------
 R="$(mktemp -d)"; git -C "$R" init -q
