@@ -515,6 +515,27 @@ grep -q 'CLAUDE_CONFIG_DIR' "$REFS/data.md" \
   && ok "data.md resolves the config dir from CLAUDE_CONFIG_DIR" \
   || ko "data.md resolves the config dir from CLAUDE_CONFIG_DIR"
 
+# --- docs -------------------------------------------------------------------
+RM="$ROOT/README.md"
+
+# Boundary-aware on trackGlobs (untrackGlobs must not self-trip this), and real
+# ERE alternatives (not an escaped literal pipe) for the three old level words.
+grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|junior|intermediaire|senior' "$RM" \
+  && ko "README mentions no removed key or old level" \
+  || ok "README mentions no removed key or old level"
+
+for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency blanksPerExercise 'learner off'; do
+  grep -qF "$s" "$RM" && ok "README documents $s" || ko "README documents $s"
+done
+
+grep -qF -- '--project' "$RM" \
+  && ok "README documents the legacy cleanup flag" \
+  || ko "README documents the legacy cleanup flag"
+
+grep -qE '^\| \`?[DJCSE]\`? ' "$RM" \
+  && ok "README documents the letter levels" \
+  || ko "README documents the letter levels"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
