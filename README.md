@@ -145,8 +145,9 @@ Everything lives under `$CLAUDE_CONFIG_DIR` (default `~/.claude`, written `$CFG`
 | `$CFG/hooks/learner-cleanup.sh` | `SessionEnd` — deletes this session's scratch files |
 | `$CFG/settings.json` | Hook wiring, merged in (a `.bak` is kept alongside it) |
 | `$CFG/learner.json` | Your global config |
-| `$CFG/learner/memory.md` | Working memory — open weak spots, drives question selection |
-| `$CFG/learner/recap.md` | Readable dashboard — to-improve / mastered / session history |
+| `$CFG/learner/` | Empty directory, created by the installer for the skill to write into at runtime |
+| `$CFG/learner/memory.md` | Working memory — open weak spots, drives question selection — created by the skill on first quiz/improve, not by the installer |
+| `$CFG/learner/recap.md` | Readable dashboard — to-improve / mastered / session history — created by the skill on first quiz/improve, not by the installer |
 
 Five hook files ship; four are wired into `settings.json`. `learner-config.sh` is sourced by
 the other four, never invoked directly by Claude Code.
