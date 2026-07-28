@@ -8,7 +8,7 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
-# shellcheck disable=SC2034  # consumed once tasks 3-4 rewrite the quiz/onboarding sections
+# shellcheck disable=SC2034  # consumed once task 4 rewrites the onboarding section
 CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
@@ -29,7 +29,7 @@ export CLAUDE_PROJECT_DIR="$WORK/proj"
 export TMPDIR="$WORK/tmp"
 GCFG="$WORK/cfg/learner.json"
 PCFG="$WORK/proj/.claude/learner.local.json"
-# Alias kept for the pre-existing sections below (Tasks 2-4 own their rewrite).
+# Alias kept for the onboarding section below (task 4 owns its rewrite).
 CFG="$PCFG"
 edits() { echo "$TMPDIR/claude-learner-$1.edits"; }
 
@@ -209,26 +209,80 @@ rec "$SID6" "$WORK/proj/src/Baz.kt"
 echo '{"level":"S"}' > "$GCFG"
 
 # --- quiz (Stop hook) -------------------------------------------------------
-out=$(printf '{"session_id":"%s","stop_hook_active":false}' "$SID" | sh "$QUIZ")
+quiz() { printf '{"session_id":"%s","stop_hook_active":%s}' "$1" "${2:-false}" | sh "$QUIZ"; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+SIDQ=quiz1
+rec "$SIDQ" "$WORK/proj/src/Foo.kt"
+out=$(quiz "$SIDQ")
 echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
   && ok "quiz blocks once when edits are pending" \
   || ko "quiz blocks once when edits are pending"
 
-# re-arm edits, then a continuation (stop_hook_active=true) must NOT re-block
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/src/Foo.kt"}}' "$SID" "$WORK" | sh "$REC"
-out=$(printf '{"session_id":"%s","stop_hook_active":true}' "$SID" | sh "$QUIZ")
+reason=$(echo "$out" | jq -r '.reason')
+lines=$(printf '%s\n' "$reason" | wc -l | tr -d ' ')
+[ "$lines" -le 3 ] \
+  && ok "block reason stays within 3 lines (console stays quiet)" \
+  || ko "block reason stays within 3 lines (got $lines)"
+
+printf '%s' "$reason" | grep -q 'references/hook-quiz.md' \
+  && ok "block reason points at the skill protocol" \
+  || ko "block reason points at the skill protocol"
+
+printf '%s' "$reason" | grep -qiE 'memory\.md|recap\.md|spaced repetition' \
+  && ko "block reason carries no protocol prose" \
+  || ok "block reason carries no protocol prose"
+
+printf '%s' "$reason" | grep -q 'level: S' \
+  && ok "block reason carries the canonical level letter" \
+  || ko "block reason carries the canonical level letter"
+
+printf '%s' "$reason" | grep -q 'mode: granular' \
+  && ok "first question is granular" \
+  || ko "first question is granular"
+
+# often = every 2nd question is a synthesis
+echo '{"level":"S","synthesisFrequency":"often"}' > "$GCFG"
+SIDS=quiz2
+rec "$SIDS" "$WORK/proj/src/A.kt"
+quiz "$SIDS" >/dev/null
+rec "$SIDS" "$WORK/proj/src/B.kt"
+printf '%s' "$(quiz "$SIDS" | jq -r .reason)" | grep -q 'mode: synthesis' \
+  && ok "synthesisFrequency=often makes question 2 a synthesis" \
+  || ko "synthesisFrequency=often makes question 2 a synthesis"
+
+# off = never a synthesis
+echo '{"level":"S","synthesisFrequency":"off"}' > "$GCFG"
+SIDO=quiz3
+for i in 1 2 3 4 5; do rec "$SIDO" "$WORK/proj/src/O$i.kt"; quiz "$SIDO" > "$WORK/o$i.json"; done
+grep -l 'mode: synthesis' "$WORK"/o*.json >/dev/null 2>&1 \
+  && ko "synthesisFrequency=off never triggers a synthesis" \
+  || ok "synthesisFrequency=off never triggers a synthesis"
+
+echo '{"level":"S","blanksPerExercise":4}' > "$GCFG"
+SIDB=quiz4
+rec "$SIDB" "$WORK/proj/src/C.kt"
+printf '%s' "$(quiz "$SIDB" | jq -r .reason)" | grep -q 'blanks: 4' \
+  && ok "blanksPerExercise reaches the trigger" \
+  || ko "blanksPerExercise reaches the trigger"
+
+echo '{"level":"S"}' > "$GCFG"
+SIDL=quiz5
+rec "$SIDL" "$WORK/proj/src/D.kt"
+out=$(quiz "$SIDL" true)
 [ -z "$out" ] && ok "quiz respects stop_hook_active (no loop)" \
              || ko "quiz respects stop_hook_active (no loop)"
 
-# enabled=false silences the quiz
-echo '{"level":"junior","enabled":false}' > "$CFG"
-out=$(printf '{"session_id":"%s","stop_hook_active":false}' "$SID" | sh "$QUIZ")
+echo '{"level":"S","enabled":false}' > "$GCFG"
+SIDE=quiz6
+rec "$SIDE" "$WORK/proj/src/E.kt"    # record-edit is inert too, so pre-arm by hand
+echo "$WORK/proj/src/E.kt" > "$(edits "$SIDE")"
+out=$(quiz "$SIDE")
 [ -z "$out" ] && ok "enabled=false silences the quiz" \
              || ko "enabled=false silences the quiz"
-echo '{"level":"junior"}' > "$CFG"
+echo '{"level":"S"}' > "$GCFG"
 
-# no pending edits => no quiz
-out=$(printf '{"session_id":"%s","stop_hook_active":false}' "fresh-sid" | sh "$QUIZ")
+out=$(quiz "no-edits-sid")
 [ -z "$out" ] && ok "quiz silent when nothing was edited" \
              || ko "quiz silent when nothing was edited"
 
@@ -252,17 +306,31 @@ printf '{"session_id":"%s"}' "$SID3" | sh "$CLEAN"
   && ko "cleanup removes this session's scratch files" \
   || ok "cleanup removes this session's scratch files"
 
-# --- trou guardrail ---------------------------------------------------------
-G="$(mktemp -d)"; git -C "$G" init -q; mkdir -p "$G/.claude" "$G/tmp"
-echo '{"level":"junior"}' > "$G/.claude/learner.local.json"
+# --- LEARNER-TODO guardrail -------------------------------------------------
+G="$(mktemp -d)"; git -C "$G" init -q; mkdir -p "$G/tmp"
 printf 'fun f() {\n  // LEARNER-TODO: body\n}\n' > "$G/A.kt"
 git -C "$G" add A.kt
 git -C "$G" -c user.email=t@t -c user.name=t commit -qm init
-out=$(printf '{"session_id":"g","stop_hook_active":false}' \
-  | CLAUDE_PROJECT_DIR="$G" TMPDIR="$G/tmp" sh "$QUIZ")
+
+guard() { printf '{"session_id":"g","stop_hook_active":false}' \
+  | CLAUDE_PROJECT_DIR="$G" TMPDIR="$G/tmp" CLAUDE_CONFIG_DIR="$1" sh "$QUIZ"; }
+
+out=$(guard "$WORK/cfg")
 echo "$out" | jq -e '.decision == "block" and (.reason | test("LEARNER-TODO"))' >/dev/null 2>&1 \
-  && ok "quiz blocks while a // LEARNER-TODO marker survives" \
-  || ko "quiz blocks while a // LEARNER-TODO marker survives"
+  && ok "guardrail blocks while a LEARNER-TODO marker survives" \
+  || ko "guardrail blocks while a LEARNER-TODO marker survives"
+
+echo '{"level":"S","enabled":false}' > "$GCFG"
+out=$(guard "$WORK/cfg")
+echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+  && ok "guardrail fires even when enabled is false" \
+  || ko "guardrail fires even when enabled is false"
+
+out=$(guard "$WORK/empty-cfg")
+echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+  && ok "guardrail fires even with no config at all" \
+  || ko "guardrail fires even with no config at all"
+echo '{"level":"S"}' > "$GCFG"
 rm -rf "$G"
 
 # --- install --level writes config immediately ------------------------------
