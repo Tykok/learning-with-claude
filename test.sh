@@ -8,6 +8,7 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
+# shellcheck disable=SC2034  # consumed once tasks 3-4 rewrite the quiz/onboarding sections
 CONF="$ROOT/hooks/learner-config.sh"
 
 PASS=0; FAIL=0
