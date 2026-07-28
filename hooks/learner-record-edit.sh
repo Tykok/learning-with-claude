@@ -1,47 +1,48 @@
 #!/bin/sh
-# Part of "learning mode" (paired with learner-quiz.sh).
+# PostToolUse Write|Edit: record the files edited this session so the Stop hook
+# can quiz on them.
 #
-# PostToolUse/Write|Edit hook: records source files edited during this session
-# into a per-session state file. learner-quiz.sh reads that file on Stop to decide
-# whether to quiz the user on what was just built.
-#
-# Opt-in: no-op unless .claude/learner.local.json exists (it holds the learner's
-# level). Wired as a PostToolUse/Write|Edit hook; see .claude/settings.json.
+# Exclusion-list model: everything the dev edits is quiz material, minus a
+# built-in floor (generated / vendored / lock artefacts) and the user's
+# `untrackGlobs`. No-op unless the learner is active here.
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
+. "$(dirname "$0")/learner-config.sh"
 
-# Feature is opt-in: do nothing unless the learner has declared a level.
-[ -f "$PROJECT_DIR/.claude/learner.local.json" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+CFG=$(learner_config)
+ROOT=$(learner_repo_root)
+learner_active "$CFG" "$ROOT" || exit 0
 
 DATA=$(cat)
 SID=$(printf '%s' "$DATA" | jq -r '.session_id // ""')
 FP=$(printf '%s' "$DATA" | jq -r '.tool_input.file_path // ""')
-
 [ -n "$SID" ] || exit 0
 [ -n "$FP" ] || exit 0
 
-# Which files are worth learning from — configurable via `trackGlobs` in
-# learner.local.json (array of shell globs). Default: common source files across
-# languages. Generated / vendored directories are always ignored.
-LEVEL_FILE="$PROJECT_DIR/.claude/learner.local.json"
-GLOBS=$(jq -r 'if (.trackGlobs|type)=="array" then (.trackGlobs|join(" ")) else empty end' "$LEVEL_FILE" 2>/dev/null)
-[ -n "$GLOBS" ] || GLOBS="*.kt *.java *.scala *.py *.rb *.go *.rs *.php *.cs *.swift *.ts *.tsx *.js *.jsx *.vue *.sql *.graphql *.proto *.properties *.yaml *.yml"
-
-# Skip generated / dependency / VCS directories regardless of glob match.
+# Built-in floor, not overridable through config: without it, every
+# package-lock.json and generated file would become quiz material.
 case "$FP" in
-  */build/*|*/dist/*|*/out/*|*/target/*|*/node_modules/*|*/vendor/*|*/.git/*|*/.gradle/*|*/__pycache__/*|*/.venv/*|*/coverage/*) exit 0 ;;
+  */node_modules/*|*/build/*|*/dist/*|*/out/*|*/target/*|*/vendor/*) exit 0 ;;
+  */.git/*|*/.gradle/*|*/__pycache__/*|*/.venv/*|*/coverage/*|*/__snapshots__/*) exit 0 ;;
+esac
+case "$FP" in
+  *.lock|*-lock.*|*.min.*|*.generated.*|*.snap) exit 0 ;;
 esac
 
-matched=0
-# word splitting of $GLOBS and the unquoted $g pattern are intentional (globs).
-# shellcheck disable=SC2086,SC2254
+# User exclusions on top of the floor. Globs are whitespace-separated, so a glob
+# containing a space is not supported (documented in README).
+GLOBS=$(printf '%s' "$CFG" | jq -r '(.untrackGlobs // [])[]' 2>/dev/null)
+set -f
+# shellcheck disable=SC2086,SC2254  # intentional word splitting + glob patterns
 for g in $GLOBS; do
-  case "$FP" in $g) matched=1; break ;; esac
+  [ -n "$g" ] || continue
+  case "$FP" in $g) exit 0 ;; esac
 done
-[ "$matched" = 1 ] || exit 0
+set +f
 
-# Pending edits since the last quiz (granular question), and a session-wide log
-# that is never cleared (used for the periodic synthesis question).
+# Pending edits since the last quiz, plus a session-wide log that is never
+# cleared (the synthesis question uses it).
 STATE="${TMPDIR:-/tmp}/claude-learner-${SID}.edits"
 SESSION="${TMPDIR:-/tmp}/claude-learner-${SID}.session"
 echo "$FP" >> "$STATE"
