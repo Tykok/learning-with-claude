@@ -154,6 +154,14 @@ out=$(printf '{}' | sh "$ONB")
 [ -z "$out" ] && ok "onboard silent when deliberately disabled" \
              || ko "onboard silent when deliberately disabled"
 
+NOJQ_ONB_PATH="$WORK/tmp/no-jq-onb-path"
+mkdir -p "$NOJQ_ONB_PATH"
+out=$(printf '{}' | PATH="$NOJQ_ONB_PATH" /bin/sh "$ONB" 2>/dev/null)
+printf '%s' "$out" | grep -q 'jq.*is not on PATH' \
+  && ok "onboard warns when jq is missing" \
+  || ko "onboard warns when jq is missing"
+
+rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$ONB")
 [ -z "$out" ] && ok "onboard silent outside a git repo" \
              || ko "onboard silent outside a git repo"
