@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
     --blanks=*)  BLANKS="${1#*=}"; shift ;;
     --dry-run)   DRY=1; shift ;;
     --yes|-y)    YES=1; shift ;;
-    -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unexpected argument '$1' (learner installs globally, not per repo)"; exit 1 ;;
   esac
 done
