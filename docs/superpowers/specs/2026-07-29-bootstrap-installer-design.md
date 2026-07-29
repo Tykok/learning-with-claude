@@ -64,7 +64,7 @@ Flow, in order:
    avoids an intermediate file. Both BSD and GNU `tar` support the flag.
 4. **Hand over to the installer**, reconnecting the terminal (see §2):
    ```sh
-   if { : < /dev/tty; } 2>/dev/null; then
+   if (exec 3< /dev/tty) 2>/dev/null; then
      bash "$TMP/install.sh" "$@" < /dev/tty
    else
      bash "$TMP/install.sh" "$@"
@@ -92,12 +92,18 @@ Detecting "no terminal" has to be an open *attempt*, not a permission check.
 `[ -r /dev/tty ]` only tests the device node's permission bits, and `/dev/tty` is typically
 world-readable (`crw-rw-rw-`) even with no controlling terminal attached, so that check reports
 `true` right up until the real `< /dev/tty` redirection fails with `ENXIO` — exactly the case
-under cron, systemd units, `nohup`, and `docker run` without `-t`. The bootstrap instead
-attempts the open itself before handing over:
+under cron, systemd units, `nohup`, and `docker run` without `-t`.
+
+The open attempt itself has a trap: `:` is a POSIX *special built-in*, and POSIX requires a
+non-interactive shell to exit outright when a redirection on one fails, so
+`{ : < /dev/tty; } 2>/dev/null` kills the whole script under dash (Debian's `/bin/sh`) instead
+of reporting failure to an `if` — it passes under bash and zsh, which are lenient about this,
+and only shows up once the script runs somewhere dash is `/bin/sh`. A subshell confines the
+exit instead of propagating it, so the bootstrap attempts the open there:
 
 ```sh
 HAVE_TTY=0
-if { : < /dev/tty; } 2>/dev/null; then
+if (exec 3< /dev/tty) 2>/dev/null; then
   HAVE_TTY=1
 fi
 ```

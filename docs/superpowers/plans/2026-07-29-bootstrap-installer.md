@@ -45,7 +45,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Add a `skip` helper next to `ok`/`ko` (currently `test.sh:13-14`) — one assertion can only run where `/dev/tty` is unreadable:
+Add a `skip` helper next to `ok`/`ko` (currently `test.sh:13-14`) — one assertion can only run where `/dev/tty` cannot be opened:
 
 ```bash
 skip() { printf '  skip - %s\n' "$1"; }
@@ -156,10 +156,11 @@ grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
 
 # No terminal and no --level: install.sh could neither prompt nor proceed, so the
 # bootstrap must say so itself — the user typed a URL, not a script with flags.
-# `-r /dev/tty` only checks permissions, not whether opening it actually succeeds
-# (see bootstrap.sh), so this guard attempts the same open to agree with the code
-# under test. Only assertable where that open fails; skipped where it succeeds.
-if { : < /dev/tty; } 2>/dev/null; then
+# `-r /dev/tty` only checks permissions, and a redirection failure on the `:`
+# special built-in kills a POSIX shell (dash) outright, so this guard opens the
+# terminal in a subshell to agree with bootstrap.sh. Only assertable where that
+# open fails; skipped where it succeeds.
+if (exec 3< /dev/tty) 2>/dev/null; then
   skip "no-tty guidance (a terminal is available here)"
 else
   out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
@@ -219,11 +220,11 @@ fi
 # no level was passed, say so here: install.sh's own message names a flag the user
 # never saw, because they invoked a URL rather than a script with arguments.
 #
-# `-r /dev/tty` only tests permissions: with no controlling terminal the node is
-# world-readable but opening it fails (ENXIO), which is the case under cron,
-# systemd, `nohup` and `docker run` without -t. Attempt the open instead.
+# `-r /dev/tty` only tests permissions, and a redirection failure on the `:`
+# special built-in makes a POSIX shell (dash) exit outright. A subshell
+# contains both problems: it either opens the terminal or dies alone.
 HAVE_TTY=0
-if { : < /dev/tty; } 2>/dev/null; then
+if (exec 3< /dev/tty) 2>/dev/null; then
   HAVE_TTY=1
 fi
 if [ "$HAVE_TTY" = 0 ]; then
@@ -281,12 +282,12 @@ The suite deliberately never hits the network, so exercise the real URL once aga
 ```bash
 TMPCFG="$(mktemp -d)"
 CLAUDE_CONFIG_DIR="$TMPCFG" sh ./bootstrap.sh --level S --dry-run
-CLAUDE_CONFIG_DIR="$TMPCFG" LEARNER_REF=feat/global-install sh ./bootstrap.sh --level S
+CLAUDE_CONFIG_DIR="$TMPCFG" sh ./bootstrap.sh --level S
 find "$TMPCFG" -type f | sort
 rm -rf "$TMPCFG"
 ```
 
-Expected: the `--dry-run` prints what would be written and creates nothing; the second run lays down 5 hooks, `SKILL.md`, 4 references, `learner.json`, `settings.json` and `settings.json.bak`. Note the default `main` does not yet contain the user-level installer — pass `LEARNER_REF=feat/global-install` until PR #1 merges. Paste the output in the task report.
+Expected: the `--dry-run` prints what would be written and creates nothing; the second run lays down 5 hooks, `SKILL.md`, 4 references, `learner.json`, `settings.json` and `settings.json.bak`. `main` now contains the user-level installer (PR #1 merged), so the default ref applies. Paste the output in the task report.
 
 - [ ] **Step 7: Commit**
 
@@ -425,8 +426,8 @@ git commit -m "docs: lead with the one-line install, state platform support"
 | §4 repo changes | Task 1 (bootstrap, test, CI), Task 2 (README) |
 | §5 README, platform table | Task 2 Steps 3, 4 |
 | §6 trust posture | Task 2 Step 3 |
-| §7 sequencing | Global Constraints; Task 1 Step 6 uses `LEARNER_REF=feat/global-install` until PR #1 merges |
+| §7 sequencing | Global Constraints; PR #1 has merged, so Task 1 Step 6 now runs against `main` directly |
 
 **Known gaps, both deliberate:**
-- The no-tty assertion cannot run where `/dev/tty` is readable, so it prints `skip` locally and only really executes in CI. A test-only override of the tty check would make it always-run at the cost of a hook that exists solely for tests, which is worse.
+- The no-tty assertion cannot run where `/dev/tty` can be opened, so it prints `skip` locally and only really executes where the open fails (CI, cron, `nohup`, `docker run` without `-t`). A test-only override of the tty check would make it always-run at the cost of a hook that exists solely for tests, which is worse.
 - No assertion covers the real network fetch; Task 1 Step 6 is a manual check instead, and its output goes in the task report. Adding a network call to `test.sh` would make CI fail on an unrelated outage.
