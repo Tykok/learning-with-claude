@@ -883,8 +883,10 @@ grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
 
 # No terminal and no --level: install.sh could neither prompt nor proceed, so the
 # bootstrap must say so itself — the user typed a URL, not a script with flags.
-# Only assertable where /dev/tty is unreadable (CI); skipped in an interactive shell.
-if [ -r /dev/tty ]; then
+# `-r /dev/tty` only checks permissions, not whether opening it actually succeeds
+# (see bootstrap.sh), so this guard attempts the same open to agree with the code
+# under test. Only assertable where that open fails; skipped where it succeeds.
+if { : < /dev/tty; } 2>/dev/null; then
   skip "no-tty guidance (a terminal is available here)"
 else
   out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \

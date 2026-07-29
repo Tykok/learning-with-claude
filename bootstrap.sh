@@ -37,8 +37,14 @@ fi
 # terminal is reopened for it. Where there is no terminal at all (CI, Docker) and
 # no level was passed, say so here: install.sh's own message names a flag the user
 # never saw, because they invoked a URL rather than a script with arguments.
+#
+# `-r /dev/tty` only tests permissions: with no controlling terminal the node is
+# world-readable but opening it fails (ENXIO), which is the case under cron,
+# systemd, `nohup` and `docker run` without -t. Attempt the open instead.
 HAVE_TTY=0
-[ -r /dev/tty ] && HAVE_TTY=1
+if { : < /dev/tty; } 2>/dev/null; then
+  HAVE_TTY=1
+fi
 if [ "$HAVE_TTY" = 0 ]; then
   case " $* " in
     *" --level "*|*" --level="*) ;;
