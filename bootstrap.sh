@@ -38,11 +38,11 @@ fi
 # no level was passed, say so here: install.sh's own message names a flag the user
 # never saw, because they invoked a URL rather than a script with arguments.
 #
-# `-r /dev/tty` only tests permissions: with no controlling terminal the node is
-# world-readable but opening it fails (ENXIO), which is the case under cron,
-# systemd, `nohup` and `docker run` without -t. Attempt the open instead.
+# `-r /dev/tty` only tests permissions, and a redirection failure on the `:`
+# special built-in makes a POSIX shell (dash) exit outright. A subshell
+# contains both problems: it either opens the terminal or dies alone.
 HAVE_TTY=0
-if { : < /dev/tty; } 2>/dev/null; then
+if (exec 3< /dev/tty) 2>/dev/null; then
   HAVE_TTY=1
 fi
 if [ "$HAVE_TTY" = 0 ]; then

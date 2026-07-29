@@ -825,6 +825,7 @@ after=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
   || ko "bootstrap removes its temp dir on success (before=$before after=$after)"
 
 before=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
+mkdir -p "$WORK/boot5"
 CLAUDE_CONFIG_DIR="$WORK/boot5" LEARNER_URL="file://$WORK/nope.tgz" \
   TMPDIR="$WORK/tmp" sh "$BOOT" --level S >/dev/null 2>&1
 after=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
@@ -832,6 +833,7 @@ after=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
   && ok "bootstrap removes its temp dir on a failed fetch" \
   || ko "bootstrap removes its temp dir on a failed fetch (before=$before after=$after)"
 
+mkdir -p "$WORK/boot6"
 out=$(CLAUDE_CONFIG_DIR="$WORK/boot6" LEARNER_URL="file://$WORK/nope.tgz" \
   sh "$BOOT" --level S 2>&1) \
   && ko "bootstrap fails on an unreachable URL" \
@@ -843,6 +845,7 @@ printf '%s' "$out" | grep -qi 'error' \
 # An archive without install.sh must be named as such, not fail deep inside bash.
 BADTAR="$WORK/bad.tgz"; mkdir -p "$WORK/badsrc/inner"; echo x > "$WORK/badsrc/inner/f"
 tar -czf "$BADTAR" -C "$WORK" badsrc
+mkdir -p "$WORK/boot7"
 out=$(CLAUDE_CONFIG_DIR="$WORK/boot7" LEARNER_URL="file://$BADTAR" \
   sh "$BOOT" --level S 2>&1) \
   && ko "bootstrap rejects an archive with no install.sh" \
@@ -883,10 +886,11 @@ grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
 
 # No terminal and no --level: install.sh could neither prompt nor proceed, so the
 # bootstrap must say so itself — the user typed a URL, not a script with flags.
-# `-r /dev/tty` only checks permissions, not whether opening it actually succeeds
-# (see bootstrap.sh), so this guard attempts the same open to agree with the code
-# under test. Only assertable where that open fails; skipped where it succeeds.
-if { : < /dev/tty; } 2>/dev/null; then
+# `-r /dev/tty` only checks permissions, and a redirection failure on the `:`
+# special built-in kills a POSIX shell (dash) outright, so this guard opens the
+# terminal in a subshell to agree with bootstrap.sh. Only assertable where that
+# open fails; skipped where it succeeds.
+if (exec 3< /dev/tty) 2>/dev/null; then
   skip "no-tty guidance (a terminal is available here)"
 else
   out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
