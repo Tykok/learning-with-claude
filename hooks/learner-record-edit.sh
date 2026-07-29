@@ -20,6 +20,12 @@ FP=$(printf '%s' "$DATA" | jq -r '.tool_input.file_path // ""')
 [ -n "$SID" ] || exit 0
 [ -n "$FP" ] || exit 0
 
+# Quiz material is repo material. An edit outside the repo (~/.zshrc, another
+# project) is never quizzed on: a `fill` exercise there would cut a hole the
+# Stop hook's repo-scoped guardrail could never see, so a crash would leave it
+# broken for good.
+case "$FP" in "$ROOT"/*) ;; *) exit 0 ;; esac
+
 # Built-in floor, not overridable through config: without it, every
 # package-lock.json and generated file would become quiz material.
 case "$FP" in
