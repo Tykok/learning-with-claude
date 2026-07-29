@@ -19,7 +19,7 @@
 - Canonical repo slug: `Tykok/learning-with-claude`. Default ref: `main`, overridable via `LEARNER_REF`.
 - All content in English. Conventional Commits, English subjects ≤ 72 chars.
 - **Never run `install.sh`, `uninstall.sh` or `bootstrap.sh` without an explicit throwaway `CLAUDE_CONFIG_DIR`.** Without it they operate on the real `~/.claude`.
-- This branch is stacked on `feat/global-install` (PR #1). Do not rebase it; that happens after the PR merges.
+- `feat/global-install` (PR #1) has already merged into `main`, and this branch has already been rebased onto it — Task 1 Step 6 and any example below run against `main` directly.
 
 ## File Structure
 

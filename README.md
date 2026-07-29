@@ -56,12 +56,44 @@ re-blocks while a leftover `// LEARNER-TODO` marker survives — precisely:
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
   every hook at run time — without it they are inert, and `SessionStart` says so.
-- **POSIX `sh`** — macOS, Linux, WSL. Native Windows without a `sh` is not supported.
+- **`curl` and `tar`** on `PATH` for the one-line install below; the clone-and-run path does
+  not need them.
+- **A POSIX-compliant shell to run the hooks** — they are plain `sh` scripts, wired into
+  `settings.json` as `sh "$CFG/hooks/…"`. See the platform table below for what that means
+  in practice.
 - **Claude Code** installed (`claude` on `PATH`, or an existing config directory).
+
+| Platform | Supported | Notes |
+|----------|-----------|-------|
+| macOS | yes | needs `jq` |
+| Linux | yes | needs `jq` |
+| Windows via WSL | yes | it is a Linux environment |
+| Windows via Git Bash | yes | provides the POSIX `sh` the hooks need |
+| Windows, native | no | the hooks are POSIX `sh` scripts; with no POSIX shell, Claude Code cannot run them |
+
+Homebrew and `apt` packages are not available yet.
 
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
+```
+
+It asks for your level, how often you want a synthesis question, and how many holes a `fill`
+exercise leaves — then writes everything under your Claude Code config directory. To skip the
+prompts, pass the same flags `install.sh` takes; `bootstrap.sh` forwards them through unchanged:
+
+```bash
+curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
+LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh    # pin an exact ref instead of main
+```
+
+Prefer to read the code before running it? Clone and use the installer directly — it stays a
+first-class path, not a fallback:
+
+```bash
+git clone https://github.com/Tykok/learning-with-claude
+cd learning-with-claude
 ./install.sh                                          # interactive prompt for level/synthesis/blanks
 ./install.sh --level S --synthesis normal --blanks 2  # non-interactive, one shot
 ./install.sh --dry-run                                # print what would happen, write nothing
@@ -81,6 +113,12 @@ existing config. **It writes nothing into any repository** — every path it tou
 `$CLAUDE_CONFIG_DIR` (default `~/.claude`), and every hook command it wires into
 `settings.json` carries the literal `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, so moving your
 config directory later needs no reinstall.
+
+On trust: the fetch is plain HTTPS from `codeload.github.com`, and `LEARNER_REF` pins an exact
+ref rather than tracking `main`. A checksum baked into `bootstrap.sh` would not add anything
+here — the script and the archive it fetches share an origin, so anyone able to change one can
+change the other. If that boundary matters to you, the clone-and-run path above never crosses
+it: you read `install.sh` before you run it.
 
 ## Levels
 

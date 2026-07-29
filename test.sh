@@ -781,6 +781,33 @@ grep -qE '^[|] [`]?[DJCSE][`]? ' "$RM" \
   && ok "README documents the letter levels" \
   || ko "README documents the letter levels"
 
+grep -qF 'bootstrap.sh' "$RM" \
+  && ok "README documents the one-line install" \
+  || ko "README documents the one-line install"
+
+grep -qF 'LEARNER_REF' "$RM" \
+  && ok "README documents pinning a ref" \
+  || ko "README documents pinning a ref"
+
+grep -qF 'sh -s --' "$RM" \
+  && ok "README documents the non-interactive one-liner form" \
+  || ko "README documents the non-interactive one-liner form"
+
+for p in WSL 'Git Bash'; do
+  grep -qF "$p" "$RM" && ok "README covers $p" || ko "README covers $p"
+done
+
+# The Windows gap must carry its reason, not just a "no". Case-insensitive on
+# purpose: the table capitalises "Windows, native" while the prose could say
+# "native Windows", and a case-sensitive pattern here would never match.
+grep -qiE 'native windows|windows, native' "$RM" \
+  && ok "README states native Windows is unsupported" \
+  || ko "README states native Windows is unsupported"
+
+grep -qiF 'posix' "$RM" \
+  && ok "README gives the reason native Windows cannot work" \
+  || ko "README gives the reason native Windows cannot work"
+
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
 
@@ -838,9 +865,28 @@ out=$(CLAUDE_CONFIG_DIR="$WORK/boot6" LEARNER_URL="file://$WORK/nope.tgz" \
   sh "$BOOT" --level S 2>&1) \
   && ko "bootstrap fails on an unreachable URL" \
   || ok "bootstrap fails on an unreachable URL"
-printf '%s' "$out" | grep -qi 'error' \
-  && ok "the unreachable-URL message is an error line" \
-  || ko "the unreachable-URL message is an error line"
+
+# Every die() message is prefixed "error: ", so a bare 'error' grep would pass
+# against ANY failure path, not specifically this one — the wording unique to
+# the fetch failure is "could not fetch". That branch only fires when the
+# `curl | tar` pipeline itself exits non-zero, and a *missing* file (nope.tgz
+# above, curl emits zero bytes) is not a reliable way to force that: GNU tar
+# rejects an empty gzip stream (non-zero exit -> "could not fetch"), but bsdtar
+# (macOS) treats zero bytes as a valid, empty archive and exits 0, so the
+# pipeline "succeeds" and the *next* check ("no install.sh") fires instead.
+# Confirmed by running both tar implementations directly. An existing file
+# with bytes that are not gzip at all closes that gap: both implementations
+# reject it identically, so the pipeline fails the same way everywhere.
+GARBAGE="$WORK/garbage.tgz"
+printf 'not a gzip archive at all, just plain bytes\n' > "$GARBAGE"
+mkdir -p "$WORK/boot6b"
+out=$(CLAUDE_CONFIG_DIR="$WORK/boot6b" LEARNER_URL="file://$GARBAGE" \
+  sh "$BOOT" --level S 2>&1) \
+  && ko "bootstrap fails when the fetch yields no usable archive" \
+  || ok "bootstrap fails when the fetch yields no usable archive"
+printf '%s' "$out" | grep -qF 'could not fetch' \
+  && ok "the failed-fetch message names the failed fetch" \
+  || ko "the failed-fetch message names the failed fetch"
 
 # An archive without install.sh must be named as such, not fail deep inside bash.
 BADTAR="$WORK/bad.tgz"; mkdir -p "$WORK/badsrc/inner"; echo x > "$WORK/badsrc/inner/f"
