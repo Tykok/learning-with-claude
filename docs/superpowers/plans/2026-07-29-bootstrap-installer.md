@@ -156,8 +156,10 @@ grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
 
 # No terminal and no --level: install.sh could neither prompt nor proceed, so the
 # bootstrap must say so itself — the user typed a URL, not a script with flags.
-# Only assertable where /dev/tty is unreadable (CI); skipped in an interactive shell.
-if [ -r /dev/tty ]; then
+# `-r /dev/tty` only checks permissions, not whether opening it actually succeeds
+# (see bootstrap.sh), so this guard attempts the same open to agree with the code
+# under test. Only assertable where that open fails; skipped where it succeeds.
+if { : < /dev/tty; } 2>/dev/null; then
   skip "no-tty guidance (a terminal is available here)"
 else
   out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
@@ -216,8 +218,14 @@ fi
 # terminal is reopened for it. Where there is no terminal at all (CI, Docker) and
 # no level was passed, say so here: install.sh's own message names a flag the user
 # never saw, because they invoked a URL rather than a script with arguments.
+#
+# `-r /dev/tty` only tests permissions: with no controlling terminal the node is
+# world-readable but opening it fails (ENXIO), which is the case under cron,
+# systemd, `nohup` and `docker run` without -t. Attempt the open instead.
 HAVE_TTY=0
-[ -r /dev/tty ] && HAVE_TTY=1
+if { : < /dev/tty; } 2>/dev/null; then
+  HAVE_TTY=1
+fi
 if [ "$HAVE_TTY" = 0 ]; then
   case " $* " in
     *" --level "*|*" --level="*) ;;

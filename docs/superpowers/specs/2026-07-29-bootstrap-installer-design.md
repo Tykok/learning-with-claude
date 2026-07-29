@@ -64,7 +64,7 @@ Flow, in order:
    avoids an intermediate file. Both BSD and GNU `tar` support the flag.
 4. **Hand over to the installer**, reconnecting the terminal (see §2):
    ```sh
-   if [ -r /dev/tty ]; then
+   if { : < /dev/tty; } 2>/dev/null; then
      bash "$TMP/install.sh" "$@" < /dev/tty
    else
      bash "$TMP/install.sh" "$@"
@@ -88,8 +88,21 @@ this feature exists to provide.
 The fix is to reopen the real terminal for the installer: `< /dev/tty`. With stdin pointing at
 a tty, `[ -t 0 ]` is true and the prompts work normally.
 
-Where `/dev/tty` is not readable — CI, a Docker build, a hook — the bootstrap detects it
-*before* handing over and, if no `--level` was passed, prints the exact command to re-run:
+Detecting "no terminal" has to be an open *attempt*, not a permission check.
+`[ -r /dev/tty ]` only tests the device node's permission bits, and `/dev/tty` is typically
+world-readable (`crw-rw-rw-`) even with no controlling terminal attached, so that check reports
+`true` right up until the real `< /dev/tty` redirection fails with `ENXIO` — exactly the case
+under cron, systemd units, `nohup`, and `docker run` without `-t`. The bootstrap instead
+attempts the open itself before handing over:
+
+```sh
+HAVE_TTY=0
+if { : < /dev/tty; } 2>/dev/null; then
+  HAVE_TTY=1
+fi
+```
+
+and, if that fails and no `--level` was passed, prints the exact command to re-run:
 
 ```
 error: no terminal available, so the level cannot be asked for.
