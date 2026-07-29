@@ -24,7 +24,20 @@ FP=$(printf '%s' "$DATA" | jq -r '.tool_input.file_path // ""')
 # project) is never quizzed on: a `fill` exercise there would cut a hole the
 # Stop hook's repo-scoped guardrail could never see, so a crash would leave it
 # broken for good.
-case "$FP" in "$ROOT"/*) ;; *) exit 0 ;; esac
+#
+# ROOT is physical (git rev-parse --show-toplevel) while file_path is whatever path
+# the session used, so a repo opened through a symlink fails the cheap string match
+# and must be resolved before it can be dropped. One subshell, and only on that
+# slow path: the common case stays a pattern match.
+case "$FP" in
+  "$ROOT"/*) ;;
+  *)
+    _rd=$(cd "${FP%/*}" 2>/dev/null && pwd -P) || _rd=''
+    case "${_rd:-/dev/null}/" in
+      "$ROOT"/*) ;;
+      *) exit 0 ;;
+    esac ;;
+esac
 
 # Built-in floor, not overridable through config: without it, every
 # package-lock.json and generated file would become quiz material.

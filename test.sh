@@ -251,6 +251,19 @@ rec "$SID8" "${WORK}/projX/src/Sibling.kt"
   && ko "a sibling directory sharing the repo's name prefix is not recorded" \
   || ok "a sibling directory sharing the repo's name prefix is not recorded"
 
+# …but a repo opened through a symlink must still be recorded: the root is physical
+# (git rev-parse --show-toplevel) while file_path is whatever path the session used.
+# $WORK is pre-resolved at the top of this file, so this needs its own symlink, and
+# a real directory, since resolving a path means visiting it.
+SID9=rec9
+mkdir -p "$WORK/proj/src"
+ln -sfn "$WORK/proj" "$WORK/projlink"
+printf '{"session_id":"%s","tool_input":{"file_path":"%s"}}' "$SID9" "$WORK/projlink/src/Sym.kt" \
+  | CLAUDE_PROJECT_DIR="$WORK/projlink" sh "$REC"
+[ -s "$(edits "$SID9")" ] \
+  && ok "an edit reaching the repo through a symlink is still recorded" \
+  || ko "an edit reaching the repo through a symlink is still recorded"
+
 # --- quiz (Stop hook) -------------------------------------------------------
 quiz() { printf '{"session_id":"%s","stop_hook_active":%s}' "$1" "${2:-false}" | sh "$QUIZ"; }
 
