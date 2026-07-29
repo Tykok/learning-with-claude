@@ -18,9 +18,9 @@ with Claude Code — no per-repo setup.
   hook has something to quiz on.
 - **`Stop`** — blocks once and asks Claude, via the `learner` skill, to pose **one** question
   about the code just written (or, periodically, a **synthesis** question about how the whole
-  session's work fits together). The same hook carries a guardrail: it re-blocks
-  unconditionally, even with the quiz disabled, while any `// LEARNER-TODO` marker survives
-  anywhere in the repo, so a crashed fill-in exercise can never leave the tree broken.
+  session's work fits together). The same hook carries a guardrail: while a `// LEARNER-TODO`
+  marker left by an unfinished exercise survives in the working tree, it re-blocks — even
+  with the quiz disabled — so a crashed fill-in exercise can never leave the tree broken.
 - **`learner` skill**, invoked on demand or by the `Stop` hook trigger: `quiz` (Q&A over the
   current branch diff), `status` (read-only: level + what to improve), `improve` (coach one
   weak spot to mastery), `config` (view/edit settings, including `off`/`on` for this repo).
@@ -38,11 +38,19 @@ directory.
   comments, you write the missing code back **in the file**, Claude restores the correct
   version and validates it.
 
-The `fill` style carries a guardrail, not just a convention: the `Stop` hook blocks
-unconditionally — even with the quiz otherwise disabled — while any `// LEARNER-TODO` marker
-survives anywhere in the repo. A session that ends mid-exercise (crash, closed terminal,
-`/clear`) can never leave source code broken; the next `Stop` keeps blocking until the marker
-is gone.
+The `fill` style carries a guardrail, not just a convention. A session that ends mid-exercise
+(crash, closed terminal, `/clear`) must not leave source code broken, so the `Stop` hook
+re-blocks while a leftover `// LEARNER-TODO` marker survives — precisely:
+
+- **Leftovers only.** A marker is a leftover when the working tree has it and `HEAD` does not.
+  Files that carry the string in a commit (this project's own docs, for instance) are repo
+  content, not a broken exercise, and never trigger it.
+- **Untracked files count.** A file the session just created is the commonest case.
+- **Even when the quiz is off.** Neither `enabled: false` nor a missing `level` silences it;
+  an abandoned exercise still has to be cleaned up. Only `disabledPaths` does — a repo you
+  told learner to leave alone stays untouched.
+- **Bounded.** At most two blocks per unfinished exercise, then the session is allowed to end
+  rather than hang. Fixing the tree restores the budget for a later exercise.
 
 ## Requirements
 
@@ -97,7 +105,9 @@ Three ways, depending on scope:
 3. **One repo you don't own** (nothing should be committed to it) — add its path to
    `disabledPaths` in the global config, e.g. `learner config disabledPaths='["/path/to/repo"]'`.
    This writes nothing into that repo. Matching is a path-prefix check: disabling `/a/b`
-   silences `/a/b/c` but not a sibling like `/a/bee`.
+   silences `/a/b/c` but not a sibling like `/a/bee`. A leading `~/` is expanded, and an
+   entry that exists on disk is resolved to its physical path first, so an entry pointing
+   through a symlink still matches.
 
 ## Settings
 
@@ -120,8 +130,9 @@ Two layers, later wins **key by key** — arrays are replaced wholesale, never m
 
 See `learner.json.example`.
 
-File tracking is an **exclusion list**, not an include list: every file Claude edits counts as
-quiz material, minus a built-in, non-configurable floor —
+File tracking is an **exclusion list**, not an include list: every file Claude edits **inside
+the repo** counts as quiz material (an edit outside it — a dotfile in `$HOME`, another
+project — is never recorded), minus a built-in, non-configurable floor —
 
 - directories anywhere in the path: `node_modules/`, `build/`, `dist/`, `out/`, `target/`,
   `vendor/`, `.git/`, `.gradle/`, `__pycache__/`, `.venv/`, `coverage/`, `__snapshots__/`
