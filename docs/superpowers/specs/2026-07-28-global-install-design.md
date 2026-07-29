@@ -86,12 +86,38 @@ learner_config() {
 3. the merged config has a non-empty `level`;
 4. merged `enabled` is not `false`;
 5. the repo's real path is not prefixed by any entry of `disabledPaths` (entries are
-   tilde-expanded and compared as path prefixes, so a parent directory disables every repo
-   under it).
+   tilde-expanded, resolved to their physical path when they exist on disk, and compared as
+   path prefixes, so a parent directory disables every repo under it). Resolving matters:
+   the root an entry is compared against is `git rev-parse --show-toplevel`, i.e. physical,
+   so a raw entry reaching the repo through a symlink would silently fail to match.
 
-The `LEARNER-TODO` guardrail in `learner-quiz.sh` is **exempt**: it runs unconditionally,
-even with `enabled: false` and even with no config, so a crashed fill-in exercise can never
-leave source broken.
+The `LEARNER-TODO` guardrail in `learner-quiz.sh` is **partly exempt**. It must catch a
+crashed fill-in exercise even where the quiz is switched off, so conditions 3 and 4 (`level`,
+`enabled`) do not apply to it — but at user level it runs in every repo, so it is not
+unconditional either:
+
+- **Leftovers only.** A marker counts when the working tree has it and `HEAD` does not. A
+  committed marker is repo content, not a broken exercise — this project's own README, tests
+  and skill files carry the string, and an exercise leftover is by definition an uncommitted
+  working-tree change. The hook computes the file-level set difference between
+  `git grep --untracked -l` and `git grep -l … HEAD` (POSIX only: no process substitution, no
+  `comm`). A repo with no commits yet has no `HEAD` list, so every marker is a leftover.
+- **Untracked files included.** A file the session just created with `Write` is the primary
+  case; a tracked-only grep would miss exactly what the guardrail exists for.
+- **`disabledPaths` still applies** (condition 5), together with condition 1 (`jq`) and 2 (a
+  git repo). A repo the dev told learner to leave alone stays silent and untouched — that is
+  the one promise the guardrail may not break, and it is why `disabledPaths` entries are
+  canonicalised.
+- **Bounded.** At most two blocks per outstanding exercise, counted in the per-session scratch
+  file `claude-learner-<sid>.guard`; after that the hook says nothing and lets the session
+  end rather than hang. A stop with a clean tree clears the counter, so a later exercise gets
+  a fresh budget.
+- It matches `// LEARNER-TODO` (with the comment prefix), and says "and N more" when the file
+  list is truncated.
+
+Consequence of the file-level diff: a *new* uncommitted file that legitimately contains the
+string trips the guardrail until it is committed. Accepted — the alternative is counting
+markers per file, which buys little for a marker the tooling only ever writes as an exercise.
 
 Three ways to turn it off:
 
@@ -261,17 +287,21 @@ Preflight, in order:
 
 1. **Claude Code present** — `command -v claude`, or `$CFG` exists. Otherwise **abort** with
    the install link. Installing without Claude Code does nothing useful.
-2. **`jq`** — missing does not abort, but warns loudly: every hook is inert until `jq` is
-   installed.
+2. **`jq`** — missing **aborts**. The hook wiring is merged into `settings.json` with `jq`, so
+   there is no install to speak of without it (and every hook would be inert anyway).
 3. `$CFG/settings.json` unreadable or invalid JSON → abort **before** touching it.
-   Otherwise back up to `settings.json.bak`, then merge idempotently (dedupe hook entries
-   whose command contains `learner-`).
+   Otherwise back up to `settings.json.bak` — only if no backup exists yet, so a second
+   install cannot overwrite the pristine one with the already-merged file — then merge
+   idempotently (dedupe hook entries whose command contains `learner-`).
+   `uninstall.sh` validates the same file the same way, before it deletes anything: hooks
+   removed while their wiring survives would break every session in every project.
 4. Onboarding: three prompts (level, synthesis frequency, blanks), Enter accepts the
    default. No TTY and no flags → use defaults, but `level` is required, so abort if it was
    not passed.
 
-Hook commands are written with `$CFG` resolved at install time, so a non-default
-`CLAUDE_CONFIG_DIR` is honoured.
+Hook commands are written with the literal `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, so the shell
+expands it when the hook runs rather than the installer baking a path in: a non-default
+`CLAUDE_CONFIG_DIR` is honoured, and moving the config directory later needs no reinstall.
 
 ```bash
 ./uninstall.sh                    # skill + hooks + settings blocks; keeps progress data
