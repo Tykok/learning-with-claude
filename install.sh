@@ -9,11 +9,12 @@
 #   --synthesis W  How often a synthesis question replaces a granular one.
 #   --blanks N     Holes left in a fill-in exercise.
 #   --dry-run      Print what would be written, write nothing.
-#   --yes          Never prompt; use defaults for anything not passed.
+#   --yes          Never prompt; defaults for anything not passed — but --level
+#                  has no default, so pass it too or the install aborts.
 #
 # Idempotent: re-running re-copies the files and re-merges the hook wiring
 # without duplicating entries, and never overwrites an existing config.
-# Requires: Claude Code. Strongly recommends: jq.
+# Requires: Claude Code, and jq (the hook-wiring merge cannot run without it).
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -32,7 +33,7 @@ while [ $# -gt 0 ]; do
     --blanks=*)  BLANKS="${1#*=}"; shift ;;
     --dry-run)   DRY=1; shift ;;
     --yes|-y)    YES=1; shift ;;
-    -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unexpected argument '$1' (learner installs globally, not per repo)"; exit 1 ;;
   esac
 done
@@ -44,7 +45,9 @@ if ! command -v claude >/dev/null 2>&1 && [ ! -d "$CFG_DIR" ]; then
   exit 1
 fi
 
-# 2) jq is required by every hook, but its absence is recoverable.
+# 2) jq is required: every hook needs it at run time, and the wiring merge below
+#    cannot happen without it. Checked here, aborted at (3) once a settings.json
+#    we might have been able to validate has been looked at.
 HAVE_JQ=1
 command -v jq >/dev/null 2>&1 || HAVE_JQ=0
 
@@ -125,7 +128,9 @@ cp "$SRC_DIR"/skills/learner/references/*.md "$CFG_DIR/skills/learner/references
 echo "  ✓ skill → $CFG_DIR/skills/learner/"
 
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-cp "$SETTINGS" "$SETTINGS.bak"
+# Keep the pristine, pre-learner backup: a second install must not overwrite it
+# with the already-merged file.
+[ -f "$SETTINGS.bak" ] || cp "$SETTINGS" "$SETTINGS.bak"
 TMP="$(mktemp)"
 jq -n \
   --argjson base "$(cat "$SETTINGS")" \
