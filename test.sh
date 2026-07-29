@@ -773,7 +773,10 @@ grep -qF -- '--project' "$RM" \
   && ok "README documents the legacy cleanup flag" \
   || ko "README documents the legacy cleanup flag"
 
-grep -qE '^\| \`?[DJCSE]\`? ' "$RM" \
+# Bracket expressions, not backslash escapes: `\|` is defined in an ERE but a
+# backslash before an ordinary character like a backtick is undefined, and
+# implementations disagree — ugrep matched it, GNU grep 3.11 did not.
+grep -qE '^[|] [`]?[DJCSE][`]? ' "$RM" \
   && ok "README documents the letter levels" \
   || ko "README documents the letter levels"
 
