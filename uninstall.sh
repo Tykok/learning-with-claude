@@ -19,14 +19,34 @@ PROJECT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --purge) PURGE=1; shift ;;
-    --project) PROJECT="${2:-}"; shift 2 ;;
-    --project=*) PROJECT="${1#*=}"; shift ;;
+    # An empty value must never fall through to the global uninstall: `--project=`
+    # is a typo for "clean one repo", not permission to wipe every repo's data.
+    --project)
+      PROJECT="${2:-}"
+      [ -n "$PROJECT" ] || { echo "error: --project needs a repo path (usage: ./uninstall.sh --project /path/to/repo)"; exit 1; }
+      shift 2 ;;
+    --project=*)
+      PROJECT="${1#*=}"
+      [ -n "$PROJECT" ] || { echo "error: --project needs a repo path (usage: ./uninstall.sh --project /path/to/repo)"; exit 1; }
+      shift ;;
     -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unexpected argument '$1'"; exit 1 ;;
   esac
 done
 
 command -v jq >/dev/null 2>&1 || { echo "error: jq is required"; exit 1; }
+
+# A settings.json we cannot parse is a hard stop, checked before anything is
+# deleted (install.sh does the same). Otherwise jq fails half-way and leaves the
+# wiring pointing at hooks that no longer exist — at user level, that breaks
+# every session in every project.
+require_parsable() {
+  [ -f "$1" ] || return 0
+  jq -e . "$1" >/dev/null 2>&1 || {
+    echo "error: $1 is not valid JSON — fix or move it, then re-run."
+    exit 1
+  }
+}
 
 # Strip every learner hook entry from a settings.json, dropping events left empty.
 strip_wiring() {
@@ -48,6 +68,7 @@ strip_wiring() {
 
 if [ -n "$PROJECT" ]; then
   TARGET="$(cd "$PROJECT" && pwd)"
+  require_parsable "$TARGET/.claude/settings.json"
   echo "→ Cleaning the legacy per-project install in: $TARGET"
   rm -f "$TARGET/.claude/hooks/learner-onboard.sh" \
         "$TARGET/.claude/hooks/learner-record-edit.sh" \
@@ -70,6 +91,7 @@ if [ -n "$PROJECT" ]; then
 fi
 
 CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+require_parsable "$CFG_DIR/settings.json"
 echo "→ Removing learner from: $CFG_DIR"
 
 rm -f "$CFG_DIR/hooks/learner-config.sh" \
