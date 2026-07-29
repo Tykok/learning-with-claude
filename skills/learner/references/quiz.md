@@ -41,6 +41,8 @@ spot when relevant (spaced repetition).
 
 - One question at a time. Wait for each answer before asking the next; never answer
   for the dev.
+- Prefer plain chat questions; use the multiple-choice tool only when the options
+  genuinely help. Recognising the right answer in a list is not recalling it.
 - Brief feedback (correct / to fix, plus the missing bit) after each answer.
 - Spread coverage across the branch's distinct areas (data model, persistence, core
   logic, error handling, external integrations, config/build) rather than re-asking
