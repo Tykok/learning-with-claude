@@ -113,6 +113,16 @@ cfgsh 'learner_path_disabled "/a/bee" "{\"disabledPaths\":[\"/a/b\"]}"' \
   && ko "disabledPaths does not match a sibling with a shared prefix" \
   || ok "disabledPaths does not match a sibling with a shared prefix"
 
+# The root an entry is compared against is physical (git rev-parse --show-toplevel),
+# so an entry that reaches the repo through a symlink must still match — otherwise
+# the only off-switch the guardrail honours fails silently. /a/b above covers the
+# other half: an entry that does not exist on disk keeps its raw string.
+SYMB="$WORK/symbase"; mkdir -p "$SYMB/real/repo"
+ln -sfn "$SYMB/real" "$SYMB/link"
+cfgsh "learner_path_disabled '$SYMB/real/repo' '{\"disabledPaths\":[\"$SYMB/link\"]}'" \
+  && ok "disabledPaths matches an entry that points through a symlink" \
+  || ko "disabledPaths matches an entry that points through a symlink"
+
 cfgsh 'learner_active "{\"level\":\"S\",\"enabled\":true}" "/a/b"' \
   && ok "learner_active passes with a level, enabled, inside a repo" \
   || ko "learner_active passes with a level, enabled, inside a repo"
@@ -227,6 +237,20 @@ rec "$SID6" "$WORK/proj/src/Baz.kt"
   || ok "no-op when the repo is under disabledPaths"
 echo '{"level":"S"}' > "$GCFG"
 
+# Quiz material is repo material: a `fill` hole cut outside the repo would sit
+# where the Stop hook's guardrail can never see it.
+SID7=rec7
+rec "$SID7" "$WORK/outside.kt"
+[ -s "$(edits "$SID7")" ] \
+  && ko "an edit outside the repo is never recorded" \
+  || ok "an edit outside the repo is never recorded"
+
+SID8=rec8
+rec "$SID8" "${WORK}/projX/src/Sibling.kt"
+[ -s "$(edits "$SID8")" ] \
+  && ko "a sibling directory sharing the repo's name prefix is not recorded" \
+  || ok "a sibling directory sharing the repo's name prefix is not recorded"
+
 # --- quiz (Stop hook) -------------------------------------------------------
 quiz() { printf '{"session_id":"%s","stop_hook_active":%s}' "$1" "${2:-false}" | sh "$QUIZ"; }
 
@@ -259,6 +283,14 @@ printf '%s' "$reason" | grep -q 'level: S' \
 printf '%s' "$reason" | grep -q 'mode: granular' \
   && ok "first question is granular" \
   || ko "first question is granular"
+
+printf '%s' "$reason" | grep -q 'styles: auto' \
+  && ok "block reason carries the styles field" \
+  || ko "block reason carries the styles field"
+
+printf '%s' "$reason" | grep -qF -- '— files:' \
+  && ok "block reason carries the files field" \
+  || ko "block reason carries the files field"
 
 # often = every 2nd question is a synthesis
 echo '{"level":"S","synthesisFrequency":"often"}' > "$GCFG"
@@ -341,6 +373,13 @@ jq -e '[.. | .command? // empty | select(contains("learner-"))]
   && ok "hook commands resolve CLAUDE_CONFIG_DIR at run time" \
   || ko "hook commands resolve CLAUDE_CONFIG_DIR at run time"
 
+# $I has been installed into twice by now: the backup must still be the settings
+# from before learner, not the already-merged file.
+jq -e '[.. | .command? // empty | select(contains("learner-"))] | length == 0' \
+  "$I/settings.json.bak" >/dev/null 2>&1 \
+  && ok "the settings.json backup stays pristine across re-installs" \
+  || ko "the settings.json backup stays pristine across re-installs"
+
 I2="$WORK/inst2"; mkdir -p "$I2"
 inst "$I2" --level senior >/dev/null 2>&1
 jq -e '.level == "S"' "$I2/learner.json" >/dev/null 2>&1 \
@@ -356,6 +395,14 @@ I4="$WORK/inst4"; mkdir -p "$I4"
 inst "$I4" >/dev/null 2>&1 </dev/null \
   && ko "install aborts non-interactively without --level" \
   || ok "install aborts non-interactively without --level"
+
+I4B="$WORK/inst4b"; mkdir -p "$I4B"
+out=$(inst "$I4B" --yes 2>&1 </dev/null) \
+  && ko "install aborts with --yes and no --level" \
+  || ok "install aborts with --yes and no --level"
+printf '%s' "$out" | grep -qF -- '--level' \
+  && ok "the --yes abort message names --level" \
+  || ko "the --yes abort message names --level"
 
 I5="$WORK/inst5"; mkdir -p "$I5"
 echo '{ broken' > "$I5/settings.json"
@@ -399,38 +446,134 @@ jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPe
 
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
-printf '{"session_id":"%s","tool_input":{"file_path":"%s/src/Baz.kt"}}' "$SID3" "$WORK" | sh "$REC"
+printf '{"session_id":"%s","tool_input":{"file_path":"%s/proj/src/Baz.kt"}}' "$SID3" "$WORK" | sh "$REC"
+[ -s "$(edits "$SID3")" ] \
+  && ok "the session scratch file exists before cleanup runs" \
+  || ko "the session scratch file exists before cleanup runs"
 printf '{"session_id":"%s"}' "$SID3" | sh "$CLEAN"
 [ -e "$(edits "$SID3")" ] \
   && ko "cleanup removes this session's scratch files" \
   || ok "cleanup removes this session's scratch files"
 
 # --- LEARNER-TODO guardrail -------------------------------------------------
-G="$(mktemp -d)"; git -C "$G" init -q; mkdir -p "$G/tmp"
-printf 'fun f() {\n  // LEARNER-TODO: body\n}\n' > "$G/A.kt"
-git -C "$G" add A.kt
-git -C "$G" -c user.email=t@t -c user.name=t commit -qm init
+# One throwaway repo per scenario: the guardrail is a HEAD-vs-working-tree diff,
+# so what the fixture committed is the whole point.
+gmk() {  # -> a repo with one committed, marker-free file
+  _g="$(mktemp -d "$WORK/guard.XXXXXX")"
+  mkdir -p "$_g/tmp"
+  git -C "$_g" init -q
+  printf 'fun f() {\n  return 1\n}\n' > "$_g/A.kt"
+  git -C "$_g" add A.kt
+  git -C "$_g" -c user.email=t@t -c user.name=t commit -qm init
+  printf '%s' "$_g"
+}
+gcommit() { git -C "$1" add -A; git -C "$1" -c user.email=t@t -c user.name=t commit -qm "${2:-c}"; }
+hole()    { printf 'fun f() {\n  // LEARNER-TODO: body\n}\n' > "$1/A.kt"; }
+nohole()  { printf 'fun f() {\n  return 1\n}\n' > "$1/A.kt"; }
+guard()   { printf '{"session_id":"%s","stop_hook_active":%s}' "${3:-g}" "${4:-false}" \
+  | CLAUDE_PROJECT_DIR="$1" TMPDIR="$1/tmp" CLAUDE_CONFIG_DIR="$2" sh "$QUIZ"; }
+blocks()  { echo "$1" | jq -e '.decision == "block"' >/dev/null 2>&1; }
 
-guard() { printf '{"session_id":"g","stop_hook_active":false}' \
-  | CLAUDE_PROJECT_DIR="$G" TMPDIR="$G/tmp" CLAUDE_CONFIG_DIR="$1" sh "$QUIZ"; }
+# A committed marker is repo content (this project documents the string in its own
+# README, tests and skill files), never an unfinished exercise.
+G=$(gmk); hole "$G"; gcommit "$G" marker
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "a committed // LEARNER-TODO is repo content, not a leftover" \
+  || ok "a committed // LEARNER-TODO is repo content, not a leftover"
 
-out=$(guard "$WORK/cfg")
-echo "$out" | jq -e '.decision == "block" and (.reason | test("LEARNER-TODO"))' >/dev/null 2>&1 \
-  && ok "guardrail blocks while a LEARNER-TODO marker survives" \
-  || ko "guardrail blocks while a LEARNER-TODO marker survives"
+G=$(gmk); hole "$G"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("A.kt")' >/dev/null 2>&1; } \
+  && ok "guardrail blocks on a marker in a modified tracked file" \
+  || ko "guardrail blocks on a marker in a modified tracked file"
 
-echo '{"level":"S","enabled":false}' > "$GCFG"
-out=$(guard "$WORK/cfg")
-echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+# The primary case: the session just wrote the file, so git does not know it yet.
+G=$(gmk); printf 'fun g() {\n  // LEARNER-TODO: body\n}\n' > "$G/NEW.kt"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("NEW.kt")' >/dev/null 2>&1; } \
+  && ok "guardrail blocks on a marker in a brand-new untracked file" \
+  || ko "guardrail blocks on a marker in a brand-new untracked file"
+
+# A repo whose path is disabled must stay silent and untouched, guardrail included.
+G=$(gmk); hole "$G"
+DCFG="$G/cfg"; mkdir -p "$DCFG"
+echo '{"level":"S","disabledPaths":["'"$G"'"]}' > "$DCFG/learner.json"
+out=$(guard "$G" "$DCFG")
+[ -z "$out" ] \
+  && ok "guardrail stays silent in a repo under disabledPaths" \
+  || ko "guardrail stays silent in a repo under disabledPaths"
+
+G=$(gmk); hole "$G"
+ECFG="$G/cfg"; mkdir -p "$ECFG"
+echo '{"level":"S","enabled":false}' > "$ECFG/learner.json"
+out=$(guard "$G" "$ECFG")
+blocks "$out" \
   && ok "guardrail fires even when enabled is false" \
   || ko "guardrail fires even when enabled is false"
 
-out=$(guard "$WORK/empty-cfg")
-echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+G=$(gmk); hole "$G"
+out=$(guard "$G" "$WORK/empty-cfg")
+blocks "$out" \
   && ok "guardrail fires even with no config at all" \
   || ko "guardrail fires even with no config at all"
+
+# Claude says it fixed the file and stops again: the guardrail must re-check.
+G=$(gmk); hole "$G"
+out=$(guard "$G" "$WORK/cfg" active true)
+blocks "$out" \
+  && ok "guardrail re-checks even with stop_hook_active" \
+  || ko "guardrail re-checks even with stop_hook_active"
+
+# Bounded: two blocks, then the session is allowed to end.
+G=$(gmk); hole "$G"
+b1=$(guard "$G" "$WORK/cfg" cap); b2=$(guard "$G" "$WORK/cfg" cap); b3=$(guard "$G" "$WORK/cfg" cap)
+{ blocks "$b1" && blocks "$b2" && [ -z "$b3" ]; } \
+  && ok "guardrail blocks twice, then lets the session end" \
+  || ko "guardrail blocks twice, then lets the session end"
+
+# …and a clean stop restores the budget for the next exercise.
+G=$(gmk); hole "$G"
+guard "$G" "$WORK/cfg" rst >/dev/null; guard "$G" "$WORK/cfg" rst >/dev/null
+nohole "$G"; clean=$(guard "$G" "$WORK/cfg" rst)
+hole "$G";   again=$(guard "$G" "$WORK/cfg" rst)
+{ [ -z "$clean" ] && blocks "$again"; } \
+  && ok "a clean stop refreshes the guardrail budget" \
+  || ko "a clean stop refreshes the guardrail budget"
+
+# No commits yet: `git grep … HEAD` fails, and every marker is a leftover.
+G="$(mktemp -d "$WORK/guard.XXXXXX")"; mkdir -p "$G/tmp"; git -C "$G" init -q
+printf 'fun g() {\n  // LEARNER-TODO: body\n}\n' > "$G/NEW.kt"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ok "guardrail works in a repo with no commits yet" \
+  || ko "guardrail works in a repo with no commits yet"
+
+# The marker is a code comment: the bare word in prose is not an exercise.
+G=$(gmk); printf 'the string LEARNER-TODO appears in this doc\n' > "$G/NOTES.md"
+out=$(guard "$G" "$WORK/cfg")
+[ -z "$out" ] \
+  && ok "guardrail matches // LEARNER-TODO, not the bare word" \
+  || ko "guardrail matches // LEARNER-TODO, not the bare word"
+
+# Long lists are truncated but say so.
+G=$(gmk); i=1; while [ "$i" -le 25 ]; do printf '// LEARNER-TODO: h\n' > "$G/F$i.kt"; i=$((i + 1)); done
+out=$(guard "$G" "$WORK/cfg")
+echo "$out" | jq -e '.reason | test("and 5 more")' >/dev/null 2>&1 \
+  && ok "guardrail reports the overflow instead of dropping files silently" \
+  || ko "guardrail reports the overflow instead of dropping files silently"
+
+# The guardrail's scratch file is cleaned up with the rest of the session.
+G=$(gmk); hole "$G"
+guard "$G" "$WORK/cfg" cln >/dev/null
+[ -f "$G/tmp/claude-learner-cln.guard" ] \
+  && ok "guardrail records its budget in a per-session scratch file" \
+  || ko "guardrail records its budget in a per-session scratch file"
+printf '{"session_id":"cln"}' | TMPDIR="$G/tmp" sh "$CLEAN"
+[ -e "$G/tmp/claude-learner-cln.guard" ] \
+  && ko "cleanup removes the guardrail scratch file" \
+  || ok "cleanup removes the guardrail scratch file"
 echo '{"level":"S"}' > "$GCFG"
-rm -rf "$G"
 
 # --- uninstall reverses install ---------------------------------------------
 U="$WORK/uninst"; mkdir -p "$U"
@@ -453,6 +596,38 @@ CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" --purge >/dev/null 2>&1
 { [ ! -e "$U/learner.json" ] && [ ! -e "$U/learner" ]; } \
   && ok "--purge deletes config and progress data" \
   || ko "--purge deletes config and progress data"
+
+# An unparsable settings.json must stop the uninstall BEFORE anything is deleted:
+# hooks removed + wiring left behind breaks every session in every project.
+UB="$WORK/uninst-bad"; mkdir -p "$UB"
+CLAUDE_CONFIG_DIR="$UB" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+echo '{ broken' > "$UB/settings.json"
+CLAUDE_CONFIG_DIR="$UB" bash "$ROOT/uninstall.sh" >/dev/null 2>&1 \
+  && ko "uninstall aborts on an invalid settings.json" \
+  || ok "uninstall aborts on an invalid settings.json"
+{ [ -f "$UB/hooks/learner-quiz.sh" ] && [ -d "$UB/skills/learner" ]; } \
+  && ok "the aborted uninstall left the hooks and skill in place" \
+  || ko "the aborted uninstall left the hooks and skill in place"
+grep -q 'broken' "$UB/settings.json" \
+  && ok "the aborted uninstall left the invalid settings.json untouched" \
+  || ko "the aborted uninstall left the invalid settings.json untouched"
+
+# `--project=` is a typo for "clean one repo", never permission to wipe the
+# user-level install and every repo's progress data.
+UE="$WORK/uninst-empty"; mkdir -p "$UE"
+CLAUDE_CONFIG_DIR="$UE" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+for flag in "--project=" "--project"; do
+  out=$(CLAUDE_CONFIG_DIR="$UE" bash "$ROOT/uninstall.sh" "$flag" 2>&1) \
+    && ko "uninstall rejects '$flag' with no repo path" \
+    || ok "uninstall rejects '$flag' with no repo path"
+  printf '%s' "$out" | grep -qF -- '--project' \
+    && ok "the '$flag' error message names the flag" \
+    || ko "the '$flag' error message names the flag (got '$out')"
+done
+{ [ -f "$UE/hooks/learner-quiz.sh" ] && [ -f "$UE/learner.json" ] \
+  && [ "$(hookcount "$UE")" = 4 ]; } \
+  && ok "a rejected --project leaves the user-level install untouched" \
+  || ko "a rejected --project leaves the user-level install untouched"
 
 # legacy per-project layout
 L="$(mktemp -d)"; git -C "$L" init -q
@@ -515,12 +690,65 @@ grep -q 'CLAUDE_CONFIG_DIR' "$REFS/data.md" \
   && ok "data.md resolves the config dir from CLAUDE_CONFIG_DIR" \
   || ko "data.md resolves the config dir from CLAUDE_CONFIG_DIR"
 
+# The trigger's field names are a contract between the hook and the protocol file:
+# renaming one in the hook, or dropping it from hook-quiz.md, breaks the read with
+# no other symptom. Assert both halves, and cross-check what is actually emitted.
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+SIDT=triggerfields
+rec "$SIDT" "$WORK/proj/src/T.kt"
+trigger=$(quiz "$SIDT" | jq -r '.reason' | head -n 1)
+
+for k in level mode styles blanks files; do
+  printf '%s' "$trigger" | grep -qF "$k:" \
+    && ok "the trigger emits the '$k' field" \
+    || ko "the trigger emits the '$k' field"
+  grep -qF "\`$k\`" "$REFS/hook-quiz.md" \
+    && ok "hook-quiz.md reads the '$k' field" \
+    || ko "hook-quiz.md reads the '$k' field"
+done
+
+undocumented=''
+while IFS= read -r k; do
+  [ -n "$k" ] || continue
+  grep -qF "\`$k\`" "$REFS/hook-quiz.md" || undocumented="$undocumented $k"
+done <<EOF
+$(printf '%s' "$trigger" | grep -oE '[a-z]+:' | tr -d ':' | sort -u)
+EOF
+[ -z "$undocumented" ] \
+  && ok "every field the trigger emits is documented in hook-quiz.md" \
+  || ko "every field the trigger emits is documented in hook-quiz.md (missing:$undocumented)"
+
+# The `fill` style edits real source files, so its protocol is the load-bearing
+# part of hook-quiz.md: read the section itself, not the file as a whole.
+fill=$(awk '/^## The `fill` protocol/{f=1;next} /^## /{f=0} f' "$REFS/hook-quiz.md")
+[ -n "$fill" ] \
+  && ok "hook-quiz.md carries the fill protocol" \
+  || ko "hook-quiz.md carries the fill protocol"
+
+printf '%s' "$fill" | grep -qF '`blanks`' \
+  && ok "the fill protocol cuts as many holes as blanks says" \
+  || ko "the fill protocol cuts as many holes as blanks says"
+
+printf '%s' "$fill" | grep -qi 'restore' \
+  && ok "the fill protocol restores the correct implementation" \
+  || ko "the fill protocol restores the correct implementation"
+
+{ printf '%s' "$fill" | grep -qi 'never end a turn' \
+  && printf '%s' "$fill" | grep -qF 'LEARNER-TODO'; } \
+  && ok "the fill protocol forbids ending a turn with a leftover marker" \
+  || ko "the fill protocol forbids ending a turn with a leftover marker"
+
+{ grep -qi 'multiple-choice' "$REFS/quiz.md" && grep -qi 'multiple-choice' "$REFS/hook-quiz.md"; } \
+  && ok "both quiz protocols prefer plain chat over multiple choice" \
+  || ko "both quiz protocols prefer plain chat over multiple choice"
+
 # --- docs -------------------------------------------------------------------
 RM="$ROOT/README.md"
 
-# Boundary-aware on trackGlobs (untrackGlobs must not self-trip this), and real
-# ERE alternatives (not an escaped literal pipe) for the three old level words.
-grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|junior|intermediaire|senior' "$RM" \
+# Boundary-aware on trackGlobs (untrackGlobs must not self-trip this). Only
+# `intermediaire` is banned: `junior` and `senior` are supported level aliases, so
+# a legitimate "aliases accepted" line must not trip this.
+grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$RM" \
   && ko "README mentions no removed key or old level" \
   || ok "README mentions no removed key or old level"
 
