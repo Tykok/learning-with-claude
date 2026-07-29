@@ -73,6 +73,10 @@ learner_repo_root() {
 }
 
 # Prefix match on path components, so /a/b disables /a/b/c but not /a/bee.
+# ROOT is always a physical path (git rev-parse --show-toplevel), so entries are
+# canonicalised before comparing: otherwise an entry reaching the repo through a
+# symlink — /tmp and /var on macOS, a symlinked ~/work — silently fails to match,
+# and silently failing to disable is the one outcome this switch must not have.
 learner_path_disabled() {
   _lroot="$1"
   _lcfg="$2"
@@ -81,6 +85,11 @@ learner_path_disabled() {
       [ -n "$_lp" ] || continue
       # shellcheck disable=SC2088 # matching a literal "~/" prefix in a case pattern, not tilde expansion
       case "$_lp" in "~/"*) _lp="$HOME/${_lp#\~/}" ;; esac
+      # Only a path that exists can be resolved; keep the raw string otherwise, so
+      # an entry for a repo that is not checked out here still matches as a prefix.
+      if [ -d "$_lp" ]; then
+        _lppwd=$(cd "$_lp" 2>/dev/null && pwd -P) && [ -n "$_lppwd" ] && _lp="$_lppwd"
+      fi
       _lp="${_lp%/}"
       case "$_lroot/" in "$_lp"/*) exit 0 ;; esac
     done
