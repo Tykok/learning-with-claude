@@ -1,6 +1,6 @@
 ---
 description: Learning mode. Invoke as "learner" with a subcommand — "quiz" (Q&A on the current branch), "status" (what to improve + level), "improve" (coach one weak spot to mastery), "config" (settings, incl. "off"/"on" for this repo), "help". Also invoked by the Stop hook, which passes a trigger line. Trigger on "learner", "learner quiz", "learner status", "learner improve", "learner config", "learner off", "quiz me", "quiz me on the branch", "what should I improve", "my level", "level me up", "mode apprentissage", "interroge-moi", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "m'améliorer sur".
-allowed-tools: Read Write Edit Grep Bash
+allowed-tools: Read, Write, Edit, Grep, Bash
 ---
 
 # Learner
