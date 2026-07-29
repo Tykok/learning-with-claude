@@ -12,6 +12,7 @@ CLEAN="$ROOT/hooks/learner-cleanup.sh"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
 ko()  { FAIL=$((FAIL + 1)); printf '  FAIL - %s\n' "$1"; }
+skip() { printf '  skip - %s\n' "$1"; }
 
 command -v jq  >/dev/null 2>&1 || { echo "jq required"; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "git required"; exit 2; }
@@ -779,6 +780,120 @@ grep -qF -- '--project' "$RM" \
 grep -qE '^[|] [`]?[DJCSE][`]? ' "$RM" \
   && ok "README documents the letter levels" \
   || ko "README documents the letter levels"
+
+# --- bootstrap --------------------------------------------------------------
+BOOT="$ROOT/bootstrap.sh"
+
+# A tarball of the working tree, not `git archive`: the change under test must be
+# covered before it is committed. Exactly one top-level directory, because the
+# bootstrap strips one component.
+TARBALL="$WORK/payload.tgz"
+tar -czf "$TARBALL" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
+
+boot() { CLAUDE_CONFIG_DIR="$1" LEARNER_URL="file://$TARBALL" sh "$BOOT" "${@:2}"; }
+
+B1="$WORK/boot1"; mkdir -p "$B1"
+boot "$B1" --level S >/dev/null 2>&1
+{ [ -f "$B1/hooks/learner-config.sh" ] \
+  && [ -f "$B1/hooks/learner-quiz.sh" ] \
+  && [ -f "$B1/skills/learner/SKILL.md" ] \
+  && [ -f "$B1/skills/learner/references/data.md" ] \
+  && [ -f "$B1/learner.json" ]; } \
+  && ok "bootstrap installs the payload from the tarball" \
+  || ko "bootstrap installs the payload from the tarball"
+
+B2="$WORK/boot2"; mkdir -p "$B2"
+boot "$B2" --level senior --synthesis often --blanks 3 >/dev/null 2>&1
+jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise == 3' \
+  "$B2/learner.json" >/dev/null 2>&1 \
+  && ok "bootstrap passes every flag through to install.sh" \
+  || ko "bootstrap passes every flag through to install.sh"
+
+B3="$WORK/boot3"; mkdir -p "$B3"
+boot "$B3" --level S --dry-run >/dev/null 2>&1
+[ ! -e "$B3/learner.json" ] \
+  && ok "bootstrap honours --dry-run (nothing written)" \
+  || ko "bootstrap honours --dry-run (nothing written)"
+
+# Temp dirs must not accumulate: count what the bootstrap leaves behind.
+before=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
+B4="$WORK/boot4"; mkdir -p "$B4"
+TMPDIR="$WORK/tmp" boot "$B4" --level S >/dev/null 2>&1
+after=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
+[ "$before" = "$after" ] \
+  && ok "bootstrap removes its temp dir on success" \
+  || ko "bootstrap removes its temp dir on success (before=$before after=$after)"
+
+before=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
+CLAUDE_CONFIG_DIR="$WORK/boot5" LEARNER_URL="file://$WORK/nope.tgz" \
+  TMPDIR="$WORK/tmp" sh "$BOOT" --level S >/dev/null 2>&1
+after=$(find "$WORK/tmp" -maxdepth 1 -type d | wc -l | tr -d ' ')
+[ "$before" = "$after" ] \
+  && ok "bootstrap removes its temp dir on a failed fetch" \
+  || ko "bootstrap removes its temp dir on a failed fetch (before=$before after=$after)"
+
+out=$(CLAUDE_CONFIG_DIR="$WORK/boot6" LEARNER_URL="file://$WORK/nope.tgz" \
+  sh "$BOOT" --level S 2>&1) \
+  && ko "bootstrap fails on an unreachable URL" \
+  || ok "bootstrap fails on an unreachable URL"
+printf '%s' "$out" | grep -qi 'error' \
+  && ok "the unreachable-URL message is an error line" \
+  || ko "the unreachable-URL message is an error line"
+
+# An archive without install.sh must be named as such, not fail deep inside bash.
+BADTAR="$WORK/bad.tgz"; mkdir -p "$WORK/badsrc/inner"; echo x > "$WORK/badsrc/inner/f"
+tar -czf "$BADTAR" -C "$WORK" badsrc
+out=$(CLAUDE_CONFIG_DIR="$WORK/boot7" LEARNER_URL="file://$BADTAR" \
+  sh "$BOOT" --level S 2>&1) \
+  && ko "bootstrap rejects an archive with no install.sh" \
+  || ok "bootstrap rejects an archive with no install.sh"
+printf '%s' "$out" | grep -q 'install.sh' \
+  && ok "the bad-archive message names install.sh" \
+  || ko "the bad-archive message names install.sh"
+
+# Claude Code absent: must abort BEFORE fetching. A fake curl proves no fetch ran.
+FAKEBIN="$WORK/fakebin"; mkdir -p "$FAKEBIN"
+printf '#!/bin/sh\ntouch "%s/curl-ran"\nexit 1\n' "$WORK" > "$FAKEBIN/curl"
+chmod +x "$FAKEBIN/curl"
+rm -f "$WORK/curl-ran"
+out=$(PATH="$FAKEBIN:/usr/bin:/bin" HOME="$WORK/nohome" \
+  CLAUDE_CONFIG_DIR="$WORK/no-such-cfg" sh "$BOOT" --level S 2>&1) \
+  && ko "bootstrap aborts when Claude Code is absent" \
+  || ok "bootstrap aborts when Claude Code is absent"
+printf '%s' "$out" | grep -qi 'claude' \
+  && ok "the abort message names Claude Code" \
+  || ko "the abort message names Claude Code"
+[ ! -e "$WORK/curl-ran" ] \
+  && ok "the Claude Code check runs before any fetch" \
+  || ko "the Claude Code check runs before any fetch"
+
+# LEARNER_REF must reach the URL. A fake curl records the URL it was handed.
+printf '#!/bin/sh\nfor a in "$@"; do case "$a" in http*|file*) echo "$a" > "%s/curl-url" ;; esac; done\nexit 1\n' \
+  "$WORK" > "$FAKEBIN/curl"
+chmod +x "$FAKEBIN/curl"
+rm -f "$WORK/curl-url"
+PATH="$FAKEBIN:/usr/bin:/bin" LEARNER_REF=v9.9.9 \
+  CLAUDE_CONFIG_DIR="$B1" sh "$BOOT" --level S >/dev/null 2>&1
+{ [ -f "$WORK/curl-url" ] && grep -q 'v9.9.9' "$WORK/curl-url"; } \
+  && ok "LEARNER_REF reaches the fetch URL" \
+  || ko "LEARNER_REF reaches the fetch URL"
+grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
+  && ok "the fetch URL names the repo" \
+  || ko "the fetch URL names the repo"
+
+# No terminal and no --level: install.sh could neither prompt nor proceed, so the
+# bootstrap must say so itself — the user typed a URL, not a script with flags.
+# Only assertable where /dev/tty is unreadable (CI); skipped in an interactive shell.
+if [ -r /dev/tty ]; then
+  skip "no-tty guidance (a terminal is available here)"
+else
+  out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
+    && ko "bootstrap refuses with no terminal and no --level" \
+    || ok "bootstrap refuses with no terminal and no --level"
+  printf '%s' "$out" | grep -q -- '--level' \
+    && ok "the no-tty message shows the --level re-run" \
+    || ko "the no-tty message shows the --level re-run"
+fi
 
 # --- summary ----------------------------------------------------------------
 echo

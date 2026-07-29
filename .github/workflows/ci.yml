@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: shellcheck
-        run: shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh test.sh
+        run: shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh
 
       - name: tests
         run: ./test.sh
