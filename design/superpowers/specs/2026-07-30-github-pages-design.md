@@ -40,7 +40,7 @@ design/superpowers/    # specs and plans, moved out of the published root
 ```
 
 **The move matters for two reasons.** Publishing `/docs` makes everything under it reachable,
-and `docs/superpowers/` holds the internal specs and plans — including candid accounts of two
+and `docs/superpowers/` holds the internal specs and plans — including candid accounts of
 spec-level defects found during implementation. Beyond confidentiality, the published root
 should hold the site and nothing else: a visitor who guesses `/superpowers/plans/…` should not
 find an implementation plan where documentation is expected.

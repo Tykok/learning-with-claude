@@ -1074,7 +1074,12 @@ DISPATCH=$(awk '/^## Dispatch/{f=1;next} /^## /{f=0} f' "$ROOT/skills/learner/SK
 SUBCOMMANDS=$(printf '%s\n' "$DISPATCH" | awk -F'|' '/^\|/{print $2}' \
   | grep -oE '`[^`]*`' | tr -d '`' | awk '{print $1}' | grep -vE '^-' | sort -u)
 for sub in $SUBCOMMANDS; do
-  grep -qF "learner $sub" "$SITE" \
+  # Bounded on the right: an unanchored `grep -F "learner $sub"` passes on any prose
+  # that happens to contain the substring — "the learner once told me…" satisfies
+  # "learner on" with no `on` subcommand in sight. Space or punctuation (a closing
+  # `<`, in practice) after the word; end of line covers a subcommand as the last
+  # word on its line.
+  grep -qE "learner ${sub}([[:space:][:punct:]]|\$)" "$SITE" \
     && ok "the site documents the 'learner $sub' subcommand" \
     || ko "the site documents the 'learner $sub' subcommand"
 done
