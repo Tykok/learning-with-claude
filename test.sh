@@ -1013,6 +1013,87 @@ else
     || ko "bootstrap proceeds with no terminal and no --level once a config exists"
 fi
 
+# --- site -------------------------------------------------------------------
+SITE="$ROOT/docs/index.html"
+
+[ -f "$SITE" ] && ok "the site exists at docs/index.html" \
+               || ko "the site exists at docs/index.html"
+
+[ -f "$ROOT/docs/.nojekyll" ] \
+  && ok "docs/.nojekyll stops GitHub running the page through Jekyll" \
+  || ko "docs/.nojekyll stops GitHub running the page through Jekyll"
+
+# The published root must hold the site, not internal design records.
+[ ! -d "$ROOT/docs/superpowers" ] \
+  && ok "the published root carries no internal design records" \
+  || ko "the published root carries no internal design records"
+[ -d "$ROOT/design/superpowers" ] \
+  && ok "the design records moved to design/" \
+  || ko "the design records moved to design/"
+
+# No external request at load. <a href> navigation is fine; fetching tags are not.
+grep -qiE '<script|<link[^>]+href|@import' "$SITE" \
+  && ko "the page issues no external request at load" \
+  || ok "the page issues no external request at load"
+
+# -o counts occurrences, not matching lines: two <h1> on one line must still fail.
+n=$(grep -oiE '<h1[ >]' "$SITE" | wc -l | tr -d ' ')
+[ "$n" = 1 ] && ok "the page has exactly one h1" \
+             || ko "the page has exactly one h1 (found $n)"
+
+grep -qiF 'prefers-color-scheme' "$SITE" \
+  && ok "the page styles both light and dark" \
+  || ko "the page styles both light and dark"
+
+# The reference content that moves off the README lives here now.
+for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency \
+         blanksPerExercise 'learner off' 'learner-config.sh'; do
+  grep -qF "$s" "$SITE" && ok "the site documents $s" || ko "the site documents $s"
+done
+
+grep -qF -- '--project' "$SITE" \
+  && ok "the site documents the legacy cleanup flag" \
+  || ko "the site documents the legacy cleanup flag"
+
+grep -qF -- '--purge' "$SITE" \
+  && ok "the site documents --purge" \
+  || ko "the site documents --purge"
+
+# Letter levels, as real table cells rather than prose. The markup shape is fixed by
+# the plan (`<td><code>D</code></td>`) so this can be a fixed-string match — a bracket
+# expression trying to allow several shapes is how the `\`` ERE bug got in last time.
+for l in D J C S E; do
+  grep -qF "<td><code>$l</code></td>" "$SITE" \
+    && ok "the site documents level $l as a table cell" \
+    || ko "the site documents level $l as a table cell"
+done
+
+for p in WSL 'Git Bash'; do
+  grep -qF "$p" "$SITE" && ok "the site covers $p" || ko "the site covers $p"
+done
+
+grep -qiE 'native windows|windows, native' "$SITE" \
+  && ok "the site states native Windows is unsupported" \
+  || ko "the site states native Windows is unsupported"
+
+grep -qiF 'posix' "$SITE" \
+  && ok "the site gives the reason native Windows cannot work" \
+  || ko "the site gives the reason native Windows cannot work"
+
+grep -qF 'LEARNER-TODO' "$SITE" \
+  && ok "the site shows the fill markers" \
+  || ko "the site shows the fill markers"
+
+# Case-SENSITIVE, and a phrase rather than the bare word: `grep -i HEAD` would match
+# the page's own <head> tag and pass without the guardrail being explained at all.
+grep -qF 'working tree' "$SITE" && grep -qF 'HEAD' "$SITE" \
+  && ok "the site explains the guardrail counts leftovers only" \
+  || ko "the site explains the guardrail counts leftovers only"
+
+grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$SITE" \
+  && ko "the site mentions no removed key or old level" \
+  || ok "the site mentions no removed key or old level"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
