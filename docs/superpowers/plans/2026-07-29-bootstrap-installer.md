@@ -201,15 +201,21 @@ set -eu
 REPO="Tykok/learning-with-claude"
 REF="${LEARNER_REF:-main}"
 URL="${LEARNER_URL:-https://codeload.github.com/$REPO/tar.gz/$REF}"
-CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+# ${HOME:-}, not $HOME: under `set -u` this line evaluates $HOME whenever
+# CLAUDE_CONFIG_DIR is unset, and an unset HOME (cron, some systemd units) would
+# abort here with a raw "parameter not set" instead of the message below.
+CFG_DIR="${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
 # 1) Preflight before the network. Fetching a payload for a machine that cannot
 # use it wastes the user's time and hands them an error about jq when the real
-# problem is that Claude Code is not installed.
+# problem is that Claude Code is not installed. bash is checked too, not
+# assumed: install.sh is a bash script, so a PATH with `claude` but no bash
+# (busybox) would fetch everything only to fail with a bare "command not found".
 command -v curl >/dev/null 2>&1 || die "curl is required."
 command -v tar  >/dev/null 2>&1 || die "tar is required."
+command -v bash >/dev/null 2>&1 || die "bash is required (install.sh is a bash script)."
 if ! command -v claude >/dev/null 2>&1 && [ ! -d "$CFG_DIR" ]; then
   die "Claude Code not found (no 'claude' on PATH and no $CFG_DIR).
        Install it first: https://claude.com/claude-code"
@@ -220,6 +226,10 @@ fi
 # no level was passed, say so here: install.sh's own message names a flag the user
 # never saw, because they invoked a URL rather than a script with arguments.
 #
+# Exception: an existing config is never asked anything (install.sh gates its
+# whole prompt block on the config not existing), so refusing there would block a
+# legitimate non-interactive re-install that needed no level in the first place.
+#
 # `-r /dev/tty` only tests permissions, and a redirection failure on the `:`
 # special built-in makes a POSIX shell (dash) exit outright. A subshell
 # contains both problems: it either opens the terminal or dies alone.
@@ -227,27 +237,33 @@ HAVE_TTY=0
 if (exec 3< /dev/tty) 2>/dev/null; then
   HAVE_TTY=1
 fi
-if [ "$HAVE_TTY" = 0 ]; then
+if [ "$HAVE_TTY" = 0 ] && [ ! -f "$CFG_DIR/learner.json" ]; then
   case " $* " in
     *" --level "*|*" --level="*) ;;
     *) die "no terminal available, so the level cannot be asked for.
        Re-run with the level set, e.g.:
-       curl -fsSL .../bootstrap.sh | sh -s -- --level S" ;;
+       curl -fsSL https://raw.githubusercontent.com/$REPO/main/bootstrap.sh | sh -s -- --level S" ;;
   esac
 fi
 
-TMP=$(mktemp -d)
+# An explicit template: BSD mktemp ignores TMPDIR without one, which silently
+# made the cleanup assertions inert on macOS.
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/learner-bootstrap.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT INT HUP TERM
 
-# 3) Fetch and unpack in one stream: no intermediate file, and
-# --strip-components=1 drops the learning-with-claude-<ref>/ wrapper so the
-# payload lands directly in $TMP with no directory name to guess.
-#
-# POSIX sh has no pipefail, so a curl that dies mid-stream can still leave tar
-# exiting 0 on a truncated archive. The install.sh check below is what actually
-# catches that, which is why it is a hard error rather than a nicety.
-curl -fsSL "$URL" | tar -xzf - --strip-components=1 -C "$TMP" \
-  || die "could not fetch $URL"
+# 3) Fetch to a file, then extract — two steps, not a `curl | tar` pipe. POSIX sh
+# has no pipefail, so a pipeline's status is its LAST command's, and bsdtar
+# accepts curl's zero bytes as a valid empty archive and exits 0 where GNU tar
+# exits 2. That made "could not fetch" unreachable on macOS and reported every
+# 404/DNS/timeout as "has no install.sh (bad ref?)" — the wrong cause. One
+# status per step buys one message per fault; the ~30 KB file lands in the temp
+# dir the trap already removes. --strip-components=1 drops the
+# learning-with-claude-<ref>/ wrapper so the payload lands directly in $TMP.
+ARCHIVE="$TMP/payload.tar.gz"
+curl -fsSL "$URL" -o "$ARCHIVE" || die "could not fetch $URL"
+tar -xzf "$ARCHIVE" --strip-components=1 -C "$TMP" \
+  || die "the archive from $URL is not a readable tar.gz"
+rm -f "$ARCHIVE"
 [ -f "$TMP/install.sh" ] \
   || die "the archive from $URL has no install.sh (bad ref '$REF'?)"
 
@@ -420,7 +436,7 @@ git commit -m "docs: lead with the one-line install, state platform support"
 | Spec section | Task |
 |--------------|------|
 | Why a bootstrap is needed | Task 1 Step 3 (header comment) |
-| §1 bootstrap contract, preflight order, streamed fetch, cleanup | Task 1 Steps 1, 3 |
+| §1 bootstrap contract, preflight order, fetch-then-extract, cleanup | Task 1 Steps 1, 3 |
 | §2 the TTY problem and the no-tty message | Task 1 Steps 1, 3 |
 | §3 testability via `LEARNER_URL` and a `file://` tarball | Task 1 Step 1 |
 | §4 repo changes | Task 1 (bootstrap, test, CI), Task 2 (README) |

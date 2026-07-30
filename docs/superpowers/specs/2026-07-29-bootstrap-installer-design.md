@@ -49,19 +49,43 @@ LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh
 
 Flow, in order:
 
-1. **Preflight, before any network call.** Require `curl` and `tar`. Require Claude Code —
-   `command -v claude`, or `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` exists as a directory.
-   Failing fast matters: downloading a payload for a machine that cannot use it wastes the
-   user's time and leaves them reading an error about `jq` when the real problem is that
-   Claude Code is not installed.
+1. **Preflight, before any network call.** Require `curl`, `tar` and `bash`. `bash` belongs in
+   that list rather than being assumed: `install.sh` is a bash script, so a machine with `curl`
+   and a `claude` on `PATH` but no bash at all (busybox images) would otherwise fetch the whole
+   payload only to fail with a bare "command not found" and no `error:` line of ours. Require
+   Claude Code — `command -v claude`, or `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` exists as a
+   directory. Failing fast matters: downloading a payload for a machine that cannot use it
+   wastes the user's time and leaves them reading an error about `jq` when the real problem is
+   that Claude Code is not installed.
 2. **Resolve the ref.** `REF="${LEARNER_REF:-main}"`.
-3. **Fetch and extract in one stream:**
+3. **Fetch to a file, then extract** — two steps, not one stream:
    ```sh
-   curl -fsSL "$URL" | tar -xzf - --strip-components=1 -C "$TMP"
+   curl -fsSL "$URL" -o "$ARCHIVE" || die "could not fetch $URL"
+   tar -xzf "$ARCHIVE" --strip-components=1 -C "$TMP" \
+     || die "the archive from $URL is not a readable tar.gz"
    ```
    `--strip-components=1` removes the `learning-with-claude-<ref>/` wrapper, so the payload
-   lands directly in `$TMP` and nothing has to guess the extracted directory name. Streaming
-   avoids an intermediate file. Both BSD and GNU `tar` support the flag.
+   lands directly in `$TMP` and nothing has to guess the extracted directory name. Both BSD and
+   GNU `tar` support the flag.
+
+   A streamed `curl … | tar` was the original design here and had to be abandoned. POSIX `sh`
+   has no `pipefail`, so a pipeline's exit status is its *last* command's — and the two `tar`
+   implementations disagree about the zero bytes a failing `curl` leaves on stdin. bsdtar (stock
+   macOS) accepts empty stdin as a valid, empty archive and exits 0; GNU tar rejects it and
+   exits 2:
+
+   ```
+   : | tar -xzf - --strip-components=1 -C dest   # bsdtar (macOS)  → rc 0
+   : | tar -xzf - --strip-components=1 -C dest   # GNU tar (Debian) → rc 2
+   ```
+
+   So on macOS `|| die "could not fetch …"` was unreachable, and *every* fetch failure — 404,
+   DNS, timeout, proxy — surfaced instead as `has no install.sh (bad ref 'main'?)`, sending the
+   user after a branch problem when their network was at fault. Two steps give one exit status
+   per cause and one message per fault. The intermediate file this costs buys nothing against a
+   false diagnosis: the archive is ~30 KB, it lands in the temp dir the trap already removes,
+   and the only way to keep the pipe — recording `curl`'s status in a marker file — is
+   `pipefail` reimplemented by hand.
 4. **Hand over to the installer**, reconnecting the terminal (see §2):
    ```sh
    if (exec 3< /dev/tty) 2>/dev/null; then
@@ -119,6 +143,16 @@ error: no terminal available, so the level cannot be asked for.
 Letting `install.sh` fail on its own here would leave the user with a message about a flag
 they never saw, because they invoked a URL and not a script with arguments.
 
+One case this reasoning missed, and the implementation had to add: **an existing config needs no
+answers at all.** `install.sh` gates its whole prompt block on `learner.json` *not* existing, so a
+machine that already has one is never asked for a level, and refusing there would block a
+legitimate non-interactive re-install — re-copying hooks after an update, say — that had no
+question to answer in the first place. The guard therefore also tests
+`[ ! -f "$CFG_DIR/learner.json" ]` and fires only on a *first* install with no terminal and no
+`--level`, the one case where nothing on the machine could supply the answer. The message also
+spells the one-liner's URL out in full, built from `$REPO`, so what it prints can be pasted and
+run rather than being the `.../bootstrap.sh` shorthand this document uses.
+
 ## 3. Testability
 
 `test.sh` must not reach the network. The fetch URL is therefore overridable:
@@ -156,7 +190,10 @@ Assertions:
 - passes `--level` / `--synthesis` / `--blanks` through unchanged
 - honours `LEARNER_REF` in the constructed URL
 - removes the temp directory on success, on failure, and on interrupt
+- names a failed fetch and an unreadable archive as two distinct faults, with the fixture for
+  each pinned so that neither `tar` implementation reports the other's message (§1 step 3)
 - with no tty and no `--level`, prints the re-run hint and exits non-zero
+- with no tty, no `--level` and a `learner.json` already in place, proceeds instead (§2)
 
 ## 4. Repo changes
 

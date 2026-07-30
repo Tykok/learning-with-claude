@@ -85,7 +85,16 @@ prompts, pass the same flags `install.sh` takes; `bootstrap.sh` forwards them th
 
 ```bash
 curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
-LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh    # pin an exact ref instead of main
+```
+
+To install a specific revision instead of whatever `main` says today, name the ref twice — once
+in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. There are no
+release tags yet, so `$REF` is a branch name or a commit SHA:
+
+```bash
+REF=main   # or a commit SHA
+curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
+  | LEARNER_REF="$REF" sh
 ```
 
 Prefer to read the code before running it? Clone and use the installer directly — it stays a
@@ -114,11 +123,14 @@ existing config. **It writes nothing into any repository** — every path it tou
 `settings.json` carries the literal `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, so moving your
 config directory later needs no reinstall.
 
-On trust: the fetch is plain HTTPS from `codeload.github.com`, and `LEARNER_REF` pins an exact
-ref rather than tracking `main`. A checksum baked into `bootstrap.sh` would not add anything
-here — the script and the archive it fetches share an origin, so anyone able to change one can
-change the other. If that boundary matters to you, the clone-and-run path above never crosses
-it: you read `install.sh` before you run it.
+On trust: the fetch is plain HTTPS from `codeload.github.com`, and `LEARNER_REF` pins the
+payload to an exact ref rather than tracking `main`. Be clear about what that does *not* cover —
+`LEARNER_REF` says nothing about `bootstrap.sh` itself, which the first form above still fetches
+from `/main/`, so pinning only the payload still runs whatever `main` says today. That is why the
+pinned form names the ref in the URL as well. A checksum baked into `bootstrap.sh` would not add
+anything either way — the script and the archive it fetches share an origin, so anyone able to
+change one can change the other. If that boundary matters to you, the clone-and-run path above
+never crosses it: you read `install.sh` before you run it.
 
 ## Levels
 
@@ -220,11 +232,12 @@ per-project install.
 
 ```bash
 ./test.sh                                                     # hook + installer + skill tests
-shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh test.sh
+shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh
 ```
 
 The `hooks/*.sh` glob covers all five shipped hook files, including `learner-config.sh`. CI
-(`.github/workflows/ci.yml`) runs both on every push and PR.
+(`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
+and PR — an assertion in `test.sh` keeps the two lists in step.
 
 ## License
 
