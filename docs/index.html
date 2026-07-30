@@ -4,12 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude Learner — quiz yourself on the code Claude just wrote</title>
-<meta name="description" content="A Claude Code plugin that quizzes you on the code it just wrote with you, at your level, and tracks what to work on.">
+<meta name="description" content="Claude Code hooks and a skill that quiz you on the code they just wrote with you, at your level, and track what to work on.">
 <style>
 :root {
   color-scheme: light dark;
   --bg: #fbfaf8; --fg: #1a1a18; --muted: #5d5a54;
-  --rule: #e2ded6; --card: #f4f1ec; --accent: #7a5cc0;
+  --rule: #e2ded6; --card: #f4f1ec;
+  /* WCAG AA (4.5:1) against every background --accent sits on: 4.77:1 on --code-bg
+     (the .hl markers below, the tightest pairing), 5.38:1 on --bg, 4.99:1 on --card.
+     The original #7a5cc0 cleared --bg but fell to 4.33:1 on --code-bg — under
+     threshold on the one surface .hl actually uses. */
+  --accent: #7256b8;
   --code-bg: #f0ece5;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -99,7 +104,10 @@ pre code {
   background: none;
   padding: 0;
   font-size: inherit;
-  overflow-wrap: normal;
+  /* No overflow-wrap override here: it used to say `normal`, which silently undid the
+     `anywhere` set on `pre` above (the more specific selector wins), so the long-URL
+     wrap fix never actually applied inside a code block. overflow-x stays as the
+     backstop either way. */
 }
 
 figure { margin: 0 0 1.2rem; }
@@ -180,10 +188,11 @@ footer p { margin-bottom: 0.4rem; }
 <main>
 
   <h1>Claude Learner</h1>
-  <p class="lede">Claude Learner is a Claude Code plugin that quizzes you on the code
-  Claude just wrote with you, at the level you set, and keeps a record of what you
-  should work on. It installs once at Claude Code user level and is then active in
-  every git repository you open, with no per-repo setup.</p>
+  <p class="lede">Claude Learner pairs Claude Code hooks with a skill to quiz you on the
+  code Claude just wrote with you, at the level you set, and keep a record of what you
+  should work on (<a href="#commands">read it back</a> any time with
+  <code>learner status</code>). It installs once at Claude Code user level and is then
+  active in every git repository you open, with no per-repo setup.</p>
   <p class="sub">One skill, five POSIX <code>sh</code> hooks, no build step, no
   dependencies beyond <code>jq</code>, and nothing that phones home. The source is on
   <a href="https://github.com/Tykok/learning-with-claude">GitHub</a>.</p>
@@ -196,6 +205,7 @@ footer p { margin-bottom: 0.4rem; }
       <li><a href="#styles">The three question styles</a></li>
       <li><a href="#guardrail">The guardrail</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="#commands">On demand</a></li>
       <li><a href="#config">Configuration</a></li>
       <li><a href="#levels">Levels</a></li>
       <li><a href="#platforms">Platforms</a></li>
@@ -255,7 +265,8 @@ does a caller see if the insert fails after the delete has committed?</code></pr
   <p>Every fourth question by default, one question is about the shape of the work rather
   than a detail. The hook switches mode and widens the file list: a granular question
   sees the edits since the last question, a synthesis question sees every file the
-  session has touched.</p>
+  session has touched — each list capped, at 20 files and 40 files respectively, so the
+  trigger line itself never grows unbounded on a very large session.</p>
 
   <figure>
     <figcaption>the same hook, in synthesis mode</figcaption>
@@ -471,8 +482,11 @@ cd learning-with-claude
 
   <ul>
     <li><code>--level D|J|C|S|E</code> — the letter, or the full word from the
-    <a href="#levels">levels table</a>, in any case. It has no default: with
-    <code>--yes</code> and no level, the install stops rather than guessing.</li>
+    <a href="#levels">levels table</a>, in any case. It has no default: on a
+    <strong>fresh</strong> install, <code>--yes</code> with no level stops rather than
+    guessing. Once <code>learner.json</code> already exists this whole prompt/validate
+    step is skipped — the flag has nothing to do, and the existing config is left
+    untouched either way.</li>
     <li><code>--synthesis off|rare|normal|often</code> — how often a synthesis question
     replaces a granular one.</li>
     <li><code>--blanks N</code> — holes left in a <code>fill</code> exercise, an integer
@@ -489,6 +503,10 @@ cd learning-with-claude
   every wired hook command carries the literal
   <code>${CLAUDE_CONFIG_DIR:-$HOME/.claude}</code> rather than an expanded path, so
   moving your config directory later needs no reinstall.</p>
+
+  <p>Hook wiring is read once, when a Claude Code session starts. Installing (or
+  re-installing) while a session is already open changes nothing in it — quit and start a
+  new session for the hooks to take effect.</p>
 
   <h3>What gets installed, and where</h3>
 
@@ -510,6 +528,7 @@ cd learning-with-claude
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
+      <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer for the skill to write into at runtime</td></tr>
       <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
       <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
     </tbody>
@@ -520,6 +539,33 @@ cd learning-with-claude
   <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>.
   <code>learner-config.sh</code> is the fifth: the other four source it, and Claude Code
   never invokes it directly.</p>
+
+  <h2 id="commands">On demand</h2>
+
+  <p>Everything above happens on its own, once per turn. The same <code>learner</code>
+  skill also answers when you ask it directly — invoke it as
+  <code>learner &lt;subcommand&gt;</code>:</p>
+
+  <dl>
+    <dt><code>learner quiz [base-ref] [count]</code></dt>
+    <dd>Q&amp;A over the current branch diff, right now, instead of waiting for the
+    <code>Stop</code> hook — optionally against a named base ref, for a chosen number of
+    questions.</dd>
+    <dt><code>learner status</code></dt>
+    <dd>Read-only: your level, plus what to improve — the record the lede above promises,
+    read back to you on request. No quiz, no write.</dd>
+    <dt><code>learner improve [topic]</code></dt>
+    <dd>Coaches one weak spot — named, or the most open one on record — to mastery.</dd>
+    <dt><code>learner config [key=value …]</code></dt>
+    <dd>Views or edits settings. <code>learner config project …</code> scopes the edit to
+    the current repository instead of the global default; with no arguments it prints
+    your current settings.</dd>
+    <dt><code>learner off</code> / <code>learner on</code></dt>
+    <dd>Silences or restores the automatic quiz in the current repository. See
+    <a href="#off">Turning it off</a> for what that writes and why.</dd>
+    <dt><code>learner help</code></dt>
+    <dd>Prints its subcommand and parameter reference, then stops.</dd>
+  </dl>
 
   <h2 id="config">Configuration</h2>
 
@@ -576,7 +622,8 @@ cd learning-with-claude
 
   <p>You do not have to edit it by hand: <code>learner config level=S</code> validates
   and writes for you, and <code>learner config project synthesisFrequency=often</code>
-  does the same for the current repository only.</p>
+  does the same for the current repository only. The same shape ships in the repository
+  as <code>learner.json.example</code>, for reference or copy-paste.</p>
 
   <h3>What counts as quiz material</h3>
 
@@ -660,8 +707,10 @@ cd learning-with-claude
     <li><strong>One repository you own.</strong> Say <code>learner off</code> in it. That
     writes <code>&lt;repo&gt;/.claude/learner.local.json</code> and adds the file to the
     repo's <code>.gitignore</code> if it is not already there.
-    <code>learner on</code> reverses it. This is the only thing in the whole system that
-    writes into a repository, and only when you ask for it.</li>
+    <code>learner on</code> reverses it. That file is the only thing Learner ever
+    <em>adds</em> to a repository, and only on request — a <code>fill</code> exercise
+    (see <a href="#looks-like">above</a>) is a different kind of change: it temporarily
+    edits one of your own source files rather than adding a new one.</li>
     <li><strong>One repository you do not own</strong>, where nothing of yours should be
     committed. Add its path to <code>disabledPaths</code> in the global config —
     <code>learner config disabledPaths='["/path/to/repo"]'</code>. Nothing is written
