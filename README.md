@@ -91,11 +91,11 @@ curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
 ```
 
 To install a specific revision instead of whatever `main` says today, name the ref twice — once
-in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. There are no
-release tags yet, so `$REF` is a branch name or a commit SHA:
+in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. `$REF` is anything
+git resolves: a release tag, a branch name, or a commit SHA.
 
 ```bash
-REF=main   # or a commit SHA
+REF=v0.1.0   # or a branch name, or a commit SHA
 curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
   | LEARNER_REF="$REF" sh
 ```

@@ -44,9 +44,9 @@ curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/boo
 curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis often --blanks 2
 
 # pinned to a revision: the ref is named twice, because LEARNER_REF pins the payload
-# and not bootstrap.sh itself, which the shell has already read from the URL. There
-# are no release tags, so <ref> is a branch name or a commit SHA.
-curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
+# and not bootstrap.sh itself, which the shell has already read from the URL. <ref> is
+# anything git resolves: a release tag, a branch name, or a commit SHA.
+curl -fsSL .../v0.1.0/bootstrap.sh | LEARNER_REF=v0.1.0 sh
 ```
 
 Flow, in order:
@@ -248,8 +248,9 @@ Implementation should start once that PR merges, or on a branch stacked on it an
 ## Out of scope
 
 - **Homebrew.** Next iteration, its own spec. It lives in a separate repo
-  (`Tykok/homebrew-tap`), and a formula needs a tagged tarball plus a `sha256`, so it also
-  requires tagging `v0.1.0` — a release process this iteration deliberately avoids.
+  (`Tykok/homebrew-tap`), and a formula needs a tagged tarball plus a `sha256`. That tag now
+  exists — `v0.1.0` was cut once this design shipped — so the formula's prerequisite is met and
+  only the tap itself remains.
 - **`apt`.** A signed repository is disproportionate for eleven text files, and offers a user
   nothing the one-liner does not already give them.
 - **Native Windows.** Would mean rewriting all five hooks to run without a POSIX shell and

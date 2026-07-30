@@ -7,10 +7,10 @@
 #
 # To install a specific revision, name it twice — LEARNER_REF pins the payload
 # fetched below, not this script, which the shell has already read from the URL
-# above. There are no release tags yet, so <ref> is a branch name or a commit
-# SHA, never a tag:
+# above. <ref> is anything git resolves: a release tag, a branch name, or a
+# commit SHA.
 #
-#   curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
+#   curl -fsSL .../v0.1.0/bootstrap.sh | LEARNER_REF=v0.1.0 sh
 #
 # install.sh is not self-contained: it copies eleven payload files and sources
 # hooks/learner-config.sh, so it cannot be piped into a shell on its own. This
