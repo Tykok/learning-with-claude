@@ -8,7 +8,7 @@
 
 **Tech Stack:** POSIX `sh` (hooks), `bash` (install/uninstall/test), `jq`, `git`. No framework: `test.sh` is a hand-rolled pass/fail harness.
 
-**Spec:** [docs/superpowers/specs/2026-07-28-global-install-design.md](../specs/2026-07-28-global-install-design.md)
+**Spec:** [design/superpowers/specs/2026-07-28-global-install-design.md](../specs/2026-07-28-global-install-design.md)
 
 ## Global Constraints
 

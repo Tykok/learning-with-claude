@@ -8,7 +8,7 @@
 
 **Tech Stack:** POSIX `sh` (`bootstrap.sh`), `bash` (`install.sh`, `test.sh`), `curl`, `tar`, `jq`, `git`.
 
-**Spec:** [docs/superpowers/specs/2026-07-29-bootstrap-installer-design.md](../specs/2026-07-29-bootstrap-installer-design.md)
+**Spec:** [design/superpowers/specs/2026-07-29-bootstrap-installer-design.md](../specs/2026-07-29-bootstrap-installer-design.md)
 
 ## Global Constraints
 
