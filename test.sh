@@ -758,6 +758,7 @@ printf '%s' "$fill" | grep -qi 'restore' \
 
 # --- docs -------------------------------------------------------------------
 RM="$ROOT/README.md"
+SITE="$ROOT/docs/index.html"
 
 # Boundary-aware on trackGlobs (untrackGlobs must not self-trip this). Only
 # `intermediaire` is banned: `junior` and `senior` are supported level aliases, so
@@ -765,21 +766,6 @@ RM="$ROOT/README.md"
 grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$RM" \
   && ko "README mentions no removed key or old level" \
   || ok "README mentions no removed key or old level"
-
-for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency blanksPerExercise 'learner off'; do
-  grep -qF "$s" "$RM" && ok "README documents $s" || ko "README documents $s"
-done
-
-grep -qF -- '--project' "$RM" \
-  && ok "README documents the legacy cleanup flag" \
-  || ko "README documents the legacy cleanup flag"
-
-# Bracket expressions, not backslash escapes: `\|` is defined in an ERE but a
-# backslash before an ordinary character like a backtick is undefined, and
-# implementations disagree — ugrep matched it, GNU grep 3.11 did not.
-grep -qE '^[|] [`]?[DJCSE][`]? ' "$RM" \
-  && ok "README documents the letter levels" \
-  || ko "README documents the letter levels"
 
 grep -qF 'bootstrap.sh' "$RM" \
   && ok "README documents the one-line install" \
@@ -793,17 +779,6 @@ grep -qF 'sh -s --' "$RM" \
   && ok "README documents the non-interactive one-liner form" \
   || ko "README documents the non-interactive one-liner form"
 
-for p in WSL 'Git Bash'; do
-  grep -qF "$p" "$RM" && ok "README covers $p" || ko "README covers $p"
-done
-
-# The Windows gap must carry its reason, not just a "no". Case-insensitive on
-# purpose: the table capitalises "Windows, native" while the prose could say
-# "native Windows", and a case-sensitive pattern here would never match.
-grep -qiE 'native windows|windows, native' "$RM" \
-  && ok "README states native Windows is unsupported" \
-  || ko "README states native Windows is unsupported"
-
 grep -qiF 'posix' "$RM" \
   && ok "README gives the reason native Windows cannot work" \
   || ko "README gives the reason native Windows cannot work"
@@ -811,38 +786,32 @@ grep -qiF 'posix' "$RM" \
 # bootstrap.sh preflights `bash`, so it is a hard install-time dependency on both
 # paths (install.sh is a bash script) and Requirements has to say so. A bare
 # `grep -qF 'bash'` would be worthless here: every fenced code block in this
-# README opens with ```bash, and "Git Bash" appears in the platform table, so it
-# would pass against a README that never mentions the dependency. Pinned to the
-# bullet's shape instead, including "to install" — the claim that distinguishes
-# it from the POSIX-shell bullet, which is about running the hooks. Bracket
-# expressions, not backslashes, before the ordinary backtick character.
+# README opens with ```bash, and "Git Bash" appears on the site's platform
+# table, so it would pass against a README that never mentions the dependency.
+# Pinned to the bullet's shape instead, including "to install" — the claim that
+# distinguishes it from the POSIX-shell bullet, which is about running the
+# hooks. Bracket expressions, not backslashes, before the ordinary backtick
+# character.
 grep -qE '^- [*][*][`]bash[`][*][*] on [`]PATH[`] to install' "$RM" \
   && ok "README requires bash to install, separately from the hooks' shell" \
   || ko "README requires bash to install, separately from the hooks' shell"
-
-# The three checks above are satisfied by prose alone (the Requirements bullets
-# also say "POSIX", independent of the table), so deleting the platform table
-# itself would not turn them red. Row-shaped patterns pin the table specifically.
-# `\|` escapes the ERE alternation operator into a literal pipe — well-defined
-# for a backslash before a SPECIAL regex character, unlike the backtick-escape
-# bug fixed elsewhere in this file (a backslash before an ORDINARY character).
-grep -qE '^\| Windows via WSL \| yes ' "$RM" \
-  && ok "the platform table has a WSL row" \
-  || ko "the platform table has a WSL row"
-
-grep -qE '^\| Windows, native \| no ' "$RM" \
-  && ok "the platform table has a native-Windows row" \
-  || ko "the platform table has a native-Windows row"
-
-grep -qiE '^\| Windows, native \|.*posix' "$RM" \
-  && ok "the native-Windows row itself states the POSIX reason" \
-  || ko "the native-Windows row itself states the POSIX reason"
 
 # The Development section's shellcheck line must match what CI actually runs
 # (.github/workflows/ci.yml), or the README is just wrong about what CI does.
 grep -qF 'uninstall.sh bootstrap.sh test.sh' "$RM" \
   && ok "README's Development shellcheck line covers bootstrap.sh, matching CI" \
   || ko "README's Development shellcheck line covers bootstrap.sh, matching CI"
+
+# The install one-liner appears in two files by design. Pin them to each other so
+# they cannot drift: this is the whole reason the split is acceptable.
+ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh'
+{ grep -qF "$ONELINER" "$RM" && grep -qF "$ONELINER" "$SITE"; } \
+  && ok "the install one-liner is identical in the README and on the site" \
+  || ko "the install one-liner is identical in the README and on the site"
+
+{ grep -qF 'docs/index.html' "$RM" || grep -qiF 'github.io' "$RM"; } \
+  && ok "the README links to the site" \
+  || ko "the README links to the site"
 
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
@@ -1014,7 +983,8 @@ else
 fi
 
 # --- site -------------------------------------------------------------------
-SITE="$ROOT/docs/index.html"
+# SITE is set in the docs section above; the README and site checks share it so
+# the one-liner and link assertions there can compare the two files.
 
 [ -f "$SITE" ] && ok "the site exists at docs/index.html" \
                || ko "the site exists at docs/index.html"
@@ -1051,6 +1021,29 @@ for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency \
   grep -qF "$s" "$SITE" && ok "the site documents $s" || ko "the site documents $s"
 done
 
+# The check above only pins the config keys' *names*. The seven defaults are a
+# hand-copy of LEARNER_DEFAULTS in hooks/learner-config.sh, and now a THIRD copy
+# after skills/learner/SKILL.md and, until this task, the README — so
+# blanksPerExercise could drift from 2 to 3 in the code and every copy would
+# desync while this suite stayed green. Read the real defaults from the source
+# of truth via jq instead of hard-coding them here, so a changed default with a
+# stale page turns this red. (`level` is the one key with no default and is
+# correctly absent from LEARNER_DEFAULTS, so it is skipped automatically.)
+defaults_line=$(grep -m1 '^LEARNER_DEFAULTS=' "$ROOT/hooks/learner-config.sh")
+defaults_json=${defaults_line#LEARNER_DEFAULTS=\'}
+defaults_json=${defaults_json%\'}
+for key in $(printf '%s' "$defaults_json" | jq -r 'keys[]'); do
+  val=$(printf '%s' "$defaults_json" | jq -c --arg k "$key" '.[$k]')
+  # A string default may appear quoted or bare in the page's prose (e.g.
+  # "auto" vs normal), so accept either rendering.
+  bare=${val#\"}; bare=${bare%\"}
+  row=$(grep -F "<tr><td><code>$key</code></td>" "$SITE")
+  { printf '%s' "$row" | grep -qF "<td><code>${val}</code></td>" \
+    || printf '%s' "$row" | grep -qF "<td><code>${bare}</code></td>"; } \
+    && ok "the site's default for $key matches LEARNER_DEFAULTS ($val)" \
+    || ko "the site's default for $key matches LEARNER_DEFAULTS ($val)"
+done
+
 grep -qF -- '--project' "$SITE" \
   && ok "the site documents the legacy cleanup flag" \
   || ko "the site documents the legacy cleanup flag"
@@ -1079,6 +1072,23 @@ grep -qiE 'native windows|windows, native' "$SITE" \
 grep -qiF 'posix' "$SITE" \
   && ok "the site gives the reason native Windows cannot work" \
   || ko "the site gives the reason native Windows cannot work"
+
+# The three checks above are satisfied by prose alone (the Requirements list
+# also says "POSIX", independent of the table), so deleting the platform table
+# itself would not turn them red. Row-shaped patterns pin the table
+# specifically — the same reasoning that used to pin the README's markdown
+# table, now pinning the site's HTML one instead.
+grep -qF '<tr><td>Windows via WSL</td><td>yes</td>' "$SITE" \
+  && ok "the platform table has a WSL row" \
+  || ko "the platform table has a WSL row"
+
+grep -qF '<tr><td>Windows, native</td><td>no</td>' "$SITE" \
+  && ok "the platform table has a native-Windows row" \
+  || ko "the platform table has a native-Windows row"
+
+grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE" \
+  && ok "the native-Windows row itself states the POSIX reason" \
+  || ko "the native-Windows row itself states the POSIX reason"
 
 grep -qF 'LEARNER-TODO' "$SITE" \
   && ok "the site shows the fill markers" \
