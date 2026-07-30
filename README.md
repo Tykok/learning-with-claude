@@ -15,9 +15,8 @@ with Claude Code — no per-repo setup.
 **The full reference lives on the site:
 [tykok.github.io/learning-with-claude](https://tykok.github.io/learning-with-claude/)** —
 question styles, config keys and defaults, levels, platforms, the `fill` guardrail, on-demand
-subcommands, and uninstall are all documented there. That link is not live yet: GitHub Pages
-cannot publish while this repository is private. Until it is, open `docs/index.html` from a
-clone. This README only gets you installed.
+subcommands, and uninstall are all documented there. It is a single hand-written file, so
+`docs/index.html` in a clone reads identically offline. This README only gets you installed.
 
 Five POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install,
 `PostToolUse` records edited files, and `Stop` blocks once per turn to ask one question —
