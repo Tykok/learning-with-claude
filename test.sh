@@ -808,6 +808,30 @@ grep -qiF 'posix' "$RM" \
   && ok "README gives the reason native Windows cannot work" \
   || ko "README gives the reason native Windows cannot work"
 
+# The three checks above are satisfied by prose alone (the Requirements bullets
+# also say "POSIX", independent of the table), so deleting the platform table
+# itself would not turn them red. Row-shaped patterns pin the table specifically.
+# `\|` escapes the ERE alternation operator into a literal pipe — well-defined
+# for a backslash before a SPECIAL regex character, unlike the backtick-escape
+# bug fixed elsewhere in this file (a backslash before an ORDINARY character).
+grep -qE '^\| Windows via WSL \| yes ' "$RM" \
+  && ok "the platform table has a WSL row" \
+  || ko "the platform table has a WSL row"
+
+grep -qE '^\| Windows, native \| no ' "$RM" \
+  && ok "the platform table has a native-Windows row" \
+  || ko "the platform table has a native-Windows row"
+
+grep -qiE '^\| Windows, native \|.*posix' "$RM" \
+  && ok "the native-Windows row itself states the POSIX reason" \
+  || ko "the native-Windows row itself states the POSIX reason"
+
+# The Development section's shellcheck line must match what CI actually runs
+# (.github/workflows/ci.yml), or the README is just wrong about what CI does.
+grep -qF 'uninstall.sh bootstrap.sh test.sh' "$RM" \
+  && ok "README's Development shellcheck line covers bootstrap.sh, matching CI" \
+  || ko "README's Development shellcheck line covers bootstrap.sh, matching CI"
+
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
 
@@ -867,16 +891,25 @@ out=$(CLAUDE_CONFIG_DIR="$WORK/boot6" LEARNER_URL="file://$WORK/nope.tgz" \
   || ok "bootstrap fails on an unreachable URL"
 
 # Every die() message is prefixed "error: ", so a bare 'error' grep would pass
-# against ANY failure path, not specifically this one — the wording unique to
-# the fetch failure is "could not fetch". That branch only fires when the
-# `curl | tar` pipeline itself exits non-zero, and a *missing* file (nope.tgz
-# above, curl emits zero bytes) is not a reliable way to force that: GNU tar
-# rejects an empty gzip stream (non-zero exit -> "could not fetch"), but bsdtar
-# (macOS) treats zero bytes as a valid, empty archive and exits 0, so the
-# pipeline "succeeds" and the *next* check ("no install.sh") fires instead.
-# Confirmed by running both tar implementations directly. An existing file
-# with bytes that are not gzip at all closes that gap: both implementations
-# reject it identically, so the pipeline fails the same way everywhere.
+# against ANY failure path, not specifically this one — the wording unique to a
+# fetch that delivered nothing is "could not fetch". This assertion belongs on
+# the *missing* URL and nowhere else, and it is assertable only because the
+# bootstrap downloads to a file and reads curl's own exit status (37 here, on
+# both curl builds). Under the earlier `curl | tar` pipeline it was unreachable
+# on macOS: POSIX sh has no pipefail, so the pipeline's status was tar's, and
+# bsdtar accepts curl's zero bytes as a valid empty archive and exits 0 (GNU
+# tar exits 2) — every 404, DNS or proxy failure was reported there as
+# "has no install.sh (bad ref?)", naming a branch problem for a network one.
+printf '%s' "$out" | grep -qF 'could not fetch' \
+  && ok "the failed-fetch message names the failed fetch" \
+  || ko "the failed-fetch message names the failed fetch"
+
+# A fetch that *succeeds* and hands back bytes that are not a gzip stream is a
+# different fault with a different cause, and must not be reported as a failed
+# fetch. An existing non-gzip file, not a missing one: curl returns 0 for it
+# everywhere, and both bsdtar and GNU tar then reject the bytes identically
+# (confirmed by running both directly), so this fixture is deterministic where
+# a missing file would exercise the branch above instead.
 GARBAGE="$WORK/garbage.tgz"
 printf 'not a gzip archive at all, just plain bytes\n' > "$GARBAGE"
 mkdir -p "$WORK/boot6b"
@@ -884,9 +917,9 @@ out=$(CLAUDE_CONFIG_DIR="$WORK/boot6b" LEARNER_URL="file://$GARBAGE" \
   sh "$BOOT" --level S 2>&1) \
   && ko "bootstrap fails when the fetch yields no usable archive" \
   || ok "bootstrap fails when the fetch yields no usable archive"
-printf '%s' "$out" | grep -qF 'could not fetch' \
-  && ok "the failed-fetch message names the failed fetch" \
-  || ko "the failed-fetch message names the failed fetch"
+printf '%s' "$out" | grep -qF 'not a readable tar.gz' \
+  && ok "the unusable-archive message blames the archive, not the fetch" \
+  || ko "the unusable-archive message blames the archive, not the fetch"
 
 # An archive without install.sh must be named as such, not fail deep inside bash.
 BADTAR="$WORK/bad.tgz"; mkdir -p "$WORK/badsrc/inner"; echo x > "$WORK/badsrc/inner/f"
@@ -896,7 +929,10 @@ out=$(CLAUDE_CONFIG_DIR="$WORK/boot7" LEARNER_URL="file://$BADTAR" \
   sh "$BOOT" --level S 2>&1) \
   && ko "bootstrap rejects an archive with no install.sh" \
   || ok "bootstrap rejects an archive with no install.sh"
-printf '%s' "$out" | grep -q 'install.sh' \
+# -F on the whole phrase, not a bare 'install.sh': the path bash prints when it
+# cannot find the file ("No such file or directory: …/install.sh") also contains
+# that substring, so a bare pattern stayed green with the guard deleted.
+printf '%s' "$out" | grep -qF 'has no install.sh' \
   && ok "the bad-archive message names install.sh" \
   || ko "the bad-archive message names install.sh"
 
@@ -937,14 +973,32 @@ grep -q 'Tykok/learning-with-claude' "$WORK/curl-url" 2>/dev/null \
 # terminal in a subshell to agree with bootstrap.sh. Only assertable where that
 # open fails; skipped where it succeeds.
 if (exec 3< /dev/tty) 2>/dev/null; then
-  skip "no-tty guidance (a terminal is available here)"
+  skip "no-tty guidance and its existing-config exemption (a terminal is available here)"
 else
-  out=$(CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
+  # A config directory that exists but holds no learner.json. It has to exist,
+  # or the Claude Code preflight fires first where no `claude` binary is on PATH
+  # (CI); and it must have no learner.json, or the guard's exemption applies and
+  # this exercises the pass-through below instead of the refusal it names — the
+  # reason $B1 cannot be reused here now that the exemption exists.
+  B8="$WORK/boot8"; mkdir -p "$B8"
+  out=$(CLAUDE_CONFIG_DIR="$B8" LEARNER_URL="file://$TARBALL" sh "$BOOT" 2>&1) \
     && ko "bootstrap refuses with no terminal and no --level" \
     || ok "bootstrap refuses with no terminal and no --level"
   printf '%s' "$out" | grep -q -- '--level' \
     && ok "the no-tty message shows the --level re-run" \
     || ko "the no-tty message shows the --level re-run"
+
+  # The other half of the guard: install.sh gates its whole prompt block on the
+  # config NOT existing, so with a learner.json already there it needs no
+  # answers and refusing would break a legitimate non-interactive re-install
+  # (re-copying hooks after an update). $B1 has one, from the first bootstrap
+  # test above. Deleting a hook first proves the run reached install.sh, rather
+  # than merely getting past the guard and failing somewhere later.
+  rm -f "$B1/hooks/learner-quiz.sh"
+  { CLAUDE_CONFIG_DIR="$B1" LEARNER_URL="file://$TARBALL" sh "$BOOT" >/dev/null 2>&1 \
+    && [ -f "$B1/hooks/learner-quiz.sh" ]; } \
+    && ok "bootstrap proceeds with no terminal and no --level once a config exists" \
+    || ko "bootstrap proceeds with no terminal and no --level once a config exists"
 fi
 
 # --- summary ----------------------------------------------------------------
