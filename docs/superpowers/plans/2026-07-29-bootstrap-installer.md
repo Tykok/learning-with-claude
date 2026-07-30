@@ -407,7 +407,7 @@ Keep the existing flag list (`--level`, `--synthesis`, `--blanks`, `--dry-run`, 
 
 On trust, state exactly two things and no more — do not claim a checksum makes `curl | sh` safe:
 
-- the fetch is HTTPS from `codeload.github.com`, and `LEARNER_REF` pins an exact tag rather than tracking `main`;
+- the fetch is HTTPS from `codeload.github.com`, and `LEARNER_REF` pins an exact ref — a branch name or a commit SHA — rather than tracking `main`;
 - a checksum baked into `bootstrap.sh` would prove nothing, because the script and the archive share an origin — anyone able to change one can change the other.
 
 - [ ] **Step 4: Add the platform table to `## Requirements`**

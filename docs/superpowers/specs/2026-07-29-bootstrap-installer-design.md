@@ -231,7 +231,7 @@ tells a Windows user what to do instead.
 rather than a false sense of safety:
 
 - the fetch is HTTPS from `codeload.github.com`, and `LEARNER_REF` lets a user pin an exact
-  tag instead of tracking `main`;
+  ref — a branch name or a commit SHA — instead of tracking `main`;
 - a checksum embedded in `bootstrap.sh` would prove nothing, because the script and the
   archive come from the same origin — anyone able to alter one can alter the other.
 
