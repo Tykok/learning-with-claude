@@ -40,7 +40,7 @@ design/superpowers/    # specs and plans, moved out of the published root
 ```
 
 **The move matters for two reasons.** Publishing `/docs` makes everything under it reachable,
-and `docs/superpowers/` holds the internal specs and plans — including candid accounts of five
+and `docs/superpowers/` holds the internal specs and plans — including candid accounts of two
 spec-level defects found during implementation. Beyond confidentiality, the published root
 should hold the site and nothing else: a visitor who guesses `/superpowers/plans/…` should not
 find an implementation plan where documentation is expected.
@@ -135,9 +135,14 @@ New assertions for the site:
 
 - the install command on the site is byte-identical to the README's, so the two cannot drift
 - `docs/.nojekyll` exists — without it a Liquid-looking code sample breaks the build
-- the page issues no external request at load: no `<script`, no `<link` with an `href`, and no
-  `@import` anywhere. Ordinary `<a href="https://github.com/…">` links are navigation, not
-  requests, and are expected — the assertion must target the tags that fetch, not every URL.
+- the page issues no external request at load. Checking only `<script`, `<link href>` and
+  `@import` is not enough: an `@font-face { src: url(https://…) }` needs none of the three, so
+  a page could grow a web-font request (banned by §3) with that check staying green. The
+  assertion also has to cover `<img`, `<iframe`, `<embed`, `<object`, `srcset`, and `url(...)`
+  scoped to an `http`/`https` scheme — the last scoping is deliberate, so a local
+  `url(#fragment)` or a `data:` URI, neither of which is a request, is not a false positive.
+  Ordinary `<a href="https://github.com/…">` links are navigation, not requests, and are
+  expected — the assertion must target the tags/properties that fetch, not every URL.
 - exactly one `<h1>`
 
 Patterns use bracket expressions or `-F`, never a backslash before an ordinary character: an
