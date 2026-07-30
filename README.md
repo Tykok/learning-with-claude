@@ -12,17 +12,21 @@ with Claude Code — no per-repo setup.
 
 ## What it is
 
-**The full reference lives on the site: [docs/index.html](docs/index.html)** — question
-styles, config keys and defaults, levels, platforms, the `fill` guardrail, and uninstall are
-all documented there. This README only gets you installed.
+**The full reference lives on the site:
+[tykok.github.io/learning-with-claude](https://tykok.github.io/learning-with-claude/)** —
+question styles, config keys and defaults, levels, platforms, the `fill` guardrail, on-demand
+subcommands, and uninstall are all documented there. That link is not live yet: GitHub Pages
+cannot publish while this repository is private. Until it is, open `docs/index.html` from a
+clone. This README only gets you installed.
 
 Five POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install,
 `PostToolUse` records edited files, and `Stop` blocks once per turn to ask one question —
 `code`, `architecture`, or `fill` (Claude cuts `// LEARNER-TODO` holes in a real function for
 you to fill back in; a guardrail keeps a crashed exercise from ever leaving the tree broken).
-The only thing that ever writes into a repository is `learner off` / `on` /
-`config project …`, and only when you ask for it — everything else lives under your Claude
-Code config directory.
+The only file Learner ever *adds* to a repository is `.claude/learner.local.json`, written by
+`learner off` / `on` / `config project …` on request; a `fill` exercise temporarily edits one
+of your own source files instead. Everything else lives under your Claude Code config
+directory.
 
 ## Requirements
 
@@ -98,6 +102,9 @@ anything either way — the script and the archive it fetches share an origin, s
 change one can change the other. If that boundary matters to you, the clone-and-run path above
 never crosses it: you read `install.sh` before you run it.
 
+One more thing: the hook wiring is read when a Claude Code session starts, so installing while
+a session is already open changes nothing in it — quit and start a new session afterward.
+
 ## Development
 
 ```bash
@@ -107,7 +114,8 @@ shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh te
 
 The `hooks/*.sh` glob covers all five shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
-and PR — an assertion in `test.sh` keeps the two lists in step.
+to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
+keeps the two in step.
 
 ## License
 
