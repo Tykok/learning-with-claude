@@ -808,6 +808,18 @@ grep -qiF 'posix' "$RM" \
   && ok "README gives the reason native Windows cannot work" \
   || ko "README gives the reason native Windows cannot work"
 
+# bootstrap.sh preflights `bash`, so it is a hard install-time dependency on both
+# paths (install.sh is a bash script) and Requirements has to say so. A bare
+# `grep -qF 'bash'` would be worthless here: every fenced code block in this
+# README opens with ```bash, and "Git Bash" appears in the platform table, so it
+# would pass against a README that never mentions the dependency. Pinned to the
+# bullet's shape instead, including "to install" — the claim that distinguishes
+# it from the POSIX-shell bullet, which is about running the hooks. Bracket
+# expressions, not backslashes, before the ordinary backtick character.
+grep -qE '^- [*][*][`]bash[`][*][*] on [`]PATH[`] to install' "$RM" \
+  && ok "README requires bash to install, separately from the hooks' shell" \
+  || ko "README requires bash to install, separately from the hooks' shell"
+
 # The three checks above are satisfied by prose alone (the Requirements bullets
 # also say "POSIX", independent of the table), so deleting the platform table
 # itself would not turn them red. Row-shaped patterns pin the table specifically.

@@ -56,11 +56,14 @@ re-blocks while a leftover `// LEARNER-TODO` marker survives — precisely:
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
   every hook at run time — without it they are inert, and `SessionStart` says so.
+- **`bash`** on `PATH` to install, by either path: `install.sh` is a bash script, and the
+  one-liner checks for `bash` up front rather than fetching a payload it could not hand over.
+  This is separate from the shell the hooks need, below.
 - **`curl` and `tar`** on `PATH` for the one-line install below; the clone-and-run path does
   not need them.
-- **A POSIX-compliant shell to run the hooks** — they are plain `sh` scripts, wired into
-  `settings.json` as `sh "$CFG/hooks/…"`. See the platform table below for what that means
-  in practice.
+- **A POSIX-compliant shell to run the hooks** — a run-time requirement, not an install-time
+  one, and not `bash`: the hooks are plain `sh` scripts, wired into `settings.json` as
+  `sh "$CFG/hooks/…"`. See the platform table below for what that means in practice.
 - **Claude Code** installed (`claude` on `PATH`, or an existing config directory).
 
 | Platform | Supported | Notes |

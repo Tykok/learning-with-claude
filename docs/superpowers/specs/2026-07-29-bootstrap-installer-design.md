@@ -1,7 +1,7 @@
 # Claude Learner — one-line remote install
 
 Date: 2026-07-29
-Status: approved design, not yet implemented
+Status: implemented on `feat/bootstrap-installer`
 
 ## Goal
 
