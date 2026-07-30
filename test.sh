@@ -779,9 +779,13 @@ grep -qF 'sh -s --' "$RM" \
   && ok "README documents the non-interactive one-liner form" \
   || ko "README documents the non-interactive one-liner form"
 
-grep -qiF 'posix' "$RM" \
-  && ok "README gives the reason native Windows cannot work" \
-  || ko "README gives the reason native Windows cannot work"
+# Named and pinned to the bullet it was kept for, not to the bare word: the README no
+# longer mentions Windows/WSL/Git Bash at all (that moved to the site), but a bare
+# `grep -qiF 'posix'` still passed after a reviewer deleted every prose mention of it —
+# the shields.io badge on line 6 (`shell-POSIX%20sh`) kept it green for the wrong reason.
+grep -qE '^- [*][*]A POSIX-compliant shell to run the hooks[*][*]' "$RM" \
+  && ok "README's Requirements list keeps the POSIX-shell bullet" \
+  || ko "README's Requirements list keeps the POSIX-shell bullet"
 
 # bootstrap.sh preflights `bash`, so it is a hard install-time dependency on both
 # paths (install.sh is a bash script) and Requirements has to say so. A bare
@@ -796,11 +800,16 @@ grep -qE '^- [*][*][`]bash[`][*][*] on [`]PATH[`] to install' "$RM" \
   && ok "README requires bash to install, separately from the hooks' shell" \
   || ko "README requires bash to install, separately from the hooks' shell"
 
-# The Development section's shellcheck line must match what CI actually runs
-# (.github/workflows/ci.yml), or the README is just wrong about what CI does.
-grep -qF 'uninstall.sh bootstrap.sh test.sh' "$RM" \
-  && ok "README's Development shellcheck line covers bootstrap.sh, matching CI" \
-  || ko "README's Development shellcheck line covers bootstrap.sh, matching CI"
+# The Development section's shellcheck line must match what CI actually runs. A fixed
+# substring here only ever proved the README mentions bootstrap.sh, never that it matches
+# .github/workflows/ci.yml — so read the real command out of the workflow file and compare
+# against it, rather than trusting a copy of a copy.
+CI_YML="$ROOT/.github/workflows/ci.yml"
+CI_SHELLCHECK=$(awk '/name: shellcheck/{getline; sub(/^[[:space:]]*run:[[:space:]]*/, ""); print; exit}' "$CI_YML")
+[ -n "$CI_SHELLCHECK" ] \
+  && grep -qF "$CI_SHELLCHECK" "$RM" \
+  && ok "README's Development shellcheck line matches .github/workflows/ci.yml" \
+  || ko "README's Development shellcheck line matches .github/workflows/ci.yml"
 
 # The install one-liner appears in two files by design. Pin them to each other so
 # they cannot drift: this is the whole reason the split is acceptable.
@@ -1001,8 +1010,13 @@ fi
   && ok "the design records moved to design/" \
   || ko "the design records moved to design/"
 
-# No external request at load. <a href> navigation is fine; fetching tags are not.
-grep -qiE '<script|<link[^>]+href|@import' "$SITE" \
+# No external request at load. <a href> navigation is fine; fetching tags/properties are
+# not. The original three (script/link-href/@import) missed a whole class of fetch: an
+# `@font-face { src: url(https://…) }` needs none of them, so a reviewer added one and the
+# suite stayed green. img/iframe/embed/object/srcset cover the other tags that fetch;
+# url(...) is scoped to an http(s) scheme so a local url(#fragment) or a data: URI (no
+# request either) is not a false positive.
+grep -qiE '<script|<link[^>]+href|@import|<img|<iframe|<embed|<object|srcset|url\([^)]*https?:' "$SITE" \
   && ko "the page issues no external request at load" \
   || ok "the page issues no external request at load"
 
@@ -1038,10 +1052,31 @@ for key in $(printf '%s' "$defaults_json" | jq -r 'keys[]'); do
   # "auto" vs normal), so accept either rendering.
   bare=${val#\"}; bare=${bare%\"}
   row=$(grep -F "<tr><td><code>$key</code></td>" "$SITE")
-  { printf '%s' "$row" | grep -qF "<td><code>${val}</code></td>" \
-    || printf '%s' "$row" | grep -qF "<td><code>${bare}</code></td>"; } \
+  # Scoped to the Default *column*, not the whole row: the table has four <td>
+  # cells per row (Key, Values, Default, Effect) each closed with exactly one
+  # "</td>", so splitting on that literal string isolates cell 3. A row-wide
+  # search here previously passed with the wrong default documented, because the
+  # correct value still existed somewhere else in the same row (the Values
+  # cell) — this rescopes the read, not just the pattern.
+  cell=$(printf '%s' "$row" | awk -F'</td>' '{print $3}')
+  { printf '%s' "$cell" | grep -qF "<td><code>${val}</code>" \
+    || printf '%s' "$cell" | grep -qF "<td><code>${bare}</code>"; } \
     && ok "the site's default for $key matches LEARNER_DEFAULTS ($val)" \
     || ko "the site's default for $key matches LEARNER_DEFAULTS ($val)"
+done
+
+# The site is both the pitch and the full reference (locked decision #3) — that covers
+# more than the automatic quiz. Derive the subcommand list from the skill's own dispatch
+# table instead of hard-coding it here, so a seventh subcommand added later is caught by
+# this check automatically rather than silently shipping undocumented, the way
+# `status`/`improve`/`help` and `quiz`'s syntax did the first time around.
+DISPATCH=$(awk '/^## Dispatch/{f=1;next} /^## /{f=0} f' "$ROOT/skills/learner/SKILL.md")
+SUBCOMMANDS=$(printf '%s\n' "$DISPATCH" | awk -F'|' '/^\|/{print $2}' \
+  | grep -oE '`[^`]*`' | tr -d '`' | awk '{print $1}' | grep -vE '^-' | sort -u)
+for sub in $SUBCOMMANDS; do
+  grep -qF "learner $sub" "$SITE" \
+    && ok "the site documents the 'learner $sub' subcommand" \
+    || ko "the site documents the 'learner $sub' subcommand"
 done
 
 grep -qF -- '--project' "$SITE" \
