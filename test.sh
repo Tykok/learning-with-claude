@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Tests for the learning-mode hooks + installer.
 # Plain sh/bash, no framework. Requires: jq, git. Run: ./test.sh
 set -u
@@ -1143,6 +1144,73 @@ grep -qF 'working tree' "$SITE" && grep -qF 'HEAD' "$SITE" \
 grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$SITE" \
   && ko "the site mentions no removed key or old level" \
   || ok "the site mentions no removed key or old level"
+
+# --- licence ----------------------------------------------------------------
+# The licence name lives in four places — LICENSE, the README badge, the README
+# footer and the site footer — so it is exactly the shape that drifts. Anchoring
+# matters here: the README badge URL contains "GPLv3", so a bare `grep GPL`
+# would pass on the badge alone even with the prose still saying MIT. That is
+# how the old "README gives the reason native Windows cannot work" check went
+# green off a shields.io URL.
+LIC="$ROOT/LICENSE"
+
+{ grep -qF 'GNU GENERAL PUBLIC LICENSE' "$LIC" \
+  && grep -qF 'Version 3, 29 June 2007' "$LIC"; } \
+  && ok "LICENSE carries the GPL-3.0 text" \
+  || ko "LICENSE carries the GPL-3.0 text"
+
+grep -qF 'Copyright (C) 2026 Tykok' "$LIC" \
+  && ok "LICENSE carries the copyright line the GPL appendix asks for" \
+  || ko "LICENSE carries the copyright line the GPL appendix asks for"
+
+grep -qE '^[[]GPL-3[.]0-or-later[]][(][.]/LICENSE[)]' "$RM" \
+  && ok "the README footer names the licence, not just the badge" \
+  || ko "the README footer names the licence, not just the badge"
+
+grep -qF 'License-GPLv3' "$RM" \
+  && ok "the README badge shows GPLv3" \
+  || ko "the README badge shows GPLv3"
+
+grep -qF '>GPL-3.0-or-later</a>' "$SITE" \
+  && ok "the site footer links the licence by name" \
+  || ko "the site footer links the licence by name"
+
+# Copyleft is the point of the change, so say so where a reader will look.
+for f in "$RM" "$SITE"; do
+  grep -qiF 'copyleft' "$f" \
+    && ok "$(basename "$f") states the licence is copyleft" \
+    || ko "$(basename "$f") states the licence is copyleft"
+done
+
+# `[^A-Z]` guards the substring: LIMITED, SUBMIT and TRANSMIT all contain those
+# three letters.
+#
+# The scanned set is what ships or is read by a user: the README, the site, and
+# the eight scripts install.sh copies or a user runs. test.sh is deliberately NOT
+# in it — this file names the old licence in the pattern and in its own pass/fail
+# messages, so scanning itself could never pass, and it is neither shipped nor
+# documentation. design/ is excluded too: those plans record what was decided at
+# the time, and rewriting them would falsify the record.
+LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
+hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
+install.sh uninstall.sh bootstrap.sh"
+# shellcheck disable=SC2086  # word splitting is how the path list is passed
+if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
+  ko "no shipped or user-facing file still claims MIT"
+else
+  ok "no shipped or user-facing file still claims MIT"
+fi
+
+# install.sh copies the hooks into the user's config directory, so they leave
+# this repository and land somewhere with no LICENSE beside them. A one-line
+# SPDX tag is what tells a reader over there what they are holding.
+for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
+         hooks/learner-quiz.sh hooks/learner-cleanup.sh install.sh uninstall.sh \
+         bootstrap.sh test.sh; do
+  grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
+    && ok "$f carries an SPDX licence tag" \
+    || ko "$f carries an SPDX licence tag"
+done
 
 # --- summary ----------------------------------------------------------------
 echo

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fetch Learner and hand over to its installer.
 #
 # Usage:

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # SessionStart: report a broken learner install and nothing else.
 #
 # install.sh does the onboarding now, so there is no conversational setup here.

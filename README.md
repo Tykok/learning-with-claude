@@ -1,7 +1,7 @@
 # Claude Learning Mode
 
 [![CI](https://github.com/Tykok/learning-with-claude/actions/workflows/ci.yml/badge.svg)](https://github.com/Tykok/learning-with-claude/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-hooks%20%2B%20skill-8A63D2)
 ![Shell](https://img.shields.io/badge/shell-POSIX%20sh-4EAA25?logo=gnu-bash&logoColor=white)
 
@@ -119,4 +119,9 @@ keeps the two in step.
 
 ## License
 
-[MIT](./LICENSE) © Tykok
+[GPL-3.0-or-later](./LICENSE) © Tykok
+
+Copyleft: a fork stays free. If you distribute a modified version of Learner, you distribute
+it under the GPL too, with its source. Using Learner on your own code does **not** affect your
+code's licence — running a program over your files never makes those files derivative works.
+Only redistributing a modified Learner triggers the obligation.

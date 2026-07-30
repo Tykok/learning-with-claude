@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Part of the learner hooks (see learner-quiz.sh / learner-record-edit.sh).
 #
 # SessionEnd hook: remove this session's scratch files from TMPDIR so they don't

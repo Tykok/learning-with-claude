@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # PostToolUse Write|Edit: record the files edited this session so the Stop hook
 # can quiz on them.
 #

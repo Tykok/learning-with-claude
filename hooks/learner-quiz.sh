@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Stop hook, two jobs.
 #
 # 1. Guardrail — while a `// LEARNER-TODO` marker left behind by a crashed
