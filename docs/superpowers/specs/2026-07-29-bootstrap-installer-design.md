@@ -43,8 +43,10 @@ curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/boo
 # non-interactive: flags pass straight through to install.sh
 curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis often --blanks 2
 
-# pinned to a tag
-LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh
+# pinned to a revision: the ref is named twice, because LEARNER_REF pins the payload
+# and not bootstrap.sh itself, which the shell has already read from the URL. There
+# are no release tags, so <ref> is a branch name or a commit SHA.
+curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
 ```
 
 Flow, in order:

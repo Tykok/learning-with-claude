@@ -4,7 +4,13 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
 #   curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis often
-#   LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh
+#
+# To install a specific revision, name it twice — LEARNER_REF pins the payload
+# fetched below, not this script, which the shell has already read from the URL
+# above. There are no release tags yet, so <ref> is a branch name or a commit
+# SHA, never a tag:
+#
+#   curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
 #
 # install.sh is not self-contained: it copies eleven payload files and sources
 # hooks/learner-config.sh, so it cannot be piped into a shell on its own. This
@@ -62,12 +68,18 @@ HAVE_TTY=0
 if (exec 3< /dev/tty) 2>/dev/null; then
   HAVE_TTY=1
 fi
+#
+# The hint carries $REF in both places rather than a literal "main": a user who
+# pinned a ref and then tripped this guard would otherwise be handed a command
+# that silently moved them back to main. Both, because a fresh shell inherits
+# neither — the URL pins this script, LEARNER_REF pins the payload — so with the
+# default ref it reads "main" twice, which is redundant but true.
 if [ "$HAVE_TTY" = 0 ] && [ ! -f "$CFG_DIR/learner.json" ]; then
   case " $* " in
     *" --level "*|*" --level="*) ;;
     *) die "no terminal available, so the level cannot be asked for.
        Re-run with the level set, e.g.:
-       curl -fsSL https://raw.githubusercontent.com/$REPO/main/bootstrap.sh | sh -s -- --level S" ;;
+       curl -fsSL https://raw.githubusercontent.com/$REPO/$REF/bootstrap.sh | LEARNER_REF=$REF sh -s -- --level S" ;;
   esac
 fi
 

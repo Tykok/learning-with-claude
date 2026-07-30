@@ -186,7 +186,13 @@ Expected: every new `bootstrap` assertion FAILS (`bootstrap.sh` does not exist, 
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
 #   curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis often
-#   LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh
+#
+# To install a specific revision, name it twice — LEARNER_REF pins the payload
+# fetched below, not this script, which the shell has already read from the URL
+# above. There are no release tags yet, so <ref> is a branch name or a commit
+# SHA, never a tag:
+#
+#   curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
 #
 # install.sh is not self-contained: it copies eleven payload files and sources
 # hooks/learner-config.sh, so it cannot be piped into a shell on its own. This
@@ -378,7 +384,10 @@ questions, pass the same flags `install.sh` takes:
 
 ```bash
 curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
-LEARNER_REF=v0.2.0 curl -fsSL .../bootstrap.sh | sh    # pin an exact ref
+
+# pin a revision: name the ref in the URL as well, since LEARNER_REF pins only the
+# payload. No release tags exist, so <ref> is a branch name or a commit SHA.
+curl -fsSL .../<ref>/bootstrap.sh | LEARNER_REF=<ref> sh
 ```
 
 Prefer to read the code before running it? Clone and use the installer directly — it stays a
