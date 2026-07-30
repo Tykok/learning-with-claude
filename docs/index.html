@@ -17,7 +17,9 @@
   :root {
     --bg: #16161a; --fg: #e8e6e1; --muted: #9d9890;
     --rule: #2c2c32; --card: #1e1e24; --accent: #a98cf0;
-    --code-bg: #1c1c22;
+    /* Well clear of --bg (#16161a), not six lightness units off it: an inline
+       code chip that barely separates from the page is unreadable as a chip. */
+    --code-bg: #32323c;
   }
 }
 
@@ -190,10 +192,10 @@ footer p { margin-bottom: 0.4rem; }
     <h2 id="toc-h">On this page</h2>
     <ol>
       <li><a href="#problem">The problem</a></li>
-      <li><a href="#install">Install</a></li>
       <li><a href="#looks-like">What it actually looks like</a></li>
       <li><a href="#styles">The three question styles</a></li>
       <li><a href="#guardrail">The guardrail</a></li>
+      <li><a href="#install">Install</a></li>
       <li><a href="#config">Configuration</a></li>
       <li><a href="#levels">Levels</a></li>
       <li><a href="#platforms">Platforms</a></li>
@@ -211,6 +213,200 @@ footer p { margin-bottom: 0.4rem; }
   is not skippable in the same way. Learner spends one question of your attention at the
   end of a turn, while the code is still fresh, and writes down whatever you did not
   know so it can come back to it later.</p>
+
+  <h2 id="looks-like">What it actually looks like</h2>
+
+  <p>Nothing below is a mock-up. The trigger lines are the text
+  <code>hooks/learner-quiz.sh</code> emits, and the <code>fill</code> exercise cuts up a
+  function from this project's own source.</p>
+
+  <h3>A granular question</h3>
+
+  <p>When a turn ends and the session has edited at least one file inside the repository,
+  the <code>Stop</code> hook blocks once. What lands in the console is the hook's own
+  reason:</p>
+
+  <figure>
+    <figcaption>the <code>Stop</code> hook's block reason</figcaption>
+<pre><code>🎓 Learner (level: C, mode: granular, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts
+Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
+  </figure>
+
+  <p>That line is parameters, not the question — the protocol lives in the skill, so the
+  hook never has an opinion about what a good question is. Claude reads the files, reads
+  your open weak spots, and asks one question pitched at the level named:</p>
+
+  <figure>
+    <figcaption>what Claude then asks you</figcaption>
+<pre><code>🎓 Learner — src/auth/session.ts
+
+You changed refreshSession() to delete the old session row before inserting
+the replacement. Why that order rather than insert-then-delete, and what
+does a caller see if the insert fails after the delete has committed?</code></pre>
+  </figure>
+
+  <p>Answer it and the turn continues. Say <code>skip</code> and it moves on without
+  insisting. Either way what you did not know is recorded, and the next question prefers
+  a weak spot that is still open — spaced repetition over the code you actually
+  write.</p>
+
+  <h3>A synthesis question</h3>
+
+  <p>Every fourth question by default, one question is about the shape of the work rather
+  than a detail. The hook switches mode and widens the file list: a granular question
+  sees the edits since the last question, a synthesis question sees every file the
+  session has touched.</p>
+
+  <figure>
+    <figcaption>the same hook, in synthesis mode</figcaption>
+<pre><code>🎓 Learner (level: C, mode: synthesis, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts /Users/you/code/api/src/auth/tokens.ts /Users/you/code/api/src/db/queries.ts
+Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
+  </figure>
+
+  <figure>
+    <figcaption>what Claude then asks you</figcaption>
+<pre><code>🎓 Learner — this session
+
+Trace what happens between a request arriving with an expired access token
+and its caller getting a fresh one. Which of the three files you touched
+owns each step, and why does the rotation live in tokens.ts rather than in
+session.ts?</code></pre>
+  </figure>
+
+  <h3>A fill exercise</h3>
+
+  <p>This is the style that is hardest to picture from a description and the one that
+  most reliably tells you whether you understood the code. Claude picks one short
+  function among the files you just edited, memorises the correct version from git, then
+  cuts holes in the real file on disk and asks you to fill them in.</p>
+
+  <p>Here is <code>learner_synthesis_n</code> from this project's own
+  <code>hooks/learner-config.sh</code>, whole — it turns the
+  <code>synthesisFrequency</code> word into the number of questions between synthesis
+  questions:</p>
+
+  <figure>
+    <figcaption>before — <code>hooks/learner-config.sh</code></figcaption>
+<pre><code>learner_synthesis_n() {
+  case "${1:-}" in
+    off)   printf '0' ;;
+    rare)  printf '8' ;;
+    often) printf '2' ;;
+    *)     printf '4' ;;
+  esac
+}</code></pre>
+  </figure>
+
+  <p>And the same function after a <code>fill</code> exercise with
+  <code>blanksPerExercise</code> at its default of 2. This is not a preview pane: it is
+  your file, saved to disk, and your editor will show it changed.</p>
+
+  <figure>
+    <figcaption>after — the same file, two holes cut</figcaption>
+<pre><code>learner_synthesis_n() {
+  case "${1:-}" in
+    off)   printf '0' ;;
+<span class="hl">    // LEARNER-TODO: the two named cadences, and which one is rarer</span>
+<span class="hl">    // LEARNER-TODO: the fallback arm — what an unrecognised word gives</span>
+  esac
+}</code></pre>
+  </figure>
+
+  <p>Claude names the file and the function, asks you to write the missing code
+  <strong>in the file</strong>, and then waits. It will not fill them in for you. When
+  you are done — or you say <code>skip</code> — it compares what you wrote against the
+  version it memorised, gives you a couple of lines of feedback, restores a correct
+  implementation, and runs a focused check that the file is valid again.</p>
+
+  <div class="note">
+    <p>Two things worth knowing before you let it do that. The marker is the same
+    literal string in every language, <code>// LEARNER-TODO</code>, so in a language
+    where <code>//</code> does not start a comment — shell, as above — the file does not
+    merely have a gap in it: it does not run until the exercise is finished. And the
+    exercise edits your real source, not a copy. Both of those are why
+    <a href="#guardrail">the guardrail</a> exists — read it before you install.</p>
+  </div>
+
+  <h2 id="styles">The three question styles</h2>
+
+  <dl>
+    <dt><code>code</code></dt>
+    <dd>What a specific changed function does.</dd>
+    <dt><code>architecture</code> (alias <code>archi</code>)</dt>
+    <dd>Which module, directory or layer the code lives in, and why that is where it
+    belongs.</dd>
+    <dt><code>fill</code></dt>
+    <dd>The interactive exercise above: holes cut in the real file, filled in by you.</dd>
+  </dl>
+
+  <p><code>questionStyles</code> takes either <code>"auto"</code>, the default, or a
+  subset of those three. <code>"auto"</code> varies the format from one question to the
+  next, picking whichever fits what changed. Naming a subset restricts it — set it to
+  <code>["code"]</code> and no exercise will ever touch a file; set it to
+  <code>["fill"]</code> if writing code back is the only feedback you trust.</p>
+
+  <p>There is no setting for the language of the questions. Claude mirrors whatever you
+  are writing in the conversation.</p>
+
+  <h2 id="guardrail">The guardrail</h2>
+
+  <p>A <code>fill</code> exercise deliberately breaks a file you care about, and a
+  session can end at any moment: a crash, a closed terminal, <code>/clear</code>, a
+  meeting. So the <code>Stop</code> hook carries a second job. While a leftover marker
+  survives, it re-blocks the end of the session and asks for the file to be put back
+  before anything else happens:</p>
+
+  <figure>
+    <figcaption>the guardrail, blocking</figcaption>
+<pre><code>🎓 Learner — an unfinished fill-in exercise left // LEARNER-TODO markers in: hooks/learner-config.sh
+Before anything else: restore the correct implementation, remove every // LEARNER-TODO it left, and verify it compiles/lints/tests. Do not finish while a marker remains.</code></pre>
+  </figure>
+
+  <p>Four properties, as they are actually implemented in
+  <code>hooks/learner-quiz.sh</code>:</p>
+
+  <dl>
+    <dt>Leftovers only</dt>
+    <dd>A file counts when the working tree has a marker in it and <code>HEAD</code> does
+    not. The unit is the file rather than the individual marker: the hook lists the files
+    matching in the working tree, lists the files matching in <code>HEAD</code>, and
+    takes the difference. A marker you committed on purpose is therefore repo content and
+    never triggers it — which is what lets this project write the string in its README,
+    its tests and this very page. In a repository with no commits yet there is no
+    <code>HEAD</code> to subtract from, so every marker in the tree counts, which is the
+    right answer there.</dd>
+
+    <dt>Untracked files count</dt>
+    <dd>The search runs with <code>--untracked</code>. A file the session created a
+    moment ago is the commonest place for a hole to be left behind, and it is precisely
+    the file git would otherwise say nothing about.</dd>
+
+    <dt>It fires even when the quiz is off</dt>
+    <dd>The guardrail runs before the activation check, so neither
+    <code>"enabled": false</code> nor a missing or invalid <code>level</code> silences
+    it: an abandoned exercise still has to be cleaned up. Exactly four things stop it —
+    no <code>jq</code>, no session id in the hook payload, not being inside a git
+    repository, or the repository sitting under <code>disabledPaths</code>. That last one
+    is the deliberate hole: a repository you told Learner to leave alone is left alone,
+    holes included, so if you start an exercise there by hand nothing will chase you
+    about it.</dd>
+
+    <dt>Bounded, so a session can always end</dt>
+    <dd>At most two blocks per outstanding exercise, counted in a per-session file under
+    <code>$TMPDIR</code>. After the second, the hook goes quiet rather than hang a
+    session on a marker Claude cannot or will not clear — the tree is still broken, but
+    that is your call to make and not a loop you have to escape. Cleaning the tree
+    deletes the counter, so a later exercise starts again with a fresh budget of two.
+    When it does block, it names up to twenty files and says how many more there
+    are.</dd>
+  </dl>
+
+  <p>Worth stating plainly what all of this is not: the guardrail is a check that runs
+  when a session ends, not a sandbox. It is the reason an interrupted exercise gets
+  noticed instead of shipped, and the reason <code>fill</code> exercises are confined to
+  files inside the repository — an edit outside it is never recorded as quiz material, so
+  a hole can never be cut where a repo-scoped check could not see it. Committing before
+  you start an exercise still costs you nothing, and git will show you every hole.</p>
 
   <h2 id="install">Install</h2>
 
@@ -324,200 +520,6 @@ cd learning-with-claude
   <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>.
   <code>learner-config.sh</code> is the fifth: the other four source it, and Claude Code
   never invokes it directly.</p>
-
-  <h2 id="looks-like">What it actually looks like</h2>
-
-  <p>Nothing below is a mock-up. The trigger lines are the text
-  <code>hooks/learner-quiz.sh</code> emits, and the <code>fill</code> exercise cuts up a
-  function from this project's own source.</p>
-
-  <h3>A granular question</h3>
-
-  <p>When a turn ends and the session has edited at least one file inside the repository,
-  the <code>Stop</code> hook blocks once. What lands in the console is the hook's own
-  reason:</p>
-
-  <figure>
-    <figcaption>the <code>Stop</code> hook's block reason</figcaption>
-<pre><code>🎓 Learner (level: C, mode: granular, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts
-Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
-  </figure>
-
-  <p>That line is parameters, not the question — the protocol lives in the skill, so the
-  hook never has an opinion about what a good question is. Claude reads the files, reads
-  your open weak spots, and asks one question pitched at the level named:</p>
-
-  <figure>
-    <figcaption>what Claude then asks you</figcaption>
-<pre><code>🎓 Learner — src/auth/session.ts
-
-You changed refreshSession() to delete the old session row before inserting
-the replacement. Why that order rather than insert-then-delete, and what
-does a caller see if the insert fails after the delete has committed?</code></pre>
-  </figure>
-
-  <p>Answer it and the turn continues. Say <code>skip</code> and it moves on without
-  insisting. Either way what you did not know is recorded, and the next question prefers
-  a weak spot that is still open — spaced repetition over the code you actually
-  write.</p>
-
-  <h3>A synthesis question</h3>
-
-  <p>Every fourth question by default, one question is about the shape of the work rather
-  than a detail. The hook switches mode and widens the file list: a granular question
-  sees the edits since the last question, a synthesis question sees every file the
-  session has touched.</p>
-
-  <figure>
-    <figcaption>the same hook, in synthesis mode</figcaption>
-<pre><code>🎓 Learner (level: C, mode: synthesis, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts /Users/you/code/api/src/auth/tokens.ts /Users/you/code/api/src/db/queries.ts
-Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
-  </figure>
-
-  <figure>
-    <figcaption>what Claude then asks you</figcaption>
-<pre><code>🎓 Learner — this session
-
-Trace what happens between a request arriving with an expired access token
-and its caller getting a fresh one. Which of the three files you touched
-owns each step, and why does the rotation live in tokens.ts rather than in
-session.ts?</code></pre>
-  </figure>
-
-  <h3>A fill exercise</h3>
-
-  <p>This is the style that is hardest to picture from a description and the one that
-  most reliably tells you whether you understood the code. Claude picks one short
-  function among the files you just edited, memorises the correct version from git, then
-  cuts holes in the real file on disk and asks you to fill them in.</p>
-
-  <p>Here is <code>learner_synthesis_n</code> from this project's own
-  <code>hooks/learner-config.sh</code>, whole — it turns the
-  <code>synthesisFrequency</code> word into the number of questions between synthesis
-  questions:</p>
-
-  <figure>
-    <figcaption>before — <code>hooks/learner-config.sh</code></figcaption>
-<pre><code>learner_synthesis_n() {
-  case "${1:-}" in
-    off)   printf '0' ;;
-    rare)  printf '8' ;;
-    often) printf '2' ;;
-    *)     printf '4' ;;
-  esac
-}</code></pre>
-  </figure>
-
-  <p>And the same function after a <code>fill</code> exercise with
-  <code>blanksPerExercise</code> at its default of 2. This is not a preview pane: it is
-  your file, saved to disk, and your editor will show it changed.</p>
-
-  <figure>
-    <figcaption>after — the same file, two holes cut</figcaption>
-<pre><code>learner_synthesis_n() {
-  case "${1:-}" in
-    off)   printf '0' ;;
-<span class="hl">    // LEARNER-TODO: the two named cadences, and which one is rarer</span>
-<span class="hl">    // LEARNER-TODO: the fallback arm — what an unrecognised word gives</span>
-  esac
-}</code></pre>
-  </figure>
-
-  <p>Claude names the file and the function, asks you to write the missing code
-  <strong>in the file</strong>, and then waits. It will not fill them in for you. When
-  you are done — or you say <code>skip</code> — it compares what you wrote against the
-  version it memorised, gives you a couple of lines of feedback, restores a correct
-  implementation, and runs a focused check that the file is valid again.</p>
-
-  <div class="note">
-    <p>Two things worth knowing before you let it do that. The marker is the same
-    literal string in every language, <code>// LEARNER-TODO</code>, so in a language
-    where <code>//</code> does not start a comment — shell, as above — the file does not
-    merely have a gap in it: it does not run until the exercise is finished. And the
-    exercise edits your real source, not a copy. Both of those are why the next section
-    exists.</p>
-  </div>
-
-  <h2 id="styles">The three question styles</h2>
-
-  <dl>
-    <dt><code>code</code></dt>
-    <dd>What a specific changed function does.</dd>
-    <dt><code>architecture</code> (alias <code>archi</code>)</dt>
-    <dd>Which module, directory or layer the code lives in, and why that is where it
-    belongs.</dd>
-    <dt><code>fill</code></dt>
-    <dd>The interactive exercise above: holes cut in the real file, filled in by you.</dd>
-  </dl>
-
-  <p><code>questionStyles</code> takes either <code>"auto"</code>, the default, or a
-  subset of those three. <code>"auto"</code> varies the format from one question to the
-  next, picking whichever fits what changed. Naming a subset restricts it — set it to
-  <code>["code"]</code> and no exercise will ever touch a file; set it to
-  <code>["fill"]</code> if writing code back is the only feedback you trust.</p>
-
-  <p>There is no setting for the language of the questions. Claude mirrors whatever you
-  are writing in the conversation.</p>
-
-  <h2 id="guardrail">The guardrail</h2>
-
-  <p>A <code>fill</code> exercise deliberately breaks a file you care about, and a
-  session can end at any moment: a crash, a closed terminal, <code>/clear</code>, a
-  meeting. So the <code>Stop</code> hook carries a second job. While a leftover marker
-  survives, it re-blocks the end of the session and asks for the file to be put back
-  before anything else happens:</p>
-
-  <figure>
-    <figcaption>the guardrail, blocking</figcaption>
-<pre><code>🎓 Learner — an unfinished fill-in exercise left // LEARNER-TODO markers in: hooks/learner-config.sh
-Before anything else: restore the correct implementation, remove every // LEARNER-TODO it left, and verify it compiles/lints/tests. Do not finish while a marker remains.</code></pre>
-  </figure>
-
-  <p>Four properties, as they are actually implemented in
-  <code>hooks/learner-quiz.sh</code>:</p>
-
-  <dl>
-    <dt>Leftovers only</dt>
-    <dd>A file counts when the working tree has a marker in it and <code>HEAD</code> does
-    not. The unit is the file rather than the individual marker: the hook lists the files
-    matching in the working tree, lists the files matching in <code>HEAD</code>, and
-    takes the difference. A marker you committed on purpose is therefore repo content and
-    never triggers it — which is what lets this project write the string in its README,
-    its tests and this very page. In a repository with no commits yet there is no
-    <code>HEAD</code> to subtract from, so every marker in the tree counts, which is the
-    right answer there.</dd>
-
-    <dt>Untracked files count</dt>
-    <dd>The search runs with <code>--untracked</code>. A file the session created a
-    moment ago is the commonest place for a hole to be left behind, and it is precisely
-    the file git would otherwise say nothing about.</dd>
-
-    <dt>It fires even when the quiz is off</dt>
-    <dd>The guardrail runs before the activation check, so neither
-    <code>"enabled": false</code> nor a missing or invalid <code>level</code> silences
-    it: an abandoned exercise still has to be cleaned up. Exactly four things stop it —
-    no <code>jq</code>, no session id in the hook payload, not being inside a git
-    repository, or the repository sitting under <code>disabledPaths</code>. That last one
-    is the deliberate hole: a repository you told Learner to leave alone is left alone,
-    holes included, so if you start an exercise there by hand nothing will chase you
-    about it.</dd>
-
-    <dt>Bounded, so a session can always end</dt>
-    <dd>At most two blocks per outstanding exercise, counted in a per-session file under
-    <code>$TMPDIR</code>. After the second, the hook goes quiet rather than hang a
-    session on a marker Claude cannot or will not clear — the tree is still broken, but
-    that is your call to make and not a loop you have to escape. Cleaning the tree
-    deletes the counter, so a later exercise starts again with a fresh budget of two.
-    When it does block, it names up to twenty files and says how many more there
-    are.</dd>
-  </dl>
-
-  <p>Worth stating plainly what all of this is not: the guardrail is a check that runs
-  when a session ends, not a sandbox. It is the reason an interrupted exercise gets
-  noticed instead of shipped, and the reason <code>fill</code> exercises are confined to
-  files inside the repository — an edit outside it is never recorded as quiz material, so
-  a hole can never be cut where a repo-scoped check could not see it. Committing before
-  you start an exercise still costs you nothing, and git will show you every hole.</p>
 
   <h2 id="config">Configuration</h2>
 
