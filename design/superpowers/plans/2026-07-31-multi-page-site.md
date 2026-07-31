@@ -478,7 +478,26 @@ Two things to get right while moving:
 In `docs/index.html`:
 
 1. Delete lines 362–420, 628–647 and 724–744 — the three blocks just moved. Nothing else in those ranges.
-2. Delete the whole 11-entry table of contents, lines 200–215 (`<nav class="toc" aria-labelledby="toc-h">` through `</nav>`). The menu replaces it. `index.html` is still long at this point and will shrink in every following task; it is deliberately without a local table of contents in between, since it has two `<h2>`s left once the carve finishes.
+2. **Prune** the table of contents at lines 200–215 rather than deleting it, and convert its heading to the new markup. `index.html` still has nine `<h2>`s at this point, so the four-or-more rule from Step 1 requires it to carry a list matching them in order — deleting it here turns that assertion red, which is the assertion doing its job. Drop the two entries whose targets just left (`#guardrail`, `#uninstall`), keep the other nine in document order, and replace `<h2 id="toc-h">On this page</h2>` with `<p class="toc-title" id="toc-title">On this page</p>` — an `<h2>` carrying an `id` would otherwise count as one of the page's own sections and make the list disagree with itself:
+
+```html
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">On this page</p>
+    <ol>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#looks-like">What it actually looks like</a></li>
+      <li><a href="#styles">The three question styles</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#commands">On demand</a></li>
+      <li><a href="#config">Configuration</a></li>
+      <li><a href="#levels">Levels</a></li>
+      <li><a href="#platforms">Platforms</a></li>
+      <li><a href="#off">Turning it off</a></li>
+    </ol>
+  </nav>
+```
+
+Tasks 3 and 4 prune it further as their sections leave; Task 5 deletes it outright, when `index.html` finally drops to two sections and the rule forbids it.
 3. Insert the menu between `<body>` and `<main>`:
 
 ```html
@@ -672,7 +691,8 @@ Two edits inside the moved content:
 - [ ] **Step 4: Cut those blocks out of `index.html` and extend its menu**
 
 1. Delete the three sections just moved, including the `<h2 id="config">Configuration</h2>` line itself.
-2. In `index.html` **and** `safety.html`, replace the menu's `<ul>` with the three-entry version, keeping each page's own `aria-current`:
+2. Prune `index.html`'s table of contents to the six sections that remain — drop the `#config`, `#levels` and `#off` entries. Six is still four or more, so the list stays.
+3. In `index.html` **and** `safety.html`, replace the menu's `<ul>` with the three-entry version, keeping each page's own `aria-current`:
 
 ```html
   <ul>
@@ -863,7 +883,8 @@ One edit inside the moved content: in `Clone and run`, the `--level` bullet's `<
 - [ ] **Step 4: Cut those blocks out of `index.html` and extend every menu**
 
 1. In `index.html`, delete the whole Install section — the `<h2 id="install">Install</h2>` line, its four `<h3>` subsections and all their content — and the whole Platforms section.
-2. In `index.html`, `config.html` and `safety.html`, replace the menu's `<ul>` with the four-entry version, keeping each page's own `aria-current`:
+2. Prune `index.html`'s table of contents to the four sections that remain — drop the `#install` and `#platforms` entries. Four is still four or more, so the list stays.
+3. In `index.html`, `config.html` and `safety.html`, replace the menu's `<ul>` with the four-entry version, keeping each page's own `aria-current`:
 
 ```html
   <ul>
@@ -1017,27 +1038,28 @@ One edit inside the moved content: in the `On demand` `<dl>`, the `learner off` 
 - [ ] **Step 4: Cut those blocks out of `index.html` and finish every menu**
 
 1. In `index.html`, delete both sections just moved.
-2. Rewrite the lede's `#commands` link:
+2. **Delete** `index.html`'s table of contents outright, `<nav class="toc" …>` through `</nav>`. It has carried a shrinking list since Task 2; the page is now down to its final two sections, and the four-or-more rule turns a surviving list red. The menu is the navigation from here.
+3. Rewrite the lede's `#commands` link:
 
 ```html
   should work on (<a href="usage.html#commands">read it back</a> any time with
 ```
 
-3. Repoint `index.html`'s "next" link, which pointed at `safety.html` since Task 2:
+4. Repoint `index.html`'s "next" link, which pointed at `safety.html` since Task 2:
 
 ```html
   <p class="next">Next: <a href="install.html">Install</a> — what Learner needs, and
   the two ways in.</p>
 ```
 
-4. Repoint `install.html`'s "next" link to the page it was always meant to name:
+5. Repoint `install.html`'s "next" link to the page it was always meant to name:
 
 ```html
   <p class="next">Next: <a href="usage.html">Usage</a> — the three shapes a question
   takes.</p>
 ```
 
-5. In all five pages, the menu's `<ul>` becomes the final five-entry version, each page keeping its own `aria-current`:
+6. In all five pages, the menu's `<ul>` becomes the final five-entry version, each page keeping its own `aria-current`:
 
 ```html
   <ul>
