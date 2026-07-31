@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install — Claude Learner</title>
+<meta name="description" content="What Claude Learner needs, the two ways to install it, what lands where, and which platforms can run it.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<nav class="site" aria-label="Sections">
+  <a class="brand" href="index.html">Claude Learner</a>
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install.html" aria-current="page">Install</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="safety.html">Safety</a></li>
+  </ul>
+</nav>
+
+<main>
+
+  <h1 id="install">Install</h1>
+  <p class="lede">What Learner needs, the two ways in, what lands where, and which
+  platforms can run it.</p>
+
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">On this page</p>
+    <ol>
+      <li><a href="#requirements">Requirements</a></li>
+      <li><a href="#one-line">One line</a></li>
+      <li><a href="#clone">Clone and run</a></li>
+      <li><a href="#installed">What gets installed, and where</a></li>
+      <li><a href="#platforms">Platforms</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="requirements">Requirements</h2>
+
+  <ul>
+    <li><strong><code>jq</code> on <code>PATH</code></strong> — needed to install (the
+    hook wiring is merged with it) and needed by every hook at run time. Without it the
+    hooks are inert, and <code>SessionStart</code> says so once.</li>
+    <li><strong><code>bash</code> on <code>PATH</code> to install</strong> —
+    <code>install.sh</code> is a bash script. The one-liner checks for bash before it
+    fetches anything, rather than downloading a payload it could not hand over.</li>
+    <li><strong><code>curl</code> and <code>tar</code></strong> — for the one-liner only;
+    the clone-and-run path needs neither.</li>
+    <li><strong>A POSIX-compliant shell at run time</strong> — separate from the bash
+    requirement above, and not satisfied by it. The hooks are plain <code>sh</code>
+    scripts, wired into <code>settings.json</code> as
+    <code>sh "…/hooks/learner-quiz.sh"</code>. See
+    <a href="#platforms">Platforms</a>.</li>
+    <li><strong>Claude Code</strong> — either <code>claude</code> on <code>PATH</code> or
+    an existing config directory.</li>
+  </ul>
+
+  <h2 id="one-line">One line</h2>
+
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh</code></pre>
+
+  <p>It asks for your level, how often a synthesis question should replace a granular
+  one, and how many holes a <code>fill</code> exercise leaves, then writes everything
+  under your Claude Code config directory. To skip the prompts, pass the flags
+  <code>install.sh</code> takes — <code>bootstrap.sh</code> forwards them through
+  untouched and owns no defaults of its own:</p>
+
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh \
+  | sh -s -- --level S --synthesis normal --blanks 2</code></pre>
+
+  <p>To install a specific revision rather than whatever <code>main</code> says today,
+  name the ref twice — once in the URL your shell reads, once in <code>LEARNER_REF</code>
+  for the payload that URL then fetches. Anything git resolves works: a release tag, a
+  branch name, or a commit SHA.</p>
+
+<pre><code>REF=v0.1.0   # a tag, a branch name, or a commit SHA
+curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
+  | LEARNER_REF="$REF" sh</code></pre>
+
+  <p><code>LEARNER_REF</code> pins the payload, not <code>bootstrap.sh</code> itself —
+  your shell has already read that from the URL by the time the variable is visible.
+  Pinning only one of the two still runs whatever <code>main</code> says, which is why
+  the ref appears in both places.</p>
+
+  <h2 id="clone">Clone and run</h2>
+
+  <p>A first-class path, not a fallback: it is the one that lets you read the installer
+  before you run it.</p>
+
+<pre><code>git clone https://github.com/Tykok/learning-with-claude
+cd learning-with-claude
+./install.sh                       # prompts for level / synthesis / blanks
+./install.sh --dry-run             # print what would happen, write nothing
+./install.sh --yes                 # never prompt; defaults for anything unset
+./install.sh --level S --synthesis normal --blanks 2    # non-interactive, one shot</code></pre>
+
+  <ul>
+    <li><code>--level D|J|C|S|E</code> — the letter, or the full word from the
+    <a href="config.html#levels">levels table</a>, in any case. It has no default: on a
+    <strong>fresh</strong> install, <code>--yes</code> with no level stops rather than
+    guessing. Once <code>learner.json</code> already exists this whole prompt/validate
+    step is skipped — the flag has nothing to do, and the existing config is left
+    untouched either way.</li>
+    <li><code>--synthesis off|rare|normal|often</code> — how often a synthesis question
+    replaces a granular one.</li>
+    <li><code>--blanks N</code> — holes left in a <code>fill</code> exercise, an integer
+    of 1 or more.</li>
+    <li><code>--dry-run</code> — print what would be written; write nothing.</li>
+    <li><code>--yes</code> (<code>-y</code>) — never prompt; use the default for anything
+    not passed.</li>
+  </ul>
+
+  <p>The installer is idempotent: re-running re-copies the hooks and the skill and
+  re-merges the hook wiring without duplicating entries, and it never overwrites a config
+  you already have. <strong>It writes nothing into any repository.</strong> Every path it
+  touches is under <code>$CLAUDE_CONFIG_DIR</code> (default <code>~/.claude</code>), and
+  every wired hook command carries the literal
+  <code>${CLAUDE_CONFIG_DIR:-$HOME/.claude}</code> rather than an expanded path, so
+  moving your config directory later needs no reinstall.</p>
+
+  <p>Hook wiring is read once, when a Claude Code session starts. Installing (or
+  re-installing) while a session is already open changes nothing in it — quit and start a
+  new session for the hooks to take effect.</p>
+
+  <h2 id="installed">What gets installed, and where</h2>
+
+  <p>Everything lives under <code>$CLAUDE_CONFIG_DIR</code>, written <code>$CFG</code>
+  below.</p>
+
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th scope="col">Path</th><th scope="col">Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> skill: dispatch, levels, config</td></tr>
+      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>data.md</code></td></tr>
+      <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced by the other four hooks, never run on its own</td></tr>
+      <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
+      <tr><td><code>$CFG/hooks/learner-record-edit.sh</code></td><td><code>PostToolUse</code> on <code>Write</code>/<code>Edit</code> — records the files edited this session</td></tr>
+      <tr><td><code>$CFG/hooks/learner-quiz.sh</code></td><td><code>Stop</code> — the quiz trigger, and the <code>LEARNER-TODO</code> guardrail</td></tr>
+      <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
+      <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
+      <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
+      <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer for the skill to write into at runtime</td></tr>
+      <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
+      <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Five hook files ship and four are wired, into <code>SessionStart</code>,
+  <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>.
+  <code>learner-config.sh</code> is the fifth: the other four source it, and Claude Code
+  never invokes it directly.</p>
+
+  <h2 id="platforms">Platforms</h2>
+
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th scope="col">Platform</th><th scope="col">Supported</th><th scope="col">Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>macOS</td><td>yes</td><td>needs <code>jq</code></td></tr>
+      <tr><td>Linux</td><td>yes</td><td>needs <code>jq</code></td></tr>
+      <tr><td>Windows via WSL</td><td>yes</td><td>it is a Linux environment</td></tr>
+      <tr><td>Windows via Git Bash</td><td>yes</td><td>provides the POSIX <code>sh</code> the hooks need</td></tr>
+      <tr><td>Windows, native</td><td>no</td><td>the hooks are POSIX <code>sh</code> scripts; with no POSIX shell, Claude Code cannot run them</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Native Windows is a genuine gap rather than an untested platform. Every hook is a
+  POSIX <code>sh</code> script and each is wired as <code>sh "…"</code>, so without a
+  POSIX shell on the machine there is nothing for Claude Code to execute. WSL and Git
+  Bash both supply one, and on either of them Learner behaves exactly as it does on
+  Linux. Homebrew and <code>apt</code> packages do not exist yet; the one-liner and the
+  clone are the two ways in.</p>
+
+
+  <p class="next">Next: <a href="config.html">Configuration</a> — every setting Learner
+  reads.</p>
+
+</main>
+
+<footer>
+  <p><a href="https://github.com/Tykok/learning-with-claude">github.com/Tykok/learning-with-claude</a>
+  — issues and pull requests welcome.</p>
+  <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
+  — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
+  licence; only redistributing a modified Learner does. This site is five hand-written files
+  and one stylesheet: no build step, no tracking, and no request to anywhere when you open
+  it.</p>
+</footer>
+</body>
+</html>
