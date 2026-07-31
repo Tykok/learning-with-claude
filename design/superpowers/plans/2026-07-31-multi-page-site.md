@@ -672,6 +672,13 @@ Expected: failures for every `config.html` assertion, plus the chrome loops (`co
 </html>
 ```
 
+**Also rewrite two links that are about to dangle.** The carve-order reasoning above tracked which *page* links to which, but two of the six cross-references have their source prose still sitting in `index.html` at this point — so the moment `Levels` and `Turning it off` leave, those links break. The internal-link assertion catches it. Fix them here, in `index.html`, and they arrive already correct when Tasks 4 and 5 move the surrounding prose:
+
+- the `--level` bullet under Clone and run: `href="#levels"` → `href="config.html#levels"`
+- the `learner off` / `on` entry under On demand: `href="#off"` → `href="config.html#off"`
+
+Tasks 4 and 5 therefore have no link edit to make for these two.
+
 Two edits inside the moved content:
 
 1. In the seven-key table, the `untrackGlobs` row's Effect cell reads `Extra paths excluded from quiz material`. Link the last two words:

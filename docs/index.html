@@ -13,6 +13,7 @@
   <a class="brand" href="index.html">Claude Learner</a>
   <ul>
     <li><a href="index.html" aria-current="page">Home</a></li>
+    <li><a href="config.html">Configuration</a></li>
     <li><a href="safety.html">Safety</a></li>
   </ul>
 </nav>
@@ -37,10 +38,7 @@
       <li><a href="#styles">The three question styles</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#commands">On demand</a></li>
-      <li><a href="#config">Configuration</a></li>
-      <li><a href="#levels">Levels</a></li>
       <li><a href="#platforms">Platforms</a></li>
-      <li><a href="#off">Turning it off</a></li>
     </ol>
   </nav>
 
@@ -252,7 +250,7 @@ cd learning-with-claude
 
   <ul>
     <li><code>--level D|J|C|S|E</code> — the letter, or the full word from the
-    <a href="#levels">levels table</a>, in any case. It has no default: on a
+    <a href="config.html#levels">levels table</a>, in any case. It has no default: on a
     <strong>fresh</strong> install, <code>--yes</code> with no level stops rather than
     guessing. Once <code>learner.json</code> already exists this whole prompt/validate
     step is skipped — the flag has nothing to do, and the existing config is left
@@ -332,93 +330,10 @@ cd learning-with-claude
     your current settings.</dd>
     <dt><code>learner off</code> / <code>learner on</code></dt>
     <dd>Silences or restores the automatic quiz in the current repository. See
-    <a href="#off">Turning it off</a> for what that writes and why.</dd>
+    <a href="config.html#off">Turning it off</a> for what that writes and why.</dd>
     <dt><code>learner help</code></dt>
     <dd>Prints its subcommand and parameter reference, then stops.</dd>
   </dl>
-
-  <h2 id="config">Configuration</h2>
-
-  <p>Two layers, read in this order:</p>
-
-  <ol>
-    <li><code>$CLAUDE_CONFIG_DIR/learner.json</code> (default
-    <code>~/.claude/learner.json</code>) — your defaults for every repository. Written by
-    the installer, edited by <code>learner config …</code>.</li>
-    <li><code>&lt;repo&gt;/.claude/learner.local.json</code> — optional, gitignored, a
-    partial override for one repository. Written by <code>learner off</code>,
-    <code>learner on</code> and <code>learner config project …</code>.</li>
-  </ol>
-
-  <p>The project layer wins <strong>key by key</strong>, and arrays are replaced
-  wholesale rather than merged: a project <code>untrackGlobs</code> is the whole list for
-  that repo, not an addition to the global one. A key you did not set keeps its global
-  value, and <code>"enabled": false</code> survives the merge — it is a deliberate
-  override, not an absent key.</p>
-
-  <div class="scroll">
-  <table>
-    <thead>
-      <tr><th scope="col">Key</th><th scope="col">Values</th><th scope="col">Default</th><th scope="col">Effect</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>level</code></td><td><code>D</code>/<code>J</code>/<code>C</code>/<code>S</code>/<code>E</code></td><td>— required</td><td>How hard a question is. No valid level means no questions</td></tr>
-      <tr><td><code>enabled</code></td><td>bool</td><td><code>true</code></td><td>Master switch for the automatic quiz</td></tr>
-      <tr><td><code>questionStyles</code></td><td class="wrap"><code>"auto"</code>, or a subset of <code>code</code>/<code>architecture</code>/<code>fill</code></td><td><code>"auto"</code></td><td>Which formats a question may take</td></tr>
-      <tr><td><code>synthesisFrequency</code></td><td><code>off</code>/<code>rare</code>/<code>normal</code>/<code>often</code></td><td><code>normal</code></td><td>A synthesis question every 0 / 8 / 4 / 2 questions</td></tr>
-      <tr><td><code>blanksPerExercise</code></td><td>int ≥ 1</td><td><code>2</code></td><td><code>// LEARNER-TODO</code> holes cut in a <code>fill</code> exercise</td></tr>
-      <tr><td><code>untrackGlobs</code></td><td>array of globs</td><td><code>[]</code></td><td>Extra paths excluded from quiz material</td></tr>
-      <tr><td><code>disabledPaths</code></td><td>array of path prefixes</td><td><code>[]</code></td><td>Repositories where Learner stays silent</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <p><code>level</code> is the only one of the seven with no default. The other six have
-  theirs in <code>LEARNER_DEFAULTS</code> at the top of
-  <code>hooks/learner-config.sh</code>; <code>level</code> is left out on purpose, so a
-  half-finished install asks nothing rather than guessing how much you know.
-  <code>SessionStart</code> mentions it once when that happens. A full config looks like
-  this:</p>
-
-<pre><code>{
-  "level": "C",
-  "enabled": true,
-  "questionStyles": "auto",
-  "synthesisFrequency": "normal",
-  "blanksPerExercise": 2,
-  "untrackGlobs": ["*.md", "*.json"],
-  "disabledPaths": []
-}</code></pre>
-
-  <p>You do not have to edit it by hand: <code>learner config level=S</code> validates
-  and writes for you, and <code>learner config project synthesisFrequency=often</code>
-  does the same for the current repository only. The same shape ships in the repository
-  as <code>learner.json.example</code>, for reference or copy-paste.</p>
-
-  <h2 id="levels">Levels</h2>
-
-  <p>The canonical value is the letter. The full word is accepted too, in any case, so
-  <code>senior</code>, <code>Senior</code> and <code>S</code> are the same setting.</p>
-
-  <div class="scroll">
-  <table>
-    <thead>
-      <tr><th scope="col">Letter</th><th scope="col">Name</th><th scope="col">What a question targets</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><code>D</code></td><td>Discovering</td><td>syntax, what a block is for, basic vocabulary</td></tr>
-      <tr><td><code>J</code></td><td>Junior</td><td>what the function does, where the code lives</td></tr>
-      <tr><td><code>C</code></td><td>Competent</td><td>why this split, edge cases, error handling</td></tr>
-      <tr><td><code>S</code></td><td>Senior</td><td>trade-offs, rejected alternatives, impact on performance and coupling</td></tr>
-      <tr><td><code>E</code></td><td>Expert</td><td>invariants, failure modes, what breaks at scale</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <p>The level is a claim about you on this code, not a job title, and it is one word to
-  change. Set it high and the easy questions stop; set it low for a stack you have never
-  touched. Anything that is not one of the five letters or names is not a level at all:
-  the hook treats it as unset and asks nothing.</p>
 
   <h2 id="platforms">Platforms</h2>
 
@@ -443,32 +358,6 @@ cd learning-with-claude
   Bash both supply one, and on either of them Learner behaves exactly as it does on
   Linux. Homebrew and <code>apt</code> packages do not exist yet; the one-liner and the
   clone are the two ways in.</p>
-
-  <h2 id="off">Turning it off</h2>
-
-  <p>Three ways, by scope. The first two leave the guardrail in place; the third silences
-  that too, which is rather the point of it.</p>
-
-  <ol>
-    <li><strong>Everywhere.</strong> Set <code>"enabled": false</code> in the global
-    config, or say <code>learner config enabled=false</code>. An explicit
-    <code>learner quiz</code> still runs when you ask for one — you asked.</li>
-    <li><strong>One repository you own.</strong> Say <code>learner off</code> in it. That
-    writes <code>&lt;repo&gt;/.claude/learner.local.json</code> and adds the file to the
-    repo's <code>.gitignore</code> if it is not already there.
-    <code>learner on</code> reverses it. That file is the only thing Learner ever
-    <em>adds</em> to a repository, and only on request — a <code>fill</code> exercise
-    (see <a href="#looks-like">above</a>) is a different kind of change: it temporarily
-    edits one of your own source files rather than adding a new one.</li>
-    <li><strong>One repository you do not own</strong>, where nothing of yours should be
-    committed. Add its path to <code>disabledPaths</code> in the global config —
-    <code>learner config disabledPaths='["/path/to/repo"]'</code>. Nothing is written
-    into that repository at all. Matching is a path-prefix check on whole components, so
-    disabling <code>/a/b</code> silences <code>/a/b/c</code> but not a sibling
-    <code>/a/bee</code>; a leading <code>~/</code> is expanded, and an entry that exists
-    on disk is resolved to its physical path first, so an entry that reaches the repo
-    through a symlink still matches.</li>
-  </ol>
 
   <p class="next">Next: <a href="safety.html">Safety</a> — what a <code>fill</code>
   exercise does to your files.</p>
