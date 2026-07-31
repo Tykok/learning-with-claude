@@ -762,12 +762,13 @@ RM="$ROOT/README.md"
 SITE="$ROOT/docs/index.html"
 STYLE="$ROOT/docs/assets/style.css"
 
+SITE_INSTALL="$ROOT/docs/install.html"
 SITE_CONFIG="$ROOT/docs/config.html"
 SITE_SAFETY="$ROOT/docs/safety.html"
 
 # Every published page, by basename. Per-page loops iterate this list, so a page
 # added to the site cannot quietly skip the structural checks below.
-PAGES="index config safety"
+PAGES="index install config safety"
 
 page_path() { printf '%s/docs/%s.html' "$ROOT" "$1"; }
 
@@ -825,9 +826,9 @@ CI_SHELLCHECK=$(awk '/name: shellcheck/{getline; sub(/^[[:space:]]*run:[[:space:
 # The install one-liner appears in two files by design. Pin them to each other so
 # they cannot drift: this is the whole reason the split is acceptable.
 ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh'
-{ grep -qF "$ONELINER" "$RM" && grep -qF "$ONELINER" "$SITE"; } \
-  && ok "the install one-liner is identical in the README and on the site" \
-  || ko "the install one-liner is identical in the README and on the site"
+{ grep -qF "$ONELINER" "$RM" && grep -qF "$ONELINER" "$SITE_INSTALL"; } \
+  && ok "the install one-liner is identical in the README and on install.html" \
+  || ko "the install one-liner is identical in the README and on install.html"
 
 { grep -qF 'docs/index.html' "$RM" || grep -qiF 'github.io' "$RM"; } \
   && ok "the README links to the site" \
@@ -1169,7 +1170,9 @@ for s in untrackGlobs disabledPaths synthesisFrequency blanksPerExercise 'learne
 done
 
 for s in CLAUDE_CONFIG_DIR 'learner-config.sh'; do
-  grep -qF "$s" "$SITE" && ok "the site documents $s" || ko "the site documents $s"
+  grep -qF "$s" "$SITE_INSTALL" \
+    && ok "install.html documents $s" \
+    || ko "install.html documents $s"
 done
 
 # The check above only pins the config keys' *names*. The seven defaults are a
@@ -1239,31 +1242,33 @@ for l in D J C S E; do
 done
 
 for p in WSL 'Git Bash'; do
-  grep -qF "$p" "$SITE" && ok "the site covers $p" || ko "the site covers $p"
+  grep -qF "$p" "$SITE_INSTALL" \
+    && ok "install.html covers $p" \
+    || ko "install.html covers $p"
 done
 
-grep -qiE 'native windows|windows, native' "$SITE" \
-  && ok "the site states native Windows is unsupported" \
-  || ko "the site states native Windows is unsupported"
+grep -qiE 'native windows|windows, native' "$SITE_INSTALL" \
+  && ok "install.html states native Windows is unsupported" \
+  || ko "install.html states native Windows is unsupported"
 
-grep -qiF 'posix' "$SITE" \
-  && ok "the site gives the reason native Windows cannot work" \
-  || ko "the site gives the reason native Windows cannot work"
+grep -qiF 'posix' "$SITE_INSTALL" \
+  && ok "install.html gives the reason native Windows cannot work" \
+  || ko "install.html gives the reason native Windows cannot work"
 
 # The three checks above are satisfied by prose alone (the Requirements list
 # also says "POSIX", independent of the table), so deleting the platform table
 # itself would not turn them red. Row-shaped patterns pin the table
 # specifically — the same reasoning that used to pin the README's markdown
 # table, now pinning the site's HTML one instead.
-grep -qF '<tr><td>Windows via WSL</td><td>yes</td>' "$SITE" \
+grep -qF '<tr><td>Windows via WSL</td><td>yes</td>' "$SITE_INSTALL" \
   && ok "the platform table has a WSL row" \
   || ko "the platform table has a WSL row"
 
-grep -qF '<tr><td>Windows, native</td><td>no</td>' "$SITE" \
+grep -qF '<tr><td>Windows, native</td><td>no</td>' "$SITE_INSTALL" \
   && ok "the platform table has a native-Windows row" \
   || ko "the platform table has a native-Windows row"
 
-grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE" \
+grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE_INSTALL" \
   && ok "the native-Windows row itself states the POSIX reason" \
   || ko "the native-Windows row itself states the POSIX reason"
 
