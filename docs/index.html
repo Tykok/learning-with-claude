@@ -8,6 +8,15 @@
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
+
+<nav class="site" aria-label="Sections">
+  <a class="brand" href="index.html">Claude Learner</a>
+  <ul>
+    <li><a href="index.html" aria-current="page">Home</a></li>
+    <li><a href="safety.html">Safety</a></li>
+  </ul>
+</nav>
+
 <main>
 
   <h1>Claude Learner</h1>
@@ -20,20 +29,18 @@
   dependencies beyond <code>jq</code>, and nothing that phones home. The source is on
   <a href="https://github.com/Tykok/learning-with-claude">GitHub</a>.</p>
 
-  <nav class="toc" aria-labelledby="toc-h">
-    <h2 id="toc-h">On this page</h2>
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">On this page</p>
     <ol>
       <li><a href="#problem">The problem</a></li>
       <li><a href="#looks-like">What it actually looks like</a></li>
       <li><a href="#styles">The three question styles</a></li>
-      <li><a href="#guardrail">The guardrail</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="#commands">On demand</a></li>
       <li><a href="#config">Configuration</a></li>
       <li><a href="#levels">Levels</a></li>
       <li><a href="#platforms">Platforms</a></li>
       <li><a href="#off">Turning it off</a></li>
-      <li><a href="#uninstall">Uninstall</a></li>
     </ol>
   </nav>
 
@@ -158,7 +165,7 @@ session.ts?</code></pre>
     where <code>//</code> does not start a comment — shell, as above — the file does not
     merely have a gap in it: it does not run until the exercise is finished. And the
     exercise edits your real source, not a copy. Both of those are why
-    <a href="#guardrail">the guardrail</a> exists — read it before you install.</p>
+    <a href="safety.html#guardrail">the guardrail</a> exists — read it before you install.</p>
   </div>
 
   <h2 id="styles">The three question styles</h2>
@@ -181,66 +188,6 @@ session.ts?</code></pre>
 
   <p>There is no setting for the language of the questions. Claude mirrors whatever you
   are writing in the conversation.</p>
-
-  <h2 id="guardrail">The guardrail</h2>
-
-  <p>A <code>fill</code> exercise deliberately breaks a file you care about, and a
-  session can end at any moment: a crash, a closed terminal, <code>/clear</code>, a
-  meeting. So the <code>Stop</code> hook carries a second job. While a leftover marker
-  survives, it re-blocks the end of the session and asks for the file to be put back
-  before anything else happens:</p>
-
-  <figure>
-    <figcaption>the guardrail, blocking</figcaption>
-<pre><code>🎓 Learner — an unfinished fill-in exercise left // LEARNER-TODO markers in: hooks/learner-config.sh
-Before anything else: restore the correct implementation, remove every // LEARNER-TODO it left, and verify it compiles/lints/tests. Do not finish while a marker remains.</code></pre>
-  </figure>
-
-  <p>Four properties, as they are actually implemented in
-  <code>hooks/learner-quiz.sh</code>:</p>
-
-  <dl>
-    <dt>Leftovers only</dt>
-    <dd>A file counts when the working tree has a marker in it and <code>HEAD</code> does
-    not. The unit is the file rather than the individual marker: the hook lists the files
-    matching in the working tree, lists the files matching in <code>HEAD</code>, and
-    takes the difference. A marker you committed on purpose is therefore repo content and
-    never triggers it — which is what lets this project write the string in its README,
-    its tests and this very page. In a repository with no commits yet there is no
-    <code>HEAD</code> to subtract from, so every marker in the tree counts, which is the
-    right answer there.</dd>
-
-    <dt>Untracked files count</dt>
-    <dd>The search runs with <code>--untracked</code>. A file the session created a
-    moment ago is the commonest place for a hole to be left behind, and it is precisely
-    the file git would otherwise say nothing about.</dd>
-
-    <dt>It fires even when the quiz is off</dt>
-    <dd>The guardrail runs before the activation check, so neither
-    <code>"enabled": false</code> nor a missing or invalid <code>level</code> silences
-    it: an abandoned exercise still has to be cleaned up. Exactly four things stop it —
-    no <code>jq</code>, no session id in the hook payload, not being inside a git
-    repository, or the repository sitting under <code>disabledPaths</code>. That last one
-    is the deliberate hole: a repository you told Learner to leave alone is left alone,
-    holes included, so if you start an exercise there by hand nothing will chase you
-    about it.</dd>
-
-    <dt>Bounded, so a session can always end</dt>
-    <dd>At most two blocks per outstanding exercise, counted in a per-session file under
-    <code>$TMPDIR</code>. After the second, the hook goes quiet rather than hang a
-    session on a marker Claude cannot or will not clear — the tree is still broken, but
-    that is your call to make and not a loop you have to escape. Cleaning the tree
-    deletes the counter, so a later exercise starts again with a fresh budget of two.
-    When it does block, it names up to twenty files and says how many more there
-    are.</dd>
-  </dl>
-
-  <p>Worth stating plainly what all of this is not: the guardrail is a check that runs
-  when a session ends, not a sandbox. It is the reason an interrupted exercise gets
-  noticed instead of shipped, and the reason <code>fill</code> exercises are confined to
-  files inside the repository — an edit outside it is never recorded as quiz material, so
-  a hole can never be cut where a repo-scoped check could not see it. Committing before
-  you start an exercise still costs you nothing, and git will show you every hole.</p>
 
   <h2 id="install">Install</h2>
 
@@ -448,27 +395,6 @@ cd learning-with-claude
   does the same for the current repository only. The same shape ships in the repository
   as <code>learner.json.example</code>, for reference or copy-paste.</p>
 
-  <h3>What counts as quiz material</h3>
-
-  <p>An exclusion list, not an include list. Every file Claude edits <em>inside the
-  repository</em> is material — an edit outside it, a dotfile in <code>$HOME</code> or a
-  file in another project, is never recorded — minus a built-in floor you cannot
-  configure away:</p>
-
-  <ul>
-    <li>any of these anywhere in the path: <code>node_modules/</code>,
-    <code>build/</code>, <code>dist/</code>, <code>out/</code>, <code>target/</code>,
-    <code>vendor/</code>, <code>.git/</code>, <code>.gradle/</code>,
-    <code>__pycache__/</code>, <code>.venv/</code>, <code>coverage/</code>,
-    <code>__snapshots__/</code></li>
-    <li>these suffixes: <code>*.lock</code>, <code>*-lock.*</code>,
-    <code>*.min.*</code>, <code>*.generated.*</code>, <code>*.snap</code></li>
-  </ul>
-
-  <p>Then minus your own <code>untrackGlobs</code> on top of that floor. The globs are
-  matched with shell pattern matching and split on whitespace internally, so
-  <strong>a glob containing a space is not supported</strong>.</p>
-
   <h2 id="levels">Levels</h2>
 
   <p>The canonical value is the letter. The full word is accepted too, in any case, so
@@ -544,27 +470,8 @@ cd learning-with-claude
     through a symlink still matches.</li>
   </ol>
 
-  <h2 id="uninstall">Uninstall</h2>
-
-<pre><code>./uninstall.sh                            # hooks, skill and wiring; data stays
-./uninstall.sh --purge                    # also delete learner.json and learner/
-./uninstall.sh --project /path/to/repo    # clean up a legacy per-project install</code></pre>
-
-  <p>The plain form is the exact reverse of the install: the five hook files, the skill,
-  and every learner entry in <code>settings.json</code>, dropping any hook event left
-  empty. Your config and your progress survive, so a reinstall picks up where you left
-  off. <code>--purge</code> deletes those too.</p>
-
-  <p><code>--project</code> is for anyone who installed an earlier, per-repository
-  version of Learner: it removes the hooks, the skill, the <code>.claude/settings.json</code>
-  entries and the <code>.gitignore</code> lines from inside one specific repository.
-  Per-repo overrides are not centrally enumerable, so a plain <code>./uninstall.sh</code>
-  cannot find them for you — delete a stray <code>learner.local.json</code> by hand, or
-  point <code>--project</code> at the repo.</p>
-
-  <p>Both forms refuse to start if <code>settings.json</code> cannot be parsed, and say
-  so, rather than getting half way and leaving the wiring pointing at hooks that no
-  longer exist.</p>
+  <p class="next">Next: <a href="safety.html">Safety</a> — what a <code>fill</code>
+  exercise does to your files.</p>
 
 </main>
 
@@ -573,8 +480,9 @@ cd learning-with-claude
   — issues and pull requests welcome.</p>
   <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
   — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
-  licence; only redistributing a modified Learner does. This page is a single hand-written file:
-  no build step, no tracking, and no request to anywhere when you open it.</p>
+  licence; only redistributing a modified Learner does. This site is five hand-written files
+  and one stylesheet: no build step, no tracking, and no request to anywhere when you open
+  it.</p>
 </footer>
 </body>
 </html>

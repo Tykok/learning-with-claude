@@ -762,9 +762,11 @@ RM="$ROOT/README.md"
 SITE="$ROOT/docs/index.html"
 STYLE="$ROOT/docs/assets/style.css"
 
+SITE_SAFETY="$ROOT/docs/safety.html"
+
 # Every published page, by basename. Per-page loops iterate this list, so a page
 # added to the site cannot quietly skip the structural checks below.
-PAGES="index"
+PAGES="index safety"
 
 page_path() { printf '%s/docs/%s.html' "$ROOT" "$1"; }
 
@@ -1056,6 +1058,107 @@ grep -qiF 'prefers-color-scheme' "$STYLE" \
   && ok "the stylesheet styles both light and dark" \
   || ko "the stylesheet styles both light and dark"
 
+# --- the shared chrome ------------------------------------------------------
+# The menu is copied into every page by hand, so the thing to assert is not that
+# copying happened but that the copies agree.
+
+nav_links() {
+  # The menu's ordered "href|label" list, one per line. aria-current sits between
+  # the href and the '>' and is deliberately dropped: it differs by page on
+  # purpose, so comparing raw bytes would report every page as divergent.
+  awk '/<nav class="site"/,/<\/nav>/' "$1" \
+    | grep -oE '<li><a href="[^"]+"[^>]*>[^<]+</a></li>' \
+    | sed -e 's/^<li><a href="//' -e 's/"[^>]*>/|/' -e 's|</a></li>$||'
+}
+
+nav_ref=$(nav_links "$(page_path index)")
+
+[ -n "$nav_ref" ] \
+  && ok "index.html carries a menu" \
+  || ko "index.html carries a menu"
+
+for p in $PAGES; do
+  [ "$(nav_links "$(page_path "$p")")" = "$nav_ref" ] \
+    && ok "$p.html's menu matches index.html's" \
+    || ko "$p.html's menu matches index.html's"
+done
+
+# The menu lists every page and nothing else. Without this, five pages could agree
+# on a menu that omits one of them.
+nav_n=$(printf '%s\n' "$nav_ref" | grep -c '|')
+# shellcheck disable=SC2086  # word splitting is how the page list is iterated
+page_n=$(printf '%s\n' $PAGES | wc -l | tr -d ' ')
+[ "$nav_n" = "$page_n" ] \
+  && ok "the menu lists every page ($page_n)" \
+  || ko "the menu lists every page (menu $nav_n, pages $page_n)"
+
+# Each page marks itself, and only itself. Two matches make $cur two lines and fail
+# the comparison, so this covers "exactly one" without a separate count.
+for p in $PAGES; do
+  cur=$(awk '/<nav class="site"/,/<\/nav>/' "$(page_path "$p")" \
+        | grep -oE 'href="[^"]+" aria-current="page"' \
+        | sed -e 's/^href="//' -e 's/" aria-current="page"$//')
+  [ "$cur" = "$p.html" ] \
+    && ok "$p.html marks itself current in the menu" \
+    || ko "$p.html marks itself current in the menu (got '$cur')"
+done
+
+# Every local href resolves: the file exists, and a fragment exists as an id in it.
+# This is what guards the cross-page links the split creates, and the only check
+# that catches an id deleted later. Hrefs on this site carry no spaces, so word
+# splitting over the grep output is safe.
+link_bad=0
+for f in "$ROOT"/docs/*.html; do
+  for h in $(grep -oE 'href="[^"]+"' "$f" | sed -e 's/^href="//' -e 's/"$//'); do
+    case "$h" in http:*|https:*|//*|mailto:*) continue ;; esac
+    target=${h%%#*}
+    [ -n "$target" ] || target=$(basename "$f")
+    if [ ! -f "$ROOT/docs/$target" ]; then
+      link_bad=$((link_bad + 1))
+      echo "    dangling file: $h  (in $(basename "$f"))"
+      continue
+    fi
+    case "$h" in
+      *[#]*)
+        frag=${h#*#}
+        grep -qF "id=\"$frag\"" "$ROOT/docs/$target" || {
+          link_bad=$((link_bad + 1))
+          echo "    dangling anchor: $h  (in $(basename "$f"))"
+        } ;;
+    esac
+  done
+done
+[ "$link_bad" = 0 ] \
+  && ok "every internal link resolves to a file and an id" \
+  || ko "every internal link resolves to a file and an id ($link_bad dangling)"
+
+# A page with four or more sections gets an "On this page" list; a shorter page does
+# not, because a two-entry table of contents is decoration rather than navigation.
+# Where the list exists, its entries must be the page's h2 ids in document order.
+for p in $PAGES; do
+  f=$(page_path "$p")
+  h2_ids=$(grep -oE '<h2 id="[^"]+"' "$f" | sed -e 's/^<h2 id="//' -e 's/"$//')
+  h2_n=$(printf '%s\n' "$h2_ids" | grep -c .)
+  toc_ids=$(awk '/<nav class="toc"/,/<\/nav>/' "$f" \
+            | grep -oE 'href="#[^"]+"' | sed -e 's/^href="#//' -e 's/"$//')
+  if [ "$h2_n" -ge 4 ]; then
+    [ "$toc_ids" = "$h2_ids" ] \
+      && ok "$p.html's table of contents matches its $h2_n sections" \
+      || ko "$p.html's table of contents matches its $h2_n sections"
+  else
+    [ -z "$toc_ids" ] \
+      && ok "$p.html has $h2_n sections and needs no table of contents" \
+      || ko "$p.html has $h2_n sections and needs no table of contents"
+  fi
+done
+
+# Every page ends with a link onward, so no page is a dead end.
+for p in $PAGES; do
+  grep -qF '<p class="next">' "$(page_path "$p")" \
+    && ok "$p.html links onward" \
+    || ko "$p.html links onward"
+done
+
 # The reference content that moves off the README lives here now.
 for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency \
          blanksPerExercise 'learner off' 'learner-config.sh'; do
@@ -1111,13 +1214,13 @@ for sub in $SUBCOMMANDS; do
     || ko "the site documents the 'learner $sub' subcommand"
 done
 
-grep -qF -- '--project' "$SITE" \
-  && ok "the site documents the legacy cleanup flag" \
-  || ko "the site documents the legacy cleanup flag"
+grep -qF -- '--project' "$SITE_SAFETY" \
+  && ok "safety.html documents the legacy cleanup flag" \
+  || ko "safety.html documents the legacy cleanup flag"
 
-grep -qF -- '--purge' "$SITE" \
-  && ok "the site documents --purge" \
-  || ko "the site documents --purge"
+grep -qF -- '--purge' "$SITE_SAFETY" \
+  && ok "safety.html documents --purge" \
+  || ko "safety.html documents --purge"
 
 # Letter levels, as real table cells rather than prose. The markup shape is fixed by
 # the plan (`<td><code>D</code></td>`) so this can be a fixed-string match — a bracket
@@ -1157,19 +1260,21 @@ grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE" \
   && ok "the native-Windows row itself states the POSIX reason" \
   || ko "the native-Windows row itself states the POSIX reason"
 
-grep -qF 'LEARNER-TODO' "$SITE" \
-  && ok "the site shows the fill markers" \
-  || ko "the site shows the fill markers"
+grep -qF 'LEARNER-TODO' "$SITE_SAFETY" \
+  && ok "safety.html shows the fill markers" \
+  || ko "safety.html shows the fill markers"
 
 # Case-SENSITIVE, and a phrase rather than the bare word: `grep -i HEAD` would match
 # the page's own <head> tag and pass without the guardrail being explained at all.
-grep -qF 'working tree' "$SITE" && grep -qF 'HEAD' "$SITE" \
-  && ok "the site explains the guardrail counts leftovers only" \
-  || ko "the site explains the guardrail counts leftovers only"
+grep -qF 'working tree' "$SITE_SAFETY" && grep -qF 'HEAD' "$SITE_SAFETY" \
+  && ok "safety.html explains the guardrail counts leftovers only" \
+  || ko "safety.html explains the guardrail counts leftovers only"
 
-grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$SITE" \
-  && ko "the site mentions no removed key or old level" \
-  || ok "the site mentions no removed key or old level"
+for p in $PAGES; do
+  grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$(page_path "$p")" \
+    && ko "$p.html mentions no removed key or old level" \
+    || ok "$p.html mentions no removed key or old level"
+done
 
 # --- licence ----------------------------------------------------------------
 # The licence name lives in four places — LICENSE, the README badge, the README
@@ -1197,16 +1302,21 @@ grep -qF 'License-GPLv3' "$RM" \
   && ok "the README badge shows GPLv3" \
   || ko "the README badge shows GPLv3"
 
-grep -qF '>GPL-3.0-or-later</a>' "$SITE" \
-  && ok "the site footer links the licence by name" \
-  || ko "the site footer links the licence by name"
+# Footer text, so it holds on every page or on none.
+for p in $PAGES; do
+  f=$(page_path "$p")
+  grep -qF '>GPL-3.0-or-later</a>' "$f" \
+    && ok "$p.html's footer links the licence by name" \
+    || ko "$p.html's footer links the licence by name"
+  grep -qiF 'copyleft' "$f" \
+    && ok "$p.html states the licence is copyleft" \
+    || ko "$p.html states the licence is copyleft"
+done
 
 # Copyleft is the point of the change, so say so where a reader will look.
-for f in "$RM" "$SITE"; do
-  grep -qiF 'copyleft' "$f" \
-    && ok "$(basename "$f") states the licence is copyleft" \
-    || ko "$(basename "$f") states the licence is copyleft"
-done
+grep -qiF 'copyleft' "$RM" \
+  && ok "README.md states the licence is copyleft" \
+  || ko "README.md states the licence is copyleft"
 
 # `[^A-Z]` guards the substring: LIMITED, SUBMIT and TRANSMIT all contain those
 # three letters.
