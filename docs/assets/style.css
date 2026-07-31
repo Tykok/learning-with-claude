@@ -1,0 +1,225 @@
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf8; --fg: #1a1a18; --muted: #5d5a54;
+  --rule: #e2ded6; --card: #f4f1ec;
+  /* WCAG AA (4.5:1) against every background --accent sits on: 4.77:1 on --code-bg
+     (the .hl markers below, the tightest pairing), 5.38:1 on --bg, 4.99:1 on --card.
+     The original #7a5cc0 cleared --bg but fell to 4.33:1 on --code-bg — under
+     threshold on the one surface .hl actually uses. */
+  --accent: #7256b8;
+  --code-bg: #f0ece5;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a; --fg: #e8e6e1; --muted: #9d9890;
+    --rule: #2c2c32; --card: #1e1e24; --accent: #a98cf0;
+    /* Well clear of --bg (#16161a), not six lightness units off it: an inline
+       code chip that barely separates from the page is unreadable as a chip. */
+    --code-bg: #32323c;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.15rem 3rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+}
+main, footer { max-width: 44rem; margin: 0 auto; }
+
+h1 {
+  font-size: 2rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.6rem;
+}
+h2 {
+  font-size: 1.3rem;
+  line-height: 1.25;
+  margin: 3rem 0 0.9rem;
+  padding-top: 1.7rem;
+  border-top: 1px solid var(--rule);
+}
+h3 {
+  font-size: 1.05rem;
+  margin: 2rem 0 0.5rem;
+}
+h1 + .lede { font-size: 1.2rem; margin: 0 0 0.8rem; }
+.sub { color: var(--muted); margin: 0 0 1.6rem; }
+
+p, ul, ol, dl { margin: 0 0 1rem; }
+li { margin-bottom: 0.35rem; }
+li > p { margin-bottom: 0.35rem; }
+ul, ol { padding-left: 1.4rem; }
+
+a { color: var(--accent); text-decoration-thickness: from-font; text-underline-offset: 0.15em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.875em;
+  background: var(--code-bg);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.32em;
+  overflow-wrap: break-word;
+}
+
+pre {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 0.45rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  tab-size: 2;
+  /* Long lines wrap rather than hide: a URL or a hint comment clipped at the
+     right edge of the box is content the reader silently never sees. Copying a
+     wrapped line still yields the original single line. overflow-x stays as the
+     backstop for anything unbreakable, so the page body never scrolls. */
+  white-space: pre-wrap;
+  /* anywhere, not break-word: break-word only breaks a word that would not fit
+     on a line of its own, so a long URL starting mid-line still ran off the
+     right edge of the box on a phone. */
+  overflow-wrap: anywhere;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  /* No overflow-wrap override here: it used to say `normal`, which silently undid the
+     `anywhere` set on `pre` above (the more specific selector wins), so the long-URL
+     wrap fix never actually applied inside a code block. overflow-x stays as the
+     backstop either way. */
+}
+
+figure { margin: 0 0 1.2rem; }
+figcaption {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+.hl { color: var(--accent); font-weight: 600; }
+
+.note {
+  background: var(--card);
+  border-left: 3px solid var(--accent);
+  border-radius: 0.3rem;
+  padding: 0.8rem 1rem;
+  margin: 0 0 1.2rem;
+}
+.note > :last-child { margin-bottom: 0; }
+
+.toc {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 0.45rem;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 2rem;
+}
+.toc ol { margin: 0; columns: 13rem 2; column-gap: 1.5rem; }
+
+/* A bordered box, so a table too wide for a phone reads as a panel with more
+   to the right rather than as text that mysteriously stops. */
+.scroll {
+  overflow-x: auto;
+  margin-bottom: 1.2rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.45rem;
+}
+table {
+  width: 100%;
+  min-width: 26rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+}
+th { background: var(--card); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+td.wrap code { white-space: normal; }
+
+dt { font-weight: 600; margin-top: 0.9rem; }
+dd { margin: 0.2rem 0 0; }
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+footer p { margin-bottom: 0.4rem; }
+
+/* --- site chrome ---------------------------------------------------------- */
+
+/* The menu, on every page. Same width as main so the whole page shares one
+   measure. flex-wrap so two rows are possible on a narrow viewport before the
+   list starts scrolling. */
+.site {
+  max-width: 44rem;
+  margin: 0 auto 2.5rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1.1rem;
+}
+.site .brand {
+  font-weight: 600;
+  color: var(--fg);
+  text-decoration: none;
+}
+.site ul {
+  display: flex;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* A menu wider than the viewport scrolls inside itself rather than pushing the
+     page body sideways — the same rule the code blocks and tables follow. */
+  overflow-x: auto;
+}
+.site li { margin: 0; }
+.site a { white-space: nowrap; }
+/* The current page is marked by weight and a thicker underline, not by colour
+   alone: colour alone is not a distinction for a reader who cannot see it. */
+.site [aria-current="page"] {
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.25em;
+}
+
+/* The link to the next page. No border-top: the footer immediately below already
+   draws one, and two rules a line apart read as a mistake. */
+.next {
+  margin-top: 2.5rem;
+  color: var(--muted);
+}
+
+/* Was `.toc h2`. "On this page" is not a section of the document, and an <h2>
+   there put it in the heading outline between the real ones. */
+.toc .toc-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+}

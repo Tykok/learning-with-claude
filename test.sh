@@ -760,6 +760,13 @@ printf '%s' "$fill" | grep -qi 'restore' \
 # --- docs -------------------------------------------------------------------
 RM="$ROOT/README.md"
 SITE="$ROOT/docs/index.html"
+STYLE="$ROOT/docs/assets/style.css"
+
+# Every published page, by basename. Per-page loops iterate this list, so a page
+# added to the site cannot quietly skip the structural checks below.
+PAGES="index"
+
+page_path() { printf '%s/docs/%s.html' "$ROOT" "$1"; }
 
 # Boundary-aware on trackGlobs (untrackGlobs must not self-trip this). Only
 # `intermediaire` is banned: `junior` and `senior` are supported level aliases, so
@@ -1017,18 +1024,37 @@ fi
 # suite stayed green. img/iframe/embed/object/srcset cover the other tags that fetch;
 # url(...) is scoped to an http(s) scheme so a local url(#fragment) or a data: URI (no
 # request either) is not a false positive.
-grep -qiE '<script|<link[^>]+href|@import|<img|<iframe|<embed|<object|srcset|url\([^)]*https?:' "$SITE" \
-  && ko "the page issues no external request at load" \
-  || ok "the page issues no external request at load"
+#
+# The <link> branch is scoped to a scheme rather than banning href outright: the pages
+# share one local stylesheet, which issues no external request. `//` is included because a
+# protocol-relative URL fetches off-origin exactly like an absolute one.
+EXTERNAL='<script|<link[^>]+href="(https?:|//)|@import|<img|<iframe|<embed|<object|srcset|url\([^)]*https?:'
 
-# -o counts occurrences, not matching lines: two <h1> on one line must still fail.
-n=$(grep -oiE '<h1[ >]' "$SITE" | wc -l | tr -d ' ')
-[ "$n" = 1 ] && ok "the page has exactly one h1" \
-             || ko "the page has exactly one h1 (found $n)"
+for p in $PAGES; do
+  f=$(page_path "$p")
 
-grep -qiF 'prefers-color-scheme' "$SITE" \
-  && ok "the page styles both light and dark" \
-  || ko "the page styles both light and dark"
+  grep -qiE "$EXTERNAL" "$f" \
+    && ko "$p.html issues no external request at load" \
+    || ok "$p.html issues no external request at load"
+
+  grep -qF '<link rel="stylesheet" href="assets/style.css">' "$f" \
+    && ok "$p.html links the shared stylesheet" \
+    || ko "$p.html links the shared stylesheet"
+
+  # -o counts occurrences, not matching lines: two <h1> on one line must still fail.
+  n=$(grep -oiE '<h1[ >]' "$f" | wc -l | tr -d ' ')
+  [ "$n" = 1 ] && ok "$p.html has exactly one h1" \
+               || ko "$p.html has exactly one h1 (found $n)"
+done
+
+# The stylesheet is scanned too, and it is the likelier place for a web font to appear.
+grep -qiE "$EXTERNAL" "$STYLE" \
+  && ko "the stylesheet issues no external request" \
+  || ok "the stylesheet issues no external request"
+
+grep -qiF 'prefers-color-scheme' "$STYLE" \
+  && ok "the stylesheet styles both light and dark" \
+  || ko "the stylesheet styles both light and dark"
 
 # The reference content that moves off the README lives here now.
 for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency \
