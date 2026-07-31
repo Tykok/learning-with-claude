@@ -15,8 +15,9 @@ with Claude Code — no per-repo setup.
 **The full reference lives on the site:
 [tykok.github.io/learning-with-claude](https://tykok.github.io/learning-with-claude/)** —
 question styles, config keys and defaults, levels, platforms, the `fill` guardrail, on-demand
-subcommands, and uninstall are all documented there. It is a single hand-written file, so
-`docs/index.html` in a clone reads identically offline. This README only gets you installed.
+subcommands, and uninstall are all documented there, across five pages joined by a menu. They
+are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
+This README only gets you installed.
 
 Five POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install,
 `PostToolUse` records edited files, and `Stop` blocks once per turn to ask one question —
@@ -39,7 +40,7 @@ directory.
 - **A POSIX-compliant shell to run the hooks** — a run-time requirement, not an install-time
   one, and not `bash`: the hooks are plain `sh` scripts, wired into `settings.json` as
   `sh "$CFG/hooks/…"`. Which platforms provide one, and which do not, is on
-  [the site](docs/index.html).
+  [the site](docs/install.html).
 - **Claude Code** installed (`claude` on `PATH`, or an existing config directory).
 
 ## Install
@@ -79,7 +80,7 @@ cd learning-with-claude
 ```
 
 - `--level D|J|C|S|E` — your level: the letter, or the full word from the levels table on
-  [the site](docs/index.html), in any case.
+  [the site](docs/config.html), in any case.
 - `--synthesis off|rare|normal|often` — how often a synthesis question replaces a granular one.
 - `--blanks N` — holes left in a `fill` exercise (integer ≥ 1).
 - `--dry-run` — print what would be written; write nothing.
