@@ -762,11 +762,12 @@ RM="$ROOT/README.md"
 SITE="$ROOT/docs/index.html"
 STYLE="$ROOT/docs/assets/style.css"
 
+SITE_CONFIG="$ROOT/docs/config.html"
 SITE_SAFETY="$ROOT/docs/safety.html"
 
 # Every published page, by basename. Per-page loops iterate this list, so a page
 # added to the site cannot quietly skip the structural checks below.
-PAGES="index safety"
+PAGES="index config safety"
 
 page_path() { printf '%s/docs/%s.html' "$ROOT" "$1"; }
 
@@ -1159,9 +1160,15 @@ for p in $PAGES; do
     || ko "$p.html links onward"
 done
 
-# The reference content that moves off the README lives here now.
-for s in CLAUDE_CONFIG_DIR untrackGlobs disabledPaths synthesisFrequency \
-         blanksPerExercise 'learner off' 'learner-config.sh'; do
+# The reference content that moves off the README lives here now, pinned to the page
+# that owns each fact rather than to anywhere on the site.
+for s in untrackGlobs disabledPaths synthesisFrequency blanksPerExercise 'learner off'; do
+  grep -qF "$s" "$SITE_CONFIG" \
+    && ok "config.html documents $s" \
+    || ko "config.html documents $s"
+done
+
+for s in CLAUDE_CONFIG_DIR 'learner-config.sh'; do
   grep -qF "$s" "$SITE" && ok "the site documents $s" || ko "the site documents $s"
 done
 
@@ -1181,7 +1188,7 @@ for key in $(printf '%s' "$defaults_json" | jq -r 'keys[]'); do
   # A string default may appear quoted or bare in the page's prose (e.g.
   # "auto" vs normal), so accept either rendering.
   bare=${val#\"}; bare=${bare%\"}
-  row=$(grep -F "<tr><td><code>$key</code></td>" "$SITE")
+  row=$(grep -F "<tr><td><code>$key</code></td>" "$SITE_CONFIG")
   # Scoped to the Default *column*, not the whole row: the table has four <td>
   # cells per row (Key, Values, Default, Effect) each closed with exactly one
   # "</td>", so splitting on that literal string isolates cell 3. A row-wide
@@ -1191,8 +1198,8 @@ for key in $(printf '%s' "$defaults_json" | jq -r 'keys[]'); do
   cell=$(printf '%s' "$row" | awk -F'</td>' '{print $3}')
   { printf '%s' "$cell" | grep -qF "<td><code>${val}</code>" \
     || printf '%s' "$cell" | grep -qF "<td><code>${bare}</code>"; } \
-    && ok "the site's default for $key matches LEARNER_DEFAULTS ($val)" \
-    || ko "the site's default for $key matches LEARNER_DEFAULTS ($val)"
+    && ok "config.html's default for $key matches LEARNER_DEFAULTS ($val)" \
+    || ko "config.html's default for $key matches LEARNER_DEFAULTS ($val)"
 done
 
 # The site is both the pitch and the full reference (locked decision #3) — that covers
@@ -1226,9 +1233,9 @@ grep -qF -- '--purge' "$SITE_SAFETY" \
 # the plan (`<td><code>D</code></td>`) so this can be a fixed-string match — a bracket
 # expression trying to allow several shapes is how the `\`` ERE bug got in last time.
 for l in D J C S E; do
-  grep -qF "<td><code>$l</code></td>" "$SITE" \
-    && ok "the site documents level $l as a table cell" \
-    || ko "the site documents level $l as a table cell"
+  grep -qF "<td><code>$l</code></td>" "$SITE_CONFIG" \
+    && ok "config.html documents level $l as a table cell" \
+    || ko "config.html documents level $l as a table cell"
 done
 
 for p in WSL 'Git Bash'; do
