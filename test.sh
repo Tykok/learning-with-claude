@@ -763,12 +763,13 @@ SITE="$ROOT/docs/index.html"
 STYLE="$ROOT/docs/assets/style.css"
 
 SITE_INSTALL="$ROOT/docs/install.html"
+SITE_USAGE="$ROOT/docs/usage.html"
 SITE_CONFIG="$ROOT/docs/config.html"
 SITE_SAFETY="$ROOT/docs/safety.html"
 
 # Every published page, by basename. Per-page loops iterate this list, so a page
 # added to the site cannot quietly skip the structural checks below.
-PAGES="index install config safety"
+PAGES="index install usage config safety"
 
 page_path() { printf '%s/docs/%s.html' "$ROOT" "$1"; }
 
@@ -1219,9 +1220,9 @@ for sub in $SUBCOMMANDS; do
   # "learner on" with no `on` subcommand in sight. Space or punctuation (a closing
   # `<`, in practice) after the word; end of line covers a subcommand as the last
   # word on its line.
-  grep -qE "learner ${sub}([[:space:][:punct:]]|\$)" "$SITE" \
-    && ok "the site documents the 'learner $sub' subcommand" \
-    || ko "the site documents the 'learner $sub' subcommand"
+  grep -qE "learner ${sub}([[:space:][:punct:]]|\$)" "$SITE_USAGE" \
+    && ok "usage.html documents the 'learner $sub' subcommand" \
+    || ko "usage.html documents the 'learner $sub' subcommand"
 done
 
 grep -qF -- '--project' "$SITE_SAFETY" \

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage — Claude Learner</title>
+<meta name="description" content="The three shapes a Claude Learner question can take, and what you can ask the learner skill for directly.">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<nav class="site" aria-label="Sections">
+  <a class="brand" href="index.html">Claude Learner</a>
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="install.html">Install</a></li>
+    <li><a href="usage.html" aria-current="page">Usage</a></li>
+    <li><a href="config.html">Configuration</a></li>
+    <li><a href="safety.html">Safety</a></li>
+  </ul>
+</nav>
+
+<main>
+
+  <h1>Usage</h1>
+  <p class="lede">The three shapes a question can take, and what you can ask Learner
+  for directly.</p>
+
+  <h2 id="styles">The three question styles</h2>
+
+  <dl>
+    <dt><code>code</code></dt>
+    <dd>What a specific changed function does.</dd>
+    <dt><code>architecture</code> (alias <code>archi</code>)</dt>
+    <dd>Which module, directory or layer the code lives in, and why that is where it
+    belongs.</dd>
+    <dt><code>fill</code></dt>
+    <dd>The interactive exercise above: holes cut in the real file, filled in by you.</dd>
+  </dl>
+
+  <p><code>questionStyles</code> takes either <code>"auto"</code>, the default, or a
+  subset of those three. <code>"auto"</code> varies the format from one question to the
+  next, picking whichever fits what changed. Naming a subset restricts it — set it to
+  <code>["code"]</code> and no exercise will ever touch a file; set it to
+  <code>["fill"]</code> if writing code back is the only feedback you trust.</p>
+
+  <p>There is no setting for the language of the questions. Claude mirrors whatever you
+  are writing in the conversation.</p>
+
+  <h2 id="commands">On demand</h2>
+
+  <p>Everything above happens on its own, once per turn. The same <code>learner</code>
+  skill also answers when you ask it directly — invoke it as
+  <code>learner &lt;subcommand&gt;</code>:</p>
+
+  <dl>
+    <dt><code>learner quiz [base-ref] [count]</code></dt>
+    <dd>Q&amp;A over the current branch diff, right now, instead of waiting for the
+    <code>Stop</code> hook — optionally against a named base ref, for a chosen number of
+    questions.</dd>
+    <dt><code>learner status</code></dt>
+    <dd>Read-only: your level, plus what to improve — the record the lede above promises,
+    read back to you on request. No quiz, no write.</dd>
+    <dt><code>learner improve [topic]</code></dt>
+    <dd>Coaches one weak spot — named, or the most open one on record — to mastery.</dd>
+    <dt><code>learner config [key=value …]</code></dt>
+    <dd>Views or edits settings. <code>learner config project …</code> scopes the edit to
+    the current repository instead of the global default; with no arguments it prints
+    your current settings.</dd>
+    <dt><code>learner off</code> / <code>learner on</code></dt>
+    <dd>Silences or restores the automatic quiz in the current repository. See
+    <a href="config.html#off">Turning it off</a> for what that writes and why.</dd>
+    <dt><code>learner help</code></dt>
+    <dd>Prints its subcommand and parameter reference, then stops.</dd>
+  </dl>
+
+  <p class="next">Next: <a href="config.html">Configuration</a> — every setting
+  Learner reads.</p>
+
+</main>
+
+<footer>
+  <p><a href="https://github.com/Tykok/learning-with-claude">github.com/Tykok/learning-with-claude</a>
+  — issues and pull requests welcome.</p>
+  <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
+  — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
+  licence; only redistributing a modified Learner does. This site is five hand-written files
+  and one stylesheet: no build step, no tracking, and no request to anywhere when you open
+  it.</p>
+</footer>
+</body>
+</html>
