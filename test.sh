@@ -705,6 +705,15 @@ grep -q 'CLAUDE_CONFIG_DIR' "$REFS/data.md" \
   && ok "data.md resolves the config dir from CLAUDE_CONFIG_DIR" \
   || ko "data.md resolves the config dir from CLAUDE_CONFIG_DIR"
 
+# The Learning level in the Notion export is computed per theme from these rows, so a row
+# that does not name its theme is uncountable. `Theme` going last is the decision, not an
+# accident: an old six-cell row then reads unambiguously as untagged, where an inserted
+# column would make cell 4 mean `Style` on old rows and `Theme` on new ones — and the
+# reader here is a model, not a parser holding a schema.
+grep -qF '| Date | Repo | Domain | Style | Verdict | Note | Theme |' "$REFS/data.md" \
+  && ok "data.md's Session history table ends with the Theme column" \
+  || ko "data.md's Session history table ends with the Theme column"
+
 # The trigger's field names are a contract between the hook and the protocol file:
 # renaming one in the hook, or dropping it from hook-quiz.md, breaks the read with
 # no other symptom. Assert both halves, and cross-check what is actually emitted.
