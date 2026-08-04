@@ -666,7 +666,7 @@ rm -rf "$L"
 SK="$ROOT/skills/learner/SKILL.md"
 REFS="$ROOT/skills/learner/references"
 
-for f in hook-quiz.md quiz.md improve.md data.md; do
+for f in hook-quiz.md quiz.md improve.md data.md export.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
 
@@ -713,6 +713,34 @@ grep -q 'CLAUDE_CONFIG_DIR' "$REFS/data.md" \
 grep -qF '| Date | Repo | Domain | Style | Verdict | Note | Theme |' "$REFS/data.md" \
   && ok "data.md's Session history table ends with the Theme column" \
   || ko "data.md's Session history table ends with the Theme column"
+
+# The five-value scale is the export's whole contribution beyond a copy of recap.md, and
+# rule 1 is what keeps recap.md authoritative over the tally. A value renamed or a rule
+# dropped in a later edit would silently regrade every row, with no other symptom.
+for v in Discovered Shaky Progressing Solid Mastered; do
+  grep -qF "\`$v\`" "$REFS/export.md" \
+    && ok "export.md documents the '$v' learning level" \
+    || ko "export.md documents the '$v' learning level"
+done
+
+# Bracket expressions, not `\|`: the rule rows are the only lines in the file that open
+# with a pipe, a single digit and a pipe.
+nrules=$(awk '/^[|] [1-6] [|]/{c++} END{print c+0}' "$REFS/export.md")
+[ "$nrules" -eq 6 ] \
+  && ok "export.md keeps all six level-derivation rules" \
+  || ko "export.md keeps all six level-derivation rules (got $nrules)"
+
+grep -qF 'CLAUDE_CONFIG_DIR' "$REFS/export.md" \
+  && grep -qF 'export.json' "$REFS/export.md" \
+  && ok "export.md resolves export.json under CLAUDE_CONFIG_DIR" \
+  || ko "export.md resolves export.json under CLAUDE_CONFIG_DIR"
+
+# Locked decision 2: no connector, no export. A file-shaped consolation prize would
+# reopen the export surface this design defers, so the two words are banned outright —
+# the protocol cannot drift into offering one without turning this red.
+grep -qiE 'csv|markdown' "$REFS/export.md" \
+  && ko "export.md offers no file-format fallback" \
+  || ok "export.md offers no file-format fallback"
 
 # The trigger's field names are a contract between the hook and the protocol file:
 # renaming one in the hook, or dropping it from hook-quiz.md, breaks the read with
