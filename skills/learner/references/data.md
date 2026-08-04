@@ -54,19 +54,24 @@ the `Session history` table below.)
 Table:
 
 ```
-| Date | Repo | Domain | Style | Verdict | Note |
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
 ```
 
 Verdicts: `✅ ok`, `⚠️ revisit`, `⏭️ skip`. This is the only place per-question detail
 lives in `recap.md`.
+
+`Theme` is the exact theme text the point was filed under in `To improve` or `Mastered` —
+the same choice step 2 of § After every answer already makes, written down so it can be
+counted later. Always fill it. A row that ends at `Note`, with no `Theme` cell, was
+written before the column existed: read it as untagged and leave it alone.
 
 ## After every answer
 
 Update **both** files:
 
 1. `memory.md` — add or remove the precise weak spot.
-2. `recap.md` — append a `Session history` row, and attach the point to its broad
-   theme under `To improve` or `Mastered` (create the theme only if it does not
-   already exist).
+2. `recap.md` — append a `Session history` row, naming the theme in its `Theme` cell, and
+   attach the point to that broad theme under `To improve` or `Mastered` (create the
+   theme only if it does not already exist).
 
 Keep both updates concise.
