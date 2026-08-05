@@ -1,6 +1,6 @@
 ---
 description: Learning mode. Invoke as "learner" with a subcommand — "quiz" (Q&A on the current branch), "status" (what to improve + level), "improve" (coach one weak spot to mastery), "config" (settings, incl. "off"/"on" for this repo), "help". Also invoked by the Stop hook, which passes a trigger line. Trigger on "learner", "learner quiz", "learner status", "learner improve", "learner config", "learner off", "quiz me", "quiz me on the branch", "what should I improve", "my level", "level me up", "mode apprentissage", "interroge-moi", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "m'améliorer sur".
-allowed-tools: Read, Write, Edit, Grep, Bash
+allowed-tools: Read, Write, Edit, Grep, Bash, mcp__claude_ai_Notion, mcp__notionApi, mcp__notion
 ---
 
 # Learner
@@ -20,6 +20,7 @@ language the dev is using in this conversation. There is no language setting.
 | `quiz [base-ref] [count]` | Q&A over the current branch diff | `references/quiz.md` |
 | `status` | Read-only summary: level + what to improve | this file, § Status |
 | `improve [topic]` | Coach one weak spot to mastery | `references/improve.md` |
+| `export [notion-page-url]` | Push the recap into a Notion database | `references/export.md` |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
 | `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | — |

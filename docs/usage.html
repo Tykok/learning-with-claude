@@ -63,6 +63,10 @@
     read back to you on request. No quiz, no write.</dd>
     <dt><code>learner improve [topic]</code></dt>
     <dd>Coaches one weak spot — named, or the most open one on record — to mastery.</dd>
+    <dt><code>learner export [notion-page-url]</code></dt>
+    <dd>Pushes the recap into a Notion database — one row per competency theme, with a
+    learning level derived from your session history. Needs the Notion connector; the
+    parent page URL is asked for once, on the first export, and remembered after that.</dd>
     <dt><code>learner config [key=value …]</code></dt>
     <dd>Views or edits settings. <code>learner config project …</code> scopes the edit to
     the current repository instead of the global default; with no arguments it prints
