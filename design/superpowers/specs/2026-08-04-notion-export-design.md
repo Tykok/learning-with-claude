@@ -185,8 +185,8 @@ deliberately rather than discovered late.
 | File | Change |
 |---|---|
 | `skills/learner/SKILL.md` | one Dispatch row for `export [url]`; the Notion tools in `allowed-tools` |
-| `skills/learner/references/export.md` | new — the whole protocol: read, derive, create-or-upsert, report |
-| `skills/learner/references/data.md` | the `Theme` column and its read/write rule; the `export.json` path |
+| `skills/learner/references/export.md` | new — the whole protocol: read, derive, create-or-upsert, report; the `export.json` path |
+| `skills/learner/references/data.md` | the `Theme` column and its read/write rule |
 | `docs/usage.html` | a `<dt>`/`<dd>` for `learner export` under `On demand` |
 | `test.sh` | the assertions in §8 |
 

@@ -695,6 +695,12 @@ grep -q 'references/hook-quiz.md' "$SK" \
   && ok "SKILL.md routes the hook trigger to references/hook-quiz.md" \
   || ko "SKILL.md routes the hook trigger to references/hook-quiz.md"
 
+# Same guard for the export Dispatch row: repointed at prose elsewhere, export.md would
+# become dead weight and every assertion below would still pass.
+grep -q 'references/export.md' "$SK" \
+  && ok "SKILL.md routes the export subcommand to references/export.md" \
+  || ko "SKILL.md routes the export subcommand to references/export.md"
+
 grep -q 'references/data.md' "$REFS/hook-quiz.md" \
   && grep -q 'references/data.md' "$REFS/quiz.md" \
   && grep -q 'references/data.md' "$REFS/improve.md" \
@@ -717,15 +723,19 @@ grep -qF '| Date | Repo | Domain | Style | Verdict | Note | Theme |' "$REFS/data
 # The five-value scale is the export's whole contribution beyond a copy of recap.md, and
 # rule 1 is what keeps recap.md authoritative over the tally. A value renamed or a rule
 # dropped in a later edit would silently regrade every row, with no other symptom.
+# Narrowed to the `Learning level` row: every value also appears in §5's rule table, and
+# `Mastered` in the prose besides, so a file-wide grep stayed green with the Select row
+# and rule 1 both gone.
 for v in Discovered Shaky Progressing Solid Mastered; do
-  grep -qF "\`$v\`" "$REFS/export.md" \
+  grep -F 'Learning level' "$REFS/export.md" | grep -qF "\`$v\`" \
     && ok "export.md documents the '$v' learning level" \
     || ko "export.md documents the '$v' learning level"
 done
 
 # Bracket expressions, not `\|`: the rule rows are the only lines in the file that open
-# with a pipe, a single digit and a pipe.
-nrules=$(awk '/^[|] [1-6] [|]/{c++} END{print c+0}' "$REFS/export.md")
+# with a pipe, a single digit and a pipe. Scoped to §5 so an unrelated `| N |` row added
+# elsewhere cannot inflate the count and turn this red with a misleading message.
+nrules=$(awk '/^## 5[.]/{f=1} /^## 6[.]/{f=0} f && /^[|] [1-6] [|]/{c++} END{print c+0}' "$REFS/export.md")
 [ "$nrules" -eq 6 ] \
   && ok "export.md keeps all six level-derivation rules" \
   || ko "export.md keeps all six level-derivation rules (got $nrules)"

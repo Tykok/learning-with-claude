@@ -136,7 +136,7 @@ cd learning-with-claude
     </thead>
     <tbody>
       <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> skill: dispatch, levels, config</td></tr>
-      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>data.md</code></td></tr>
+      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>data.md</code></td></tr>
       <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced by the other four hooks, never run on its own</td></tr>
       <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
       <tr><td><code>$CFG/hooks/learner-record-edit.sh</code></td><td><code>PostToolUse</code> on <code>Write</code>/<code>Edit</code> — records the files edited this session</td></tr>
@@ -147,6 +147,7 @@ cd learning-with-claude
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer for the skill to write into at runtime</td></tr>
       <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
       <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
+      <tr><td><code>$CFG/learner/export.json</code></td><td>Which Notion database <code>learner export</code> pushes to, and when it last ran. Created on the first export, not by the installer</td></tr>
     </tbody>
   </table>
   </div>

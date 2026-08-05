@@ -40,7 +40,7 @@ Update both data files per `references/data.md`:
 
 - Remove the weak spot from `memory.md`.
 - Move its theme to `Mastered` in the recap.
-- Append a `Session history` row with style `improve`.
+- Append a `Session history` row with style `improve`, naming the theme in its `Theme` cell.
 
 If the dev is not yet there, leave the weak spot open in `memory.md` and note in the
 recap what still needs work.
