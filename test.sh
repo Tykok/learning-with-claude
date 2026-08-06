@@ -486,6 +486,35 @@ inst "$I" --level S >/dev/null 2>&1
   && ok "a re-install always refreshes VERSION, unlike learner.json" \
   || ko "a re-install always refreshes VERSION, unlike learner.json"
 
+[ -f "$I/skills/learner/INSTALL_ORIGIN" ] && [ "$(cat "$I/skills/learner/INSTALL_ORIGIN")" = "curl" ] \
+  && ok "install defaults --origin to curl" \
+  || ko "install defaults --origin to curl"
+
+IB="$WORK/inst-brew"; mkdir -p "$IB"
+inst "$IB" --level S --origin brew >/dev/null 2>&1
+[ "$(cat "$IB/skills/learner/INSTALL_ORIGIN" 2>/dev/null)" = "brew" ] \
+  && ok "install stamps --origin brew" \
+  || ko "install stamps --origin brew"
+
+IA="$WORK/inst-apt"; mkdir -p "$IA"
+inst "$IA" --level S --origin apt >/dev/null 2>&1
+[ "$(cat "$IA/skills/learner/INSTALL_ORIGIN" 2>/dev/null)" = "apt" ] \
+  && ok "install stamps --origin apt" \
+  || ko "install stamps --origin apt"
+
+out=$(inst "$WORK/inst-bad-origin" --level S --origin homebrew 2>&1) \
+  && ko "install rejects an unknown --origin value" \
+  || ok "install rejects an unknown --origin value"
+printf '%s' "$out" | grep -qF -- '--origin' \
+  && ok "the --origin error message names the flag" \
+  || ko "the --origin error message names the flag (got '$out')"
+
+echo 'brew' > "$I/skills/learner/INSTALL_ORIGIN"
+inst "$I" --level S --origin curl >/dev/null 2>&1
+[ "$(cat "$I/skills/learner/INSTALL_ORIGIN")" = "curl" ] \
+  && ok "a re-install always refreshes INSTALL_ORIGIN, unlike learner.json" \
+  || ko "a re-install always refreshes INSTALL_ORIGIN, unlike learner.json"
+
 jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise == 3' \
   "$I/learner.json" >/dev/null 2>&1 \
   && ok "install writes the global config from flags" \
@@ -721,6 +750,7 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$
   && [ ! -e "$U/hooks/learner-quiz.sh" ] \
   && [ ! -e "$U/hooks/learner-config.sh" ] \
   && [ ! -e "$U/hooks/learner-update-check.sh" ] \
+  && [ ! -e "$U/skills/learner/INSTALL_ORIGIN" ] \
   && [ ! -d "$U/skills/learner" ]; } \
   && ok "uninstall removes hooks, skill and wiring" \
   || ko "uninstall removes hooks, skill and wiring (left=$left)"

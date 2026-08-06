@@ -4,11 +4,14 @@
 #
 # Usage:
 #   ./install.sh [--level D|J|C|S|E] [--synthesis off|rare|normal|often]
-#                [--blanks N] [--dry-run] [--yes]
+#                [--blanks N] [--origin curl|brew|apt] [--dry-run] [--yes]
 #
 #   --level L      Your level. Full words (junior, senior, …) are accepted.
 #   --synthesis W  How often a synthesis question replaces a granular one.
 #   --blanks N     Holes left in a fill-in exercise.
+#   --origin O     Who is installing: curl, brew or apt. Set by the brew/apt
+#                  wrapper scripts — pass it by hand only if you know why.
+#                  Default: curl.
 #   --dry-run      Print what would be written, write nothing.
 #   --yes          Never prompt; defaults for anything not passed — but --level
 #                  has no default, so pass it too or the install aborts.
@@ -23,7 +26,7 @@ CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # shellcheck source=hooks/learner-config.sh
 . "$SRC_DIR/hooks/learner-config.sh"
 
-LEVEL=""; SYNTH=""; BLANKS=""; DRY=0; YES=0
+LEVEL=""; SYNTH=""; BLANKS=""; ORIGIN=""; DRY=0; YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --level)     LEVEL="${2:-}"; shift 2 ;;
@@ -32,12 +35,20 @@ while [ $# -gt 0 ]; do
     --synthesis=*) SYNTH="${1#*=}"; shift ;;
     --blanks)    BLANKS="${2:-}"; shift 2 ;;
     --blanks=*)  BLANKS="${1#*=}"; shift ;;
+    --origin)    ORIGIN="${2:-}"; shift 2 ;;
+    --origin=*)  ORIGIN="${1#*=}"; shift ;;
     --dry-run)   DRY=1; shift ;;
     --yes|-y)    YES=1; shift ;;
-    -h|--help)   sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "error: unexpected argument '$1' (learner installs globally, not per repo)"; exit 1 ;;
   esac
 done
+
+ORIGIN="${ORIGIN:-curl}"
+case "$ORIGIN" in
+  curl|brew|apt) ;;
+  *) echo "error: --origin must be curl | brew | apt"; exit 1 ;;
+esac
 
 # 1) Claude Code must exist — installing without it does nothing useful.
 if ! command -v claude >/dev/null 2>&1 && [ ! -d "$CFG_DIR" ]; then
@@ -128,6 +139,7 @@ cp "$SRC_DIR/skills/learner/SKILL.md" "$CFG_DIR/skills/learner/SKILL.md"
 cp "$SRC_DIR"/skills/learner/references/*.md "$CFG_DIR/skills/learner/references/"
 # Always refresh — unlike learner.json below, this must match what's on disk.
 cp "$SRC_DIR/VERSION" "$CFG_DIR/skills/learner/VERSION"
+printf '%s' "$ORIGIN" > "$CFG_DIR/skills/learner/INSTALL_ORIGIN"
 echo "  ✓ skill → $CFG_DIR/skills/learner/"
 
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
