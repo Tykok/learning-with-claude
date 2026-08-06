@@ -97,7 +97,7 @@ for pair in "off:0" "rare:8" "normal:4" "often:2" "banana:4"; do
     || ko "synthesisFrequency '$raw' -> $want (got '$got')"
 done
 
-for pair in "1.2.3:yes" "0.1.0:yes" "1.0:no" "1.x.0:no" "1.2.3.4:no"; do
+for pair in "1.2.3:yes" "0.1.0:yes" "1.0:no" "1.x.0:no" "1.2.3.4:no" "1.2.:no" "1..3:no"; do
   raw="${pair%%:*}"; want="${pair##*:}"
   if cfgsh "learner_version_valid $raw"; then got=yes; else got=no; fi
   [ "$got" = "$want" ] \

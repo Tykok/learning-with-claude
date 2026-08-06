@@ -8,6 +8,8 @@
 #   learner_level RAW               canonical level letter, empty when invalid
 #   learner_level_name LETTER       human name for a level letter
 #   learner_synthesis_n WORD        questions between synthesis questions (0 = off)
+#   learner_version_valid V         true if V is "X.Y.Z" with X/Y/Z decimal integers
+#   learner_version_gt A B          true if A > B (both must satisfy learner_version_valid)
 #   learner_repo_root               git toplevel of the project dir, empty if none
 #   learner_path_disabled ROOT CFG  true when ROOT sits under a disabledPaths entry
 #   learner_active CFG ROOT         true when the automatic quiz should run here
@@ -72,18 +74,20 @@ learner_synthesis_n() {
 # learner_version_valid V — true if V is "X.Y.Z" with X/Y/Z decimal integers.
 learner_version_valid() {
   case "$1" in *.*.*) ;; *) return 1 ;; esac
-  v1=${1%%.*}; v_rest=${1#*.}; v2=${v_rest%%.*}; v3=${v_rest#*.}
-  case "$v1$v2$v3" in *[!0-9]*|'') return 1 ;; esac
+  _lv1=${1%%.*}; _lv_rest=${1#*.}; _lv2=${_lv_rest%%.*}; _lv3=${_lv_rest#*.}
+  case "$_lv1" in ''|*[!0-9]*) return 1 ;; esac
+  case "$_lv2" in ''|*[!0-9]*) return 1 ;; esac
+  case "$_lv3" in ''|*[!0-9]*) return 1 ;; esac
 }
 
 # learner_version_gt A B — true if A > B. Both must already satisfy
 # learner_version_valid; callers validate first (hooks/learner-update-check.sh does).
 learner_version_gt() {
-  a1=${1%%.*}; a_rest=${1#*.}; a2=${a_rest%%.*}; a3=${a_rest#*.}
-  b1=${2%%.*}; b_rest=${2#*.}; b2=${b_rest%%.*}; b3=${b_rest#*.}
-  [ "$a1" -gt "$b1" ] && return 0; [ "$a1" -lt "$b1" ] && return 1
-  [ "$a2" -gt "$b2" ] && return 0; [ "$a2" -lt "$b2" ] && return 1
-  [ "$a3" -gt "$b3" ]
+  _la1=${1%%.*}; _la_rest=${1#*.}; _la2=${_la_rest%%.*}; _la3=${_la_rest#*.}
+  _lb1=${2%%.*}; _lb_rest=${2#*.}; _lb2=${_lb_rest%%.*}; _lb3=${_lb_rest#*.}
+  [ "$_la1" -gt "$_lb1" ] && return 0; [ "$_la1" -lt "$_lb1" ] && return 1
+  [ "$_la2" -gt "$_lb2" ] && return 0; [ "$_la2" -lt "$_lb2" ] && return 1
+  [ "$_la3" -gt "$_lb3" ]
 }
 
 learner_repo_root() {
