@@ -32,9 +32,9 @@
       <li><a href="#requirements">Requirements</a></li>
       <li><a href="#one-line">One line</a></li>
       <li><a href="#clone">Clone and run</a></li>
+      <li><a href="#packages">Homebrew and apt</a></li>
       <li><a href="#installed">What gets installed, and where</a></li>
       <li><a href="#platforms">Platforms</a></li>
-      <li><a href="#packages">Homebrew and apt</a></li>
     </ol>
   </nav>
 
@@ -130,6 +130,31 @@ cd learning-with-claude
   re-installing) while a session is already open changes nothing in it — quit and start a
   new session for the hooks to take effect.</p>
 
+  <h2 id="packages">Homebrew and apt</h2>
+
+  <p>Both stage the payload and drop <code>learner-install</code> /
+  <code>learner-uninstall</code> on <code>PATH</code> — neither touches
+  <code>~/.claude</code> on its own. Run <code>learner-install</code> afterward, same flags
+  as <a href="#clone"><code>install.sh</code></a> above.</p>
+
+<pre><code># Homebrew — a personal tap, not homebrew-core
+brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
+brew install learner
+learner-install --level S --synthesis normal --blanks 2</code></pre>
+
+<pre><code># apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
+curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
+sudo apt install ./learner_0.2.0_all.deb
+learner-install --level S --synthesis normal --blanks 2</code></pre>
+
+  <p><code>v0.2.0</code> above is illustrative — substitute the version you want from
+  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a>.</p>
+
+  <p>Uninstalling reverses the same way: <code>brew uninstall learner</code> / removing the
+  <code>.deb</code> only removes the staged copy and these two wrapper binaries — the payload
+  under <code>~/.claude</code> still needs <code>learner-uninstall</code> (same as
+  <code>uninstall.sh</code>) to actually come out.</p>
+
   <h2 id="installed">What gets installed, and where</h2>
 
   <p>Everything lives under <code>$CLAUDE_CONFIG_DIR</code>, written <code>$CFG</code>
@@ -190,26 +215,6 @@ cd learning-with-claude
   POSIX shell on the machine there is nothing for Claude Code to execute. WSL and Git
   Bash both supply one, and on either of them Learner behaves exactly as it does on
   Linux.</p>
-
-  <h2 id="packages">Homebrew and apt</h2>
-
-  <p>Both stage the payload and drop <code>learner-install</code> /
-  <code>learner-uninstall</code> on <code>PATH</code> — neither touches
-  <code>~/.claude</code> on its own. Run <code>learner-install</code> afterward, same flags
-  as <a href="#clone"><code>install.sh</code></a> above.</p>
-
-<pre><code># Homebrew — a personal tap, not homebrew-core
-brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
-brew install learner
-learner-install --level S --synthesis normal --blanks 2</code></pre>
-
-<pre><code># apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
-curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
-sudo apt install ./learner_0.2.0_all.deb
-learner-install --level S --synthesis normal --blanks 2</code></pre>
-
-  <p><code>v0.2.0</code> above is illustrative — substitute the version you want from
-  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a>.</p>
 
   <p class="next">Next: <a href="usage.html">Usage</a> — the three shapes a question
   takes.</p>

@@ -14,6 +14,7 @@ PKG="learner_${VERSION}_all"
 command -v dpkg-deb >/dev/null 2>&1 || { echo "error: dpkg-deb is required"; exit 1; }
 
 PKGROOT="$(mktemp -d)"
+chmod 0755 "$PKGROOT"
 trap 'rm -rf "$PKGROOT"' EXIT
 
 mkdir -p "$PKGROOT/DEBIAN" "$PKGROOT/usr/share/learner" "$PKGROOT/usr/bin"

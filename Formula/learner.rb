@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 # SPDX-License-Identifier: GPL-3.0-or-later
 class Learner < Formula
   desc "Turns Claude Code into a learning loop: quizzes you on your own diffs"

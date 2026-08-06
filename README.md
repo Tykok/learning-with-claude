@@ -113,6 +113,10 @@ learner-install --level S --synthesis normal --blanks 2
 [Releases](https://github.com/Tykok/learning-with-claude/releases); the currently-tagged
 `v0.1.0` predates this feature and has no `.deb` attached to it.)
 
+Uninstalling reverses the same way: `brew uninstall learner` / removing the `.deb` only
+removes the staged copy and these two wrapper binaries — the payload under `~/.claude` still
+needs `learner-uninstall` (same as `uninstall.sh`) to actually come out.
+
 The installer is idempotent: re-running re-copies the hooks and the skill and re-merges the
 hook wiring into `settings.json` without duplicating entries, and it never overwrites an
 existing config. **It writes nothing into any repository** — every path it touches sits under

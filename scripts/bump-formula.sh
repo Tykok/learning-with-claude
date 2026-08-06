@@ -24,11 +24,14 @@ fi
 [ -n "$SHA" ] || { echo "error: could not compute sha256 for $URL"; exit 1; }
 
 TMP=$(mktemp)
+trap 'rm -f "$TMP"' EXIT
 sed -E \
   -e "s#^(  url \").*(\")\$#\1${URL}\2#" \
   -e "s#^(  sha256 \").*(\")\$#\1${SHA}\2#" \
   "$FORMULA" > "$TMP"
 mv "$TMP" "$FORMULA"
+
+grep -qF "$SHA" "$FORMULA" || { echo "error: rewrite did not take — check Formula/learner.rb's url/sha256 line format"; exit 1; }
 
 echo "Formula/learner.rb updated for $TAG:"
 echo "  url:    $URL"

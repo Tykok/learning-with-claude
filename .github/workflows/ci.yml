@@ -9,8 +9,6 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -29,12 +27,19 @@ jobs:
             echo "tag v$TAG does not match VERSION file ($FILE)"; exit 1
           fi
 
+  release:
+    needs: ci
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
       - name: build .deb
-        if: startsWith(github.ref, 'refs/tags/')
         run: bash packaging/deb/build.sh
 
       - name: publish release asset
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: learner_*_all.deb

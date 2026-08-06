@@ -1097,7 +1097,7 @@ grep -qF 'sudo apt install ./learner_' "$RM" \
   && ok "README documents the apt/.deb install path" \
   || ko "README documents the apt/.deb install path"
 
-grep -qF 'learner-install' "$RM" \
+grep -qF 'learner-install --level' "$RM" \
   && ok "README documents the learner-install activation command" \
   || ko "README documents the learner-install activation command"
 
@@ -1617,7 +1617,7 @@ grep -qiF 'copyleft' "$RM" \
 # three letters.
 #
 # The scanned set is what ships or is read by a user: the README, the site, and
-# the eight scripts install.sh copies or a user runs. test.sh is deliberately NOT
+# every script that ships or a user runs. test.sh is deliberately NOT
 # in it — this file names the old licence in the pattern and in its own pass/fail
 # messages, so scanning itself could never pass, and it is neither shipped nor
 # documentation. design/ is excluded too: those plans record what was decided at
