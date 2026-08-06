@@ -30,9 +30,10 @@
     <p class="toc-title" id="toc-title">On this page</p>
     <ol>
       <li><a href="#requirements">Requirements</a></li>
-      <li><a href="#one-line">One line</a></li>
+      <li><a href="#apt">apt (Debian/Ubuntu)</a></li>
+      <li><a href="#homebrew">Homebrew</a></li>
       <li><a href="#clone">Clone and run</a></li>
-      <li><a href="#packages">Homebrew and apt</a></li>
+      <li><a href="#alternative">Alternative: the curl one-liner</a></li>
       <li><a href="#installed">What gets installed, and where</a></li>
       <li><a href="#platforms">Platforms</a></li>
     </ol>
@@ -63,32 +64,50 @@
     an existing config directory.</li>
   </ul>
 
-  <h2 id="one-line">One line</h2>
+  <h2 id="apt">apt (Debian/Ubuntu)</h2>
 
-<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh</code></pre>
+<pre><code># one time
+curl -fsSL https://tykok.github.io/learning-with-claude/apt/learner.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/learner.gpg
+echo "deb [signed-by=/usr/share/keyrings/learner.gpg] https://tykok.github.io/learning-with-claude/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/learner.list
 
-  <p>It asks for your level, how often a synthesis question should replace a granular
-  one, and how many holes a <code>fill</code> exercise leaves, then writes everything
-  under your Claude Code config directory. To skip the prompts, pass the flags
-  <code>install.sh</code> takes — <code>bootstrap.sh</code> forwards them through
-  untouched and owns no defaults of its own:</p>
+# from then on
+sudo apt update && sudo apt install learner
+learner-install --level S --synthesis normal --blanks 2</code></pre>
 
-<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh \
-  | sh -s -- --level S --synthesis normal --blanks 2</code></pre>
+  <p>One <code>curl</code> remains — fetching the repository's trust anchor once, the same
+  pattern Docker's and HashiCorp's own apt repos use. There is no keyless way to establish
+  that first trust, but after this one-time step, <code>sudo apt update &amp;&amp; sudo apt
+  upgrade learner</code> is the whole update story — no more <code>curl</code> involved,
+  ever.</p>
 
-  <p>To install a specific revision rather than whatever <code>main</code> says today,
-  name the ref twice — once in the URL your shell reads, once in <code>LEARNER_REF</code>
-  for the payload that URL then fetches. Anything git resolves works: a release tag, a
-  branch name, or a commit SHA.</p>
+  <p>Prefer not to add a repository? Grab the <code>.deb</code> directly from
+  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a> instead:</p>
 
-<pre><code>REF=v0.1.0   # a tag, a branch name, or a commit SHA
-curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
-  | LEARNER_REF="$REF" sh</code></pre>
+<pre><code>curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
+sudo apt install ./learner_0.2.0_all.deb
+learner-install --level S --synthesis normal --blanks 2</code></pre>
 
-  <p><code>LEARNER_REF</code> pins the payload, not <code>bootstrap.sh</code> itself —
-  your shell has already read that from the URL by the time the variable is visible.
-  Pinning only one of the two still runs whatever <code>main</code> says, which is why
-  the ref appears in both places.</p>
+  <p><code>v0.2.0</code> is this release. Check
+  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a> for the
+  current version if you're reading this after a newer one has shipped.</p>
+
+  <h2 id="homebrew">Homebrew</h2>
+
+<pre><code>brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
+brew install learner
+learner-install --level S --synthesis normal --blanks 2</code></pre>
+
+  <p>A personal tap, not homebrew-core.</p>
+
+  <p>Both apt and Homebrew only stage the files and drop <code>learner-install</code> /
+  <code>learner-uninstall</code> on <code>PATH</code> — neither touches <code>~/.claude</code>
+  on its own. Run <code>learner-install</code> afterward, same flags as
+  <a href="#clone"><code>install.sh</code></a> below. Uninstalling reverses the same way:
+  <code>sudo apt remove learner</code> / <code>brew uninstall learner</code> only remove those
+  two wrapper binaries — the payload under <code>~/.claude</code> still needs
+  <code>learner-uninstall</code> (same as <code>uninstall.sh</code>) to actually come out.</p>
 
   <h2 id="clone">Clone and run</h2>
 
@@ -130,31 +149,33 @@ cd learning-with-claude
   re-installing) while a session is already open changes nothing in it — quit and start a
   new session for the hooks to take effect.</p>
 
-  <h2 id="packages">Homebrew and apt</h2>
+  <h2 id="alternative">Alternative: the curl one-liner</h2>
 
-  <p>Both stage the payload and drop <code>learner-install</code> /
-  <code>learner-uninstall</code> on <code>PATH</code> — neither touches
-  <code>~/.claude</code> on its own. Run <code>learner-install</code> afterward, same flags
-  as <a href="#clone"><code>install.sh</code></a> above.</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh</code></pre>
 
-<pre><code># Homebrew — a personal tap, not homebrew-core
-brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
-brew install learner
-learner-install --level S --synthesis normal --blanks 2</code></pre>
+  <p>It asks for your level, how often a synthesis question should replace a granular
+  one, and how many holes a <code>fill</code> exercise leaves, then writes everything
+  under your Claude Code config directory — this is what it fetches and runs under the
+  hood. To skip the prompts, pass the flags
+  <code>install.sh</code> takes — <code>bootstrap.sh</code> forwards them through
+  untouched and owns no defaults of its own:</p>
 
-<pre><code># apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
-curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
-sudo apt install ./learner_0.2.0_all.deb
-learner-install --level S --synthesis normal --blanks 2</code></pre>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh \
+  | sh -s -- --level S --synthesis normal --blanks 2</code></pre>
 
-  <p><code>v0.2.0</code> is this release. Check
-  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a> for the
-  current version if you're reading this after a newer one has shipped.</p>
+  <p>To install a specific revision rather than whatever <code>main</code> says today,
+  name the ref twice — once in the URL your shell reads, once in <code>LEARNER_REF</code>
+  for the payload that URL then fetches. Anything git resolves works: a release tag, a
+  branch name, or a commit SHA.</p>
 
-  <p>Uninstalling reverses the same way: <code>brew uninstall learner</code> / removing the
-  <code>.deb</code> only removes the staged copy and these two wrapper binaries — the payload
-  under <code>~/.claude</code> still needs <code>learner-uninstall</code> (same as
-  <code>uninstall.sh</code>) to actually come out.</p>
+<pre><code>REF=v0.1.0   # a tag, a branch name, or a commit SHA
+curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
+  | LEARNER_REF="$REF" sh</code></pre>
+
+  <p><code>LEARNER_REF</code> pins the payload, not <code>bootstrap.sh</code> itself —
+  your shell has already read that from the URL by the time the variable is visible.
+  Pinning only one of the two still runs whatever <code>main</code> says, which is why
+  the ref appears in both places.</p>
 
   <h2 id="installed">What gets installed, and where</h2>
 

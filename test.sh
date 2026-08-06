@@ -1107,6 +1107,26 @@ ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claud
   && ok "the install one-liner is identical in the README and on install.html" \
   || ko "the install one-liner is identical in the README and on install.html"
 
+apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+homebrew_h2=$(grep -n '<h2 id="homebrew">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+clone_h2=$(grep -n '<h2 id="clone">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+alt_h2=$(grep -n '<h2 id="alternative">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+
+{ [ -n "$apt_h2" ] && [ -n "$homebrew_h2" ] && [ -n "$clone_h2" ] && [ -n "$alt_h2" ] \
+  && [ "$apt_h2" -lt "$homebrew_h2" ] \
+  && [ "$homebrew_h2" -lt "$clone_h2" ] \
+  && [ "$clone_h2" -lt "$alt_h2" ]; } \
+  && ok "install.html orders sections as apt, Homebrew, clone, then the curl alternative" \
+  || ko "install.html orders sections as apt, Homebrew, clone, then the curl alternative"
+
+grep -qF 'sudo apt install learner' "$SITE_INSTALL" \
+  && ok "install.html documents installing directly from the apt repository" \
+  || ko "install.html documents installing directly from the apt repository"
+
+grep -qF '<h2 id="packages">' "$SITE_INSTALL" \
+  && ko "install.html no longer has the old combined packages section" \
+  || ok "install.html no longer has the old combined packages section"
+
 { grep -qF 'docs/index.html' "$RM" || grep -qiF 'github.io' "$RM"; } \
   && ok "the README links to the site" \
   || ko "the README links to the site"
