@@ -1061,6 +1061,19 @@ grep -qF 'startsWith(github.ref' "$CI_YML" \
   && ok "CI guards a tag push against the VERSION file" \
   || ko "CI guards a tag push against the VERSION file"
 
+grep -qF 'contents: write' "$CI_YML" \
+  && ok "CI grants contents:write, needed to publish a release asset" \
+  || ko "CI grants contents:write, needed to publish a release asset"
+
+grep -qF 'packaging/deb/build.sh' "$CI_YML" \
+  && ok "CI builds the .deb on a tag push" \
+  || ko "CI builds the .deb on a tag push"
+
+grep -qF 'softprops/action-gh-release' "$CI_YML" \
+  && grep -qF 'learner_*_all.deb' "$CI_YML" \
+  && ok "CI publishes the .deb as a release asset" \
+  || ko "CI publishes the .deb as a release asset"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
