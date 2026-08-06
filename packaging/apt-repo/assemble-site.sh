@@ -33,6 +33,7 @@ OUT="${1:-_site}"
 cleanup() {
   [ -n "${TMPDL:-}" ] && rm -rf "$TMPDL"
   [ -n "${GNUPGHOME:-}" ] && rm -rf "$GNUPGHOME"
+  return 0
 }
 trap cleanup EXIT
 
