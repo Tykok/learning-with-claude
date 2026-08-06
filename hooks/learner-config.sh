@@ -69,6 +69,23 @@ learner_synthesis_n() {
   esac
 }
 
+# learner_version_valid V — true if V is "X.Y.Z" with X/Y/Z decimal integers.
+learner_version_valid() {
+  case "$1" in *.*.*) ;; *) return 1 ;; esac
+  v1=${1%%.*}; v_rest=${1#*.}; v2=${v_rest%%.*}; v3=${v_rest#*.}
+  case "$v1$v2$v3" in *[!0-9]*|'') return 1 ;; esac
+}
+
+# learner_version_gt A B — true if A > B. Both must already satisfy
+# learner_version_valid; callers validate first (hooks/learner-update-check.sh does).
+learner_version_gt() {
+  a1=${1%%.*}; a_rest=${1#*.}; a2=${a_rest%%.*}; a3=${a_rest#*.}
+  b1=${2%%.*}; b_rest=${2#*.}; b2=${b_rest%%.*}; b3=${b_rest#*.}
+  [ "$a1" -gt "$b1" ] && return 0; [ "$a1" -lt "$b1" ] && return 1
+  [ "$a2" -gt "$b2" ] && return 0; [ "$a2" -lt "$b2" ] && return 1
+  [ "$a3" -gt "$b3" ]
+}
+
 learner_repo_root() {
   git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --show-toplevel 2>/dev/null || printf ''
 }

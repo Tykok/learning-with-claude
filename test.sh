@@ -97,6 +97,25 @@ for pair in "off:0" "rare:8" "normal:4" "often:2" "banana:4"; do
     || ko "synthesisFrequency '$raw' -> $want (got '$got')"
 done
 
+for pair in "1.2.3:yes" "0.1.0:yes" "1.0:no" "1.x.0:no" "1.2.3.4:no"; do
+  raw="${pair%%:*}"; want="${pair##*:}"
+  if cfgsh "learner_version_valid $raw"; then got=yes; else got=no; fi
+  [ "$got" = "$want" ] \
+    && ok "learner_version_valid '$raw' -> $want" \
+    || ko "learner_version_valid '$raw' -> $want (got $got)"
+done
+
+for t in "1.2.3:1.2.3:no" "1.2.4:1.2.3:yes" "1.2.3:1.2.4:no" \
+         "1.3.0:1.2.9:yes" "2.0.0:1.9.9:yes" "1.9.9:2.0.0:no"; do
+  a=$(printf '%s' "$t" | cut -d: -f1)
+  b=$(printf '%s' "$t" | cut -d: -f2)
+  want=$(printf '%s' "$t" | cut -d: -f3)
+  if cfgsh "learner_version_gt $a $b"; then got=yes; else got=no; fi
+  [ "$got" = "$want" ] \
+    && ok "learner_version_gt $a vs $b -> $want" \
+    || ko "learner_version_gt $a vs $b -> $want (got $got)"
+done
+
 out=$(cfgsh 'learner_repo_root')
 [ "$out" = "$(cd "$WORK/proj" && pwd -P)" ] \
   && ok "repo root resolves inside a git repo" \
