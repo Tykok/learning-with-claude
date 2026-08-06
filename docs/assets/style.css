@@ -1,140 +1,233 @@
+/* Claude Learner docs — editorial minimal.
+   Cool neutral surfaces, one restrained accent, a refined type scale, and
+   whitespace doing the organising work that boxes used to do. */
+
 :root {
   color-scheme: light dark;
-  --bg: #fbfaf8; --fg: #1a1a18; --muted: #5d5a54;
-  --rule: #e2ded6; --card: #f4f1ec;
-  /* WCAG AA (4.5:1) against every background --accent sits on: 4.77:1 on --code-bg
-     (the .hl markers below, the tightest pairing), 5.38:1 on --bg, 4.99:1 on --card.
-     The original #7a5cc0 cleared --bg but fell to 4.33:1 on --code-bg — under
-     threshold on the one surface .hl actually uses. */
-  --accent: #7256b8;
-  --code-bg: #f0ece5;
+  --bg: #ffffff;
+  --fg: #14161a;
+  --muted: #5b5f6b;
+  --rule: #e6e6ea;
+  --card: #f6f6f8;
+  --code-bg: #f0f0f4;
+  /* WCAG AA (4.5:1) against every surface --accent sits on as text: 5.80:1 on
+     --bg, 5.37:1 on --card, 5.10:1 on --code-bg (span.hl inside a code block,
+     the tightest pairing). Everywhere else it is a border or an outline, which
+     carries no contrast minimum. */
+  --accent: #5b52d6;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --measure: 43rem;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16161a; --fg: #e8e6e1; --muted: #9d9890;
-    --rule: #2c2c32; --card: #1e1e24; --accent: #a98cf0;
-    /* Well clear of --bg (#16161a), not six lightness units off it: an inline
-       code chip that barely separates from the page is unreadable as a chip. */
-    --code-bg: #32323c;
+    --bg: #0a0a0c;
+    --fg: #e7e7ea;
+    --muted: #9a9ba5;
+    --rule: #24242b;
+    --card: #16161b;
+    --code-bg: #1c1c22;
+    /* 8.39:1 on --bg, 7.65:1 on --card, 7.19:1 on --code-bg — comfortably clear
+       in the mode where a lighter accent has to hold up against a near-black
+       page, not just where it happens to be easy. */
+    --accent: #a79dff;
   }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
-  padding: 2.5rem 1.15rem 3rem;
+  padding: 3rem 1.25rem 4rem;
   background: var(--bg);
   color: var(--fg);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   font-size: 1.0625rem;
-  line-height: 1.65;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
-main, footer { max-width: 44rem; margin: 0 auto; }
+main, footer { max-width: var(--measure); margin: 0 auto; }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* --- type scale ------------------------------------------------------------ */
 
 h1 {
-  font-size: 2rem;
-  line-height: 1.2;
-  letter-spacing: -0.015em;
-  margin: 0 0 0.6rem;
+  /* Fluid within a narrow, deliberate range rather than one fixed size —
+     the same heading reads a little quieter on a phone, a little more
+     confident on a wide screen, never anything in between by accident. */
+  font-size: clamp(1.75rem, 1.4rem + 2.5vw, 2.375rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.75rem;
 }
 h2 {
-  font-size: 1.3rem;
-  line-height: 1.25;
-  margin: 3rem 0 0.9rem;
-  padding-top: 1.7rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 3.5rem 0 1rem;
+  padding-top: 1.9rem;
   border-top: 1px solid var(--rule);
 }
 h3 {
-  font-size: 1.05rem;
-  margin: 2rem 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 2.25rem 0 0.6rem;
 }
-h1 + .lede { font-size: 1.2rem; margin: 0 0 0.8rem; }
-.sub { color: var(--muted); margin: 0 0 1.6rem; }
+h1 + .lede {
+  font-size: 1.1875rem;
+  font-weight: 400;
+  line-height: 1.6;
+  margin: 0 0 0.9rem;
+}
+.sub { color: var(--muted); margin: 0 0 1.8rem; }
+
+strong, b { font-weight: 600; }
 
 p, ul, ol, dl { margin: 0 0 1rem; }
 li { margin-bottom: 0.35rem; }
 li > p { margin-bottom: 0.35rem; }
 ul, ol { padding-left: 1.4rem; }
 
-a { color: var(--accent); text-decoration-thickness: from-font; text-underline-offset: 0.15em; }
+/* --- links & focus ---------------------------------------------------------- */
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.15em;
+  transition: text-decoration-thickness 120ms ease;
+}
 a:hover { text-decoration-thickness: 2px; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* --- inline & block code ---------------------------------------------------- */
 
 code {
   font-family: var(--mono);
   font-size: 0.875em;
   background: var(--code-bg);
-  border-radius: 0.25rem;
-  padding: 0.1em 0.32em;
+  border-radius: 0.3rem;
+  padding: 0.1em 0.35em;
   overflow-wrap: break-word;
 }
 
 pre {
-  margin: 0 0 1rem;
-  padding: 0.85rem 1rem;
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.15rem;
   background: var(--code-bg);
   border: 1px solid var(--rule);
-  border-radius: 0.45rem;
+  border-radius: 0.65rem;
   overflow-x: auto;
   font-size: 0.8125rem;
-  line-height: 1.6;
+  line-height: 1.65;
   tab-size: 2;
   /* Long lines wrap rather than hide: a URL or a hint comment clipped at the
-     right edge of the box is content the reader silently never sees. Copying a
-     wrapped line still yields the original single line. overflow-x stays as the
-     backstop for anything unbreakable, so the page body never scrolls. */
+     right edge of the box is content the reader silently never sees. Copying
+     a wrapped line still yields the original single line. overflow-x stays
+     as the backstop for anything unbreakable, so the page body never scrolls. */
   white-space: pre-wrap;
-  /* anywhere, not break-word: break-word only breaks a word that would not fit
-     on a line of its own, so a long URL starting mid-line still ran off the
-     right edge of the box on a phone. */
+  /* anywhere, not break-word: break-word only breaks a word that would not
+     fit on a line of its own, so a long URL starting mid-line still ran off
+     the right edge of the box on a phone. */
   overflow-wrap: anywhere;
 }
 pre code {
   background: none;
   padding: 0;
   font-size: inherit;
-  /* No overflow-wrap override here: it used to say `normal`, which silently undid the
-     `anywhere` set on `pre` above (the more specific selector wins), so the long-URL
-     wrap fix never actually applied inside a code block. overflow-x stays as the
-     backstop either way. */
+  /* No overflow-wrap override here: it would otherwise undo the `anywhere`
+     set on `pre` above (the more specific selector wins), silently
+     reintroducing the long-URL overflow. overflow-x stays as the backstop
+     either way. */
 }
 
-figure { margin: 0 0 1.2rem; }
+figure { margin: 0 0 1.5rem; }
 figcaption {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   margin-bottom: 0.35rem;
 }
+/* A figcaption immediately followed by pre reads as one unit — a small
+   titlebar fused to the block it names — rather than a loose label with
+   air underneath it. Bare pre blocks (no caption) keep their own full,
+   evenly rounded corners, so a plain shell snippet still looks complete. */
+figcaption:has(+ pre) {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-bottom: none;
+  border-radius: 0.5rem 0.5rem 0 0;
+  padding: 0.5rem 1.15rem;
+  margin-bottom: 0;
+}
+figcaption + pre { margin-top: 0; border-radius: 0 0 0.5rem 0.5rem; }
+
 .hl { color: var(--accent); font-weight: 600; }
+
+/* --- callouts ---------------------------------------------------------------- */
 
 .note {
   background: var(--card);
-  border-left: 3px solid var(--accent);
-  border-radius: 0.3rem;
-  padding: 0.8rem 1rem;
-  margin: 0 0 1.2rem;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 0.4rem 0.4rem 0;
+  padding: 0.9rem 1.15rem;
+  margin: 0 0 1.4rem;
 }
 .note > :last-child { margin-bottom: 0; }
+
+/* --- table of contents -------------------------------------------------------- */
 
 .toc {
   background: var(--card);
   border: 1px solid var(--rule);
-  border-radius: 0.45rem;
-  padding: 0.9rem 1.1rem;
-  margin-bottom: 2rem;
+  border-radius: 0.65rem;
+  padding: 1.1rem 1.4rem;
+  margin-bottom: 2.5rem;
 }
-.toc ol { margin: 0; columns: 13rem 2; column-gap: 1.5rem; }
+.toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 14rem 2;
+  column-gap: 2rem;
+  counter-reset: toc;
+}
+.toc li { counter-increment: toc; margin-bottom: 0.45rem; padding-left: 1.5rem; position: relative; }
+.toc li:last-child { margin-bottom: 0; }
+/* A small mono index rather than a bullet or the browser's own numeral —
+   the same quiet, list-as-data feel a terminal ls -1 has. */
+.toc li::before {
+  content: counter(toc) ".";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.toc .toc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin: 0 0 0.7rem;
+}
 
-/* A bordered box, so a table too wide for a phone reads as a panel with more
-   to the right rather than as text that mysteriously stops. */
+/* --- tables -------------------------------------------------------------------- */
+
+/* A bordered panel, so a table too wide for a phone reads as more content to
+   the right rather than as text that mysteriously stops. */
 .scroll {
   overflow-x: auto;
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.4rem;
   border: 1px solid var(--rule);
-  border-radius: 0.45rem;
+  border-radius: 0.65rem;
 }
 table {
   width: 100%;
@@ -146,80 +239,103 @@ table {
 th, td {
   text-align: left;
   vertical-align: top;
-  padding: 0.45rem 0.7rem;
+  padding: 0.55rem 0.85rem;
   border-bottom: 1px solid var(--rule);
 }
-th { background: var(--card); font-weight: 600; }
+th {
+  background: var(--card);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
 tbody tr:last-child td { border-bottom: 0; }
 td code { white-space: nowrap; }
 td.wrap code { white-space: normal; }
 
-dt { font-weight: 600; margin-top: 0.9rem; }
-dd { margin: 0.2rem 0 0; }
+/* --- definition lists ------------------------------------------------------------ */
+
+dt { font-weight: 600; margin-top: 1.1rem; }
+dl > dt:first-child { margin-top: 0; }
+dd { margin: 0.25rem 0 0; }
+
+/* --- footer ------------------------------------------------------------------------ */
 
 footer {
-  margin-top: 3rem;
-  padding-top: 1.3rem;
+  margin-top: 3.5rem;
+  padding-top: 1.5rem;
   border-top: 1px solid var(--rule);
   color: var(--muted);
-  font-size: 0.94rem;
+  font-size: 0.9rem;
 }
 footer p { margin-bottom: 0.4rem; }
 
-/* --- site chrome ---------------------------------------------------------- */
+/* --- site chrome -------------------------------------------------------------------- */
 
 /* The menu, on every page. Same width as main so the whole page shares one
-   measure. flex-wrap so two rows are possible on a narrow viewport before the
-   list starts scrolling. */
+   measure. flex-wrap so two rows are possible on a narrow viewport before
+   the list itself would need to scroll. */
 .site {
-  max-width: 44rem;
-  margin: 0 auto 2.5rem;
-  padding-bottom: 0.7rem;
+  max-width: var(--measure);
+  margin: 0 auto 3rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--rule);
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.35rem 1.1rem;
+  gap: 0.5rem 1.25rem;
 }
 .site .brand {
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--fg);
   text-decoration: none;
 }
 .site ul {
   display: flex;
-  gap: 0.9rem;
+  gap: 1.1rem;
   margin: 0;
   padding: 0;
   list-style: none;
-  /* A menu wider than the viewport scrolls inside itself rather than pushing the
-     page body sideways — the same rule the code blocks and tables follow. */
+  /* A menu wider than the viewport scrolls inside itself rather than pushing
+     the page body sideways — the same rule the code blocks and tables follow. */
   overflow-x: auto;
 }
 .site li { margin: 0; }
-.site a { white-space: nowrap; }
-/* The current page is marked by weight and a thicker underline, not by colour
-   alone: colour alone is not a distinction for a reader who cannot see it. */
+.site a {
+  white-space: nowrap;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.site a:hover { color: var(--fg); }
+/* The current page is marked by weight and a border, not by colour alone:
+   colour alone is not a distinction for a reader who cannot see it. The
+   border happens to be the accent — the one place on every page it is
+   used purely as a wayfinding mark rather than for text. */
 .site [aria-current="page"] {
   color: var(--fg);
   font-weight: 600;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.25em;
+  border-bottom-color: var(--accent);
 }
 
-/* The link to the next page. No border-top: the footer immediately below already
-   draws one, and two rules a line apart read as a mistake. */
+/* The link to the next page. No border-top: the footer immediately below
+   already draws one, and two rules a line apart read as a mistake. */
 .next {
-  margin-top: 2.5rem;
+  margin-top: 3rem;
   color: var(--muted);
 }
 
-/* Was `.toc h2`. "On this page" is not a section of the document, and an <h2>
-   there put it in the heading outline between the real ones. */
-.toc .toc-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 0 0 0.5rem;
+/* --- narrow phones ------------------------------------------------------------------- */
+
+@media (max-width: 30em) {
+  body { padding: 2.25rem 1rem 3rem; }
+  h2 { margin: 2.75rem 0 0.85rem; padding-top: 1.5rem; }
+  .toc { padding: 1rem 1.15rem; }
+  .toc ol { columns: 1; }
+  th, td { padding: 0.5rem 0.6rem; }
 }
