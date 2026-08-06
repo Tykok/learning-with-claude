@@ -9,7 +9,7 @@ locally or remotely, when the dev is already current.
 ```bash
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 LOCAL=$(cat "$CFG/skills/learner/VERSION" 2>/dev/null)
-REMOTE=$(curl -fsSL --max-time 5 https://raw.githubusercontent.com/Tykok/learning-with-claude/main/VERSION)
+REMOTE=$(curl -fsSL --max-time 5 "${LEARNER_VERSION_URL:-https://raw.githubusercontent.com/Tykok/learning-with-claude/main/VERSION}")
 ```
 
 An empty `$LOCAL` means this install predates versioning — treat it as older than anything. A
