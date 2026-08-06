@@ -73,8 +73,9 @@ learner_synthesis_n() {
 
 # learner_version_valid V — true if V is "X.Y.Z" with X/Y/Z decimal integers.
 learner_version_valid() {
-  case "$1" in *.*.*) ;; *) return 1 ;; esac
-  _lv1=${1%%.*}; _lv_rest=${1#*.}; _lv2=${_lv_rest%%.*}; _lv3=${_lv_rest#*.}
+  _lv0="${1:-}"
+  case "$_lv0" in *.*.*) ;; *) return 1 ;; esac
+  _lv1=${_lv0%%.*}; _lv_rest=${_lv0#*.}; _lv2=${_lv_rest%%.*}; _lv3=${_lv_rest#*.}
   case "$_lv1" in ''|*[!0-9]*) return 1 ;; esac
   case "$_lv2" in ''|*[!0-9]*) return 1 ;; esac
   case "$_lv3" in ''|*[!0-9]*) return 1 ;; esac
@@ -83,8 +84,9 @@ learner_version_valid() {
 # learner_version_gt A B — true if A > B. Both must already satisfy
 # learner_version_valid; callers validate first (hooks/learner-update-check.sh does).
 learner_version_gt() {
-  _la1=${1%%.*}; _la_rest=${1#*.}; _la2=${_la_rest%%.*}; _la3=${_la_rest#*.}
-  _lb1=${2%%.*}; _lb_rest=${2#*.}; _lb2=${_lb_rest%%.*}; _lb3=${_lb_rest#*.}
+  _la0="${1:-}"; _lb0="${2:-}"
+  _la1=${_la0%%.*}; _la_rest=${_la0#*.}; _la2=${_la_rest%%.*}; _la3=${_la_rest#*.}
+  _lb1=${_lb0%%.*}; _lb_rest=${_lb0#*.}; _lb2=${_lb_rest%%.*}; _lb3=${_lb_rest#*.}
   [ "$_la1" -gt "$_lb1" ] && return 0; [ "$_la1" -lt "$_lb1" ] && return 1
   [ "$_la2" -gt "$_lb2" ] && return 0; [ "$_la2" -lt "$_lb2" ] && return 1
   [ "$_la3" -gt "$_lb3" ]

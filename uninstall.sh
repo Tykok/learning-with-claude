@@ -112,6 +112,11 @@ if [ "$PURGE" -eq 1 ]; then
   rm -rf "$CFG_DIR/learner"
   echo "  ✓ config + progress data purged"
 else
+  # Throttle-cache state, not progress data: unlike memory.md/recap.md, losing this
+  # stamp costs nothing but one extra version check, so it doesn't need --purge to
+  # go. Otherwise a plain uninstall/reinstall stays silent for up to 24h even though
+  # the notifier hook was just removed and put back.
+  rm -f "$CFG_DIR/learner/.last-update-check"
   echo "  • config and progress data kept ($CFG_DIR/learner.json, $CFG_DIR/learner/) — pass --purge to delete"
 fi
 

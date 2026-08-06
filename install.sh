@@ -126,6 +126,7 @@ echo "  ✓ hooks → $CFG_DIR/hooks/"
 
 cp "$SRC_DIR/skills/learner/SKILL.md" "$CFG_DIR/skills/learner/SKILL.md"
 cp "$SRC_DIR"/skills/learner/references/*.md "$CFG_DIR/skills/learner/references/"
+# Always refresh — unlike learner.json below, this must match what's on disk.
 cp "$SRC_DIR/VERSION" "$CFG_DIR/skills/learner/VERSION"
 echo "  ✓ skill → $CFG_DIR/skills/learner/"
 

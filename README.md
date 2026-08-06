@@ -19,8 +19,9 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Five POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install,
-`PostToolUse` records edited files, and `Stop` blocks once per turn to ask one question —
+Six POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
+second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
+files, and `Stop` blocks once per turn to ask one question —
 `code`, `architecture`, or `fill` (Claude cuts `// LEARNER-TODO` holes in a real function for
 you to fill back in; a guardrail keeps a crashed exercise from ever leaving the tree broken).
 The only file Learner ever *adds* to a repository is `.claude/learner.local.json`, written by
@@ -31,7 +32,8 @@ directory.
 ## Requirements
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
-  every hook at run time — without it they are inert, and `SessionStart` says so.
+  every hook at run time except the update-check notifier, which has no `jq` dependency by
+  design — without it the rest are inert, and `SessionStart` says so.
 - **`bash`** on `PATH` to install, by either path: `install.sh` is a bash script, and the
   one-liner checks for `bash` up front rather than fetching a payload it could not hand over.
   This is separate from the shell the hooks need, below.
@@ -115,7 +117,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh
 ```
 
-The `hooks/*.sh` glob covers all five shipped hook files, including `learner-config.sh`. CI
+The `hooks/*.sh` glob covers all six shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step.

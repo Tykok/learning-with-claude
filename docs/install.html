@@ -41,13 +41,18 @@
 
   <ul>
     <li><strong><code>jq</code> on <code>PATH</code></strong> — needed to install (the
-    hook wiring is merged with it) and needed by every hook at run time. Without it the
-    hooks are inert, and <code>SessionStart</code> says so once.</li>
+    hook wiring is merged with it) and needed by every hook at run time except the
+    update-check notifier, which has no <code>jq</code> dependency by design. Without it
+    the rest are inert, and <code>SessionStart</code> says so once.</li>
     <li><strong><code>bash</code> on <code>PATH</code> to install</strong> —
     <code>install.sh</code> is a bash script. The one-liner checks for bash before it
     fetches anything, rather than downloading a payload it could not hand over.</li>
     <li><strong><code>curl</code> and <code>tar</code></strong> — for the one-liner only;
     the clone-and-run path needs neither.</li>
+    <li><strong><code>curl</code> is also used at run time</strong> — by the update-check
+    hook only, once every 24h, to look for a newer version. Its absence there is silent,
+    not an error — unlike <code>jq</code>, <code>curl</code> is never a hard requirement
+    for anything already installed.</li>
     <li><strong>A POSIX-compliant shell at run time</strong> — separate from the bash
     requirement above, and not satisfied by it. The hooks are plain <code>sh</code>
     scripts, wired into <code>settings.json</code> as
@@ -136,15 +141,17 @@ cd learning-with-claude
     </thead>
     <tbody>
       <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> skill: dispatch, levels, config</td></tr>
-      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>data.md</code></td></tr>
-      <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced by the other four hooks, never run on its own</td></tr>
+      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>update.md</code>, <code>data.md</code></td></tr>
+      <tr><td><code>$CFG/skills/learner/VERSION</code></td><td>The installed version string; re-copied unconditionally on every install/re-install, so it always matches what's on disk</td></tr>
+      <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced-only, never run on its own</td></tr>
       <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
+      <tr><td><code>$CFG/hooks/learner-update-check.sh</code></td><td><code>SessionStart</code> (second entry) — notifies once a day when a newer version is out; no <code>jq</code> dependency</td></tr>
       <tr><td><code>$CFG/hooks/learner-record-edit.sh</code></td><td><code>PostToolUse</code> on <code>Write</code>/<code>Edit</code> — records the files edited this session</td></tr>
       <tr><td><code>$CFG/hooks/learner-quiz.sh</code></td><td><code>Stop</code> — the quiz trigger, and the <code>LEARNER-TODO</code> guardrail</td></tr>
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
-      <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer for the skill to write into at runtime</td></tr>
+      <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
       <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
       <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
       <tr><td><code>$CFG/learner/export.json</code></td><td>Which Notion database <code>learner export</code> pushes to, and when it last ran. Created on the first export, not by the installer</td></tr>
@@ -152,10 +159,12 @@ cd learning-with-claude
   </table>
   </div>
 
-  <p>Five hook files ship and four are wired, into <code>SessionStart</code>,
-  <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>.
-  <code>learner-config.sh</code> is the fifth: the other four source it, and Claude Code
-  never invokes it directly.</p>
+  <p>Six hook files ship and five are wired, into <code>SessionStart</code> (twice —
+  <code>learner-onboard.sh</code> and <code>learner-update-check.sh</code> both fire
+  there), <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>.
+  <code>learner-config.sh</code> is the sixth: it is sourced-only, and Claude Code never
+  invokes it directly. Four of the other five source it — every hook but
+  <code>learner-cleanup.sh</code>, which needs none of it.</p>
 
   <h2 id="platforms">Platforms</h2>
 
