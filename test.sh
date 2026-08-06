@@ -1065,7 +1065,7 @@ grep -qF 'contents: write' "$CI_YML" \
   && ok "CI grants contents:write, needed to publish a release asset" \
   || ko "CI grants contents:write, needed to publish a release asset"
 
-grep -qF 'packaging/deb/build.sh' "$CI_YML" \
+grep -qF 'run: bash packaging/deb/build.sh' "$CI_YML" \
   && ok "CI builds the .deb on a tag push" \
   || ko "CI builds the .deb on a tag push"
 
