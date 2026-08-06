@@ -17,12 +17,24 @@
 #                    the suite never touches the network — the same pattern
 #                    bootstrap.sh's LEARNER_URL and the update-check hook's
 #                    LEARNER_VERSION_URL already use.
-#   GH_TOKEN         required unless APT_DEB_SOURCE is set — passed through to
-#                    `gh release download`.
+#   APT_SKIP_RELEASE_FETCH  optional. Any non-empty value skips the
+#                    `gh release download` call entirely, treating it as "no
+#                    release found" without ever invoking `gh` or touching the
+#                    network. test.sh uses this for its no-release case, the
+#                    same file:// / offline-fixture pattern used elsewhere in
+#                    this suite. Ignored when APT_DEB_SOURCE is set.
+#   GH_TOKEN         required unless APT_DEB_SOURCE or APT_SKIP_RELEASE_FETCH
+#                    is set — passed through to `gh release download`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="${1:-_site}"
+
+cleanup() {
+  [ -n "${TMPDL:-}" ] && rm -rf "$TMPDL"
+  [ -n "${GNUPGHOME:-}" ] && rm -rf "$GNUPGHOME"
+}
+trap cleanup EXIT
 
 [ -n "${APT_SIGNING_KEY:-}" ] || { echo "error: APT_SIGNING_KEY is required"; exit 1; }
 
@@ -37,9 +49,10 @@ DEBFILE=""
 
 if [ -n "${APT_DEB_SOURCE:-}" ]; then
   DEBFILE="$APT_DEB_SOURCE"
+elif [ -n "${APT_SKIP_RELEASE_FETCH:-}" ]; then
+  DEBFILE=""
 else
   TMPDL="$(mktemp -d)"
-  trap 'rm -rf "$TMPDL"' EXIT
   if gh release download --pattern 'learner_*_all.deb' --dir "$TMPDL" latest 2>/dev/null; then
     DEBFILE=$(find "$TMPDL" -maxdepth 1 -name 'learner_*_all.deb' | head -n1)
   fi
@@ -60,8 +73,6 @@ if [ -n "$DEBFILE" ] && [ -f "$DEBFILE" ]; then
   KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
   gpg --batch --yes --clearsign -o "$APTDIR/dists/stable/InRelease" "$APTDIR/dists/stable/Release"
   gpg --batch --armor --export "$KEYID" > "$APTDIR/learner.gpg"
-  rm -rf "$GNUPGHOME"
-  unset GNUPGHOME
 
   echo "  ✓ apt repo assembled for $(basename "$DEBFILE")"
 else

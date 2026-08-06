@@ -1735,13 +1735,14 @@ TESTSIGNINGKEY=$(GNUPGHOME="$TESTGNUPGHOME" gpg --armor --export-secret-keys "$T
 if command -v dpkg-scanpackages >/dev/null 2>&1 && command -v apt-ftparchive >/dev/null 2>&1; then
   ASMOUT="$(mktemp -d)"
 
-  # No APT_DEB_SOURCE, and GH_REPO points `gh` at a repo that cannot exist —
-  # this fails deterministically regardless of the machine's own `gh auth`
-  # state (this repo itself has real releases, so leaving `gh` to infer the
-  # remote from cwd would actually succeed and download the real .deb,
-  # defeating the point of this test). Must still assemble the hand-written
-  # site and must not fail the whole build over a missing package.
-  ( APT_SIGNING_KEY="$TESTSIGNINGKEY" GH_REPO="Tykok/learner-apt-repo-test-fixture-does-not-exist" \
+  # No APT_DEB_SOURCE, and APT_SKIP_RELEASE_FETCH=1 tells the script to treat
+  # this as "no release found" without ever invoking `gh` — keeps this test
+  # fully off the network (the same offline-fixture pattern bootstrap.sh's
+  # and the update-check hook's tests already use), rather than relying on a
+  # `gh` call against a nonexistent repo that merely fails fast and harmlessly.
+  # Must still assemble the hand-written site and must not fail the whole
+  # build over a missing package.
+  ( APT_SIGNING_KEY="$TESTSIGNINGKEY" APT_SKIP_RELEASE_FETCH=1 \
     bash "$ASSEMBLE" "$ASMOUT/no-release" )
   rc=$?
   { [ "$rc" = 0 ] && [ -f "$ASMOUT/no-release/index.html" ] && [ ! -d "$ASMOUT/no-release/apt" ]; } \
