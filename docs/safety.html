@@ -125,6 +125,14 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   cannot find them for you — delete a stray <code>learner.local.json</code> by hand, or
   point <code>--project</code> at the repo.</p>
 
+  <p>Installed via Homebrew or apt? Run <code>learner-uninstall</code> instead of
+  <code>./uninstall.sh</code> — same flags, <code>learner-uninstall --purge</code> included.
+  <code>brew uninstall learner</code> / removing the <code>.deb</code> only removes
+  <code>learner-install</code> and <code>learner-uninstall</code> themselves; it does not
+  touch <code>~/.claude</code>. Run <code>learner-uninstall</code> first if you want that
+  cleaned up too — do it before the package step if you can, since afterward the binary
+  that does it is gone.</p>
+
   <p>Both forms refuse to start if <code>settings.json</code> cannot be parsed, and say
   so, rather than getting half way and leaving the wiring pointing at hooks that no
   longer exist.</p>

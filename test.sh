@@ -1499,6 +1499,10 @@ grep -qF -- '--purge' "$SITE_SAFETY" \
   && ok "safety.html documents --purge" \
   || ko "safety.html documents --purge"
 
+grep -qF 'learner-uninstall' "$SITE_SAFETY" \
+  && ok "safety.html's Uninstall section covers the brew/apt path" \
+  || ko "safety.html's Uninstall section covers the brew/apt path"
+
 # Letter levels, as real table cells rather than prose. The markup shape is fixed by
 # the plan (`<td><code>D</code></td>`) so this can be a fixed-string match — a bracket
 # expression trying to allow several shapes is how the `\`` ERE bug got in last time.
