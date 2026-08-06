@@ -1583,7 +1583,8 @@ grep -qiF 'copyleft' "$RM" \
 # the time, and rewriting them would falsify the record.
 LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
 hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
-hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh"
+hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
+Formula/learner.rb scripts/bump-formula.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
 if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
   ko "no shipped or user-facing file still claims MIT"
@@ -1596,11 +1597,33 @@ fi
 # SPDX tag is what tells a reader over there what they are holding.
 for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
          hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
-         install.sh uninstall.sh bootstrap.sh test.sh; do
+         install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
+         scripts/bump-formula.sh; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
 done
+
+# --- Homebrew formula --------------------------------------------------------
+FORMULA="$ROOT/Formula/learner.rb"
+
+[ -f "$FORMULA" ] && ok "Formula/learner.rb exists" || ko "Formula/learner.rb exists"
+
+grep -qF 'depends_on "jq"' "$FORMULA" \
+  && ok "the formula depends on jq" \
+  || ko "the formula depends on jq"
+
+grep -qF '"#{pkgshare}/install.sh" --origin brew' "$FORMULA" \
+  && ok "the formula's learner-install wrapper passes --origin brew" \
+  || ko "the formula's learner-install wrapper passes --origin brew"
+
+grep -qE 'sha256 "[0-9a-f]{64}"' "$FORMULA" \
+  && ok "the formula's sha256 is a real 64-hex-char digest, not a placeholder" \
+  || ko "the formula's sha256 is a real 64-hex-char digest, not a placeholder"
+
+[ -x "$ROOT/scripts/bump-formula.sh" ] \
+  && ok "scripts/bump-formula.sh is executable" \
+  || ko "scripts/bump-formula.sh is executable"
 
 # --- summary ----------------------------------------------------------------
 echo
