@@ -1584,7 +1584,7 @@ grep -qiF 'copyleft' "$RM" \
 LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
 hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
 hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
-Formula/learner.rb scripts/bump-formula.sh"
+Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
 if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
   ko "no shipped or user-facing file still claims MIT"
@@ -1598,7 +1598,7 @@ fi
 for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
          hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
          install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
-         scripts/bump-formula.sh; do
+         scripts/bump-formula.sh packaging/deb/build.sh; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
@@ -1624,6 +1624,26 @@ grep -qE 'sha256 "[0-9a-f]{64}"' "$FORMULA" \
 [ -x "$ROOT/scripts/bump-formula.sh" ] \
   && ok "scripts/bump-formula.sh is executable" \
   || ko "scripts/bump-formula.sh is executable"
+
+# --- Debian package -----------------------------------------------------------
+DEBBUILD="$ROOT/packaging/deb/build.sh"
+
+[ -f "$DEBBUILD" ] && ok "packaging/deb/build.sh exists" || ko "packaging/deb/build.sh exists"
+
+if command -v dpkg-deb >/dev/null 2>&1; then
+  DEBWORK="$(mktemp -d)"
+  ( cd "$DEBWORK" && bash "$DEBBUILD" ) >/dev/null 2>&1
+  DEBFILE="$DEBWORK/learner_$(cat "$ROOT/VERSION")_all.deb"
+  [ -f "$DEBFILE" ] \
+    && ok "build.sh produces learner_<VERSION>_all.deb" \
+    || ko "build.sh produces learner_<VERSION>_all.deb"
+  dpkg-deb -I "$DEBFILE" 2>/dev/null | grep -qF 'Depends: bash, jq' \
+    && ok "the .deb declares bash and jq as Depends" \
+    || ko "the .deb declares bash and jq as Depends"
+  rm -rf "$DEBWORK"
+else
+  skip "packaging/deb/build.sh smoke test (dpkg-deb not on PATH)"
+fi
 
 # --- summary ----------------------------------------------------------------
 echo

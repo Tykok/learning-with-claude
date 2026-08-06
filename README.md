@@ -114,7 +114,7 @@ a session is already open changes nothing in it — quit and start a new session
 
 ```bash
 ./test.sh                                                     # hook + installer + skill tests
-shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh
+shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh
 ```
 
 The `hooks/*.sh` glob covers all six shipped hook files, including `learner-config.sh`. CI
