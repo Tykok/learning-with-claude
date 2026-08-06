@@ -42,6 +42,8 @@ directory.
 - **`curl` is also used at run time**, by the update-check hook only, to look for a newer
   version once every 24h. Its absence there is silent, not an error — unlike `jq`, `curl` is
   never a hard requirement for anything already installed.
+- **Installed via Homebrew or apt?** Use `learner-install` / `learner-uninstall` instead of
+  `install.sh` / `uninstall.sh` — same flags, just staged by the package rather than a clone.
 - **A POSIX-compliant shell to run the hooks** — a run-time requirement, not an install-time
   one, and not `bash`: the hooks are plain `sh` scripts, wired into `settings.json` as
   `sh "$CFG/hooks/…"`. Which platforms provide one, and which do not, is on
@@ -91,6 +93,30 @@ cd learning-with-claude
 - `--dry-run` — print what would be written; write nothing.
 - `--yes` (`-y`) — never prompt; fill in anything not passed with its default.
 
+On macOS via Homebrew, or on Debian/Ubuntu via a downloaded `.deb`, the package only stages
+the files and drops `learner-install`/`learner-uninstall` on `PATH` — it never touches
+`~/.claude` by itself. Run `learner-install` afterward, same flags as `install.sh` above.
+
+```bash
+# Homebrew — a personal tap, not homebrew-core
+brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
+brew install learner
+learner-install --level S --synthesis normal --blanks 2
+
+# apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
+curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
+sudo apt install ./learner_0.2.0_all.deb
+learner-install --level S --synthesis normal --blanks 2
+```
+
+(`v0.2.0` above is illustrative — substitute the version you actually want from
+[Releases](https://github.com/Tykok/learning-with-claude/releases); the currently-tagged
+`v0.1.0` predates this feature and has no `.deb` attached to it.)
+
+Uninstalling reverses the same way: `brew uninstall learner` / removing the `.deb` only
+removes the staged copy and these two wrapper binaries — the payload under `~/.claude` still
+needs `learner-uninstall` (same as `uninstall.sh`) to actually come out.
+
 The installer is idempotent: re-running re-copies the hooks and the skill and re-merges the
 hook wiring into `settings.json` without duplicating entries, and it never overwrites an
 existing config. **It writes nothing into any repository** — every path it touches sits under
@@ -114,7 +140,7 @@ a session is already open changes nothing in it — quit and start a new session
 
 ```bash
 ./test.sh                                                     # hook + installer + skill tests
-shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh
+shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh
 ```
 
 The `hooks/*.sh` glob covers all six shipped hook files, including `learner-config.sh`. CI

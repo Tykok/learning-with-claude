@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: shellcheck
-        run: shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh
+        run: shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh
 
       - name: tests
         run: ./test.sh
@@ -26,3 +26,20 @@ jobs:
           if [ "$TAG" != "$FILE" ]; then
             echo "tag v$TAG does not match VERSION file ($FILE)"; exit 1
           fi
+
+  release:
+    needs: ci
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build .deb
+        run: bash packaging/deb/build.sh
+
+      - name: publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: learner_*_all.deb

@@ -486,6 +486,35 @@ inst "$I" --level S >/dev/null 2>&1
   && ok "a re-install always refreshes VERSION, unlike learner.json" \
   || ko "a re-install always refreshes VERSION, unlike learner.json"
 
+[ -f "$I/skills/learner/INSTALL_ORIGIN" ] && [ "$(cat "$I/skills/learner/INSTALL_ORIGIN")" = "curl" ] \
+  && ok "install defaults --origin to curl" \
+  || ko "install defaults --origin to curl"
+
+IB="$WORK/inst-brew"; mkdir -p "$IB"
+inst "$IB" --level S --origin brew >/dev/null 2>&1
+[ "$(cat "$IB/skills/learner/INSTALL_ORIGIN" 2>/dev/null)" = "brew" ] \
+  && ok "install stamps --origin brew" \
+  || ko "install stamps --origin brew"
+
+IA="$WORK/inst-apt"; mkdir -p "$IA"
+inst "$IA" --level S --origin apt >/dev/null 2>&1
+[ "$(cat "$IA/skills/learner/INSTALL_ORIGIN" 2>/dev/null)" = "apt" ] \
+  && ok "install stamps --origin apt" \
+  || ko "install stamps --origin apt"
+
+out=$(inst "$WORK/inst-bad-origin" --level S --origin homebrew 2>&1) \
+  && ko "install rejects an unknown --origin value" \
+  || ok "install rejects an unknown --origin value"
+printf '%s' "$out" | grep -qF -- '--origin' \
+  && ok "the --origin error message names the flag" \
+  || ko "the --origin error message names the flag (got '$out')"
+
+echo 'brew' > "$I/skills/learner/INSTALL_ORIGIN"
+inst "$I" --level S --origin curl >/dev/null 2>&1
+[ "$(cat "$I/skills/learner/INSTALL_ORIGIN")" = "curl" ] \
+  && ok "a re-install always refreshes INSTALL_ORIGIN, unlike learner.json" \
+  || ko "a re-install always refreshes INSTALL_ORIGIN, unlike learner.json"
+
 jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise == 3' \
   "$I/learner.json" >/dev/null 2>&1 \
   && ok "install writes the global config from flags" \
@@ -721,6 +750,7 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$
   && [ ! -e "$U/hooks/learner-quiz.sh" ] \
   && [ ! -e "$U/hooks/learner-config.sh" ] \
   && [ ! -e "$U/hooks/learner-update-check.sh" ] \
+  && [ ! -e "$U/skills/learner/INSTALL_ORIGIN" ] \
   && [ ! -d "$U/skills/learner" ]; } \
   && ok "uninstall removes hooks, skill and wiring" \
   || ko "uninstall removes hooks, skill and wiring (left=$left)"
@@ -791,6 +821,24 @@ REFS="$ROOT/skills/learner/references"
 for f in hook-quiz.md quiz.md improve.md data.md export.md update.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
+
+UPD="$ROOT/skills/learner/references/update.md"
+
+grep -qF 'INSTALL_ORIGIN' "$UPD" \
+  && ok "update.md reads the install-origin marker" \
+  || ko "update.md reads the install-origin marker"
+
+grep -qF 'brew upgrade learner' "$UPD" \
+  && ok "update.md tells a brew install to use brew upgrade" \
+  || ko "update.md tells a brew install to use brew upgrade"
+
+grep -qF 'apt install' "$UPD" \
+  && ok "update.md tells an apt install to grab a new .deb" \
+  || ko "update.md tells an apt install to grab a new .deb"
+
+grep -qF 'learner-install' "$UPD" \
+  && ok "update.md points package-managed installs at learner-install" \
+  || ko "update.md points package-managed installs at learner-install"
 
 n=$(wc -l < "$SK" | tr -d ' ')
 [ "$n" -le 120 ] \
@@ -1013,6 +1061,19 @@ grep -qF 'startsWith(github.ref' "$CI_YML" \
   && ok "CI guards a tag push against the VERSION file" \
   || ko "CI guards a tag push against the VERSION file"
 
+grep -qF 'contents: write' "$CI_YML" \
+  && ok "CI grants contents:write, needed to publish a release asset" \
+  || ko "CI grants contents:write, needed to publish a release asset"
+
+grep -qF 'run: bash packaging/deb/build.sh' "$CI_YML" \
+  && ok "CI builds the .deb on a tag push" \
+  || ko "CI builds the .deb on a tag push"
+
+grep -qF 'softprops/action-gh-release' "$CI_YML" \
+  && grep -qF 'learner_*_all.deb' "$CI_YML" \
+  && ok "CI publishes the .deb as a release asset" \
+  || ko "CI publishes the .deb as a release asset"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
@@ -1027,6 +1088,18 @@ ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claud
 { grep -qF 'docs/index.html' "$RM" || grep -qiF 'github.io' "$RM"; } \
   && ok "the README links to the site" \
   || ko "the README links to the site"
+
+grep -qF 'brew install learner' "$RM" \
+  && ok "README documents the Homebrew install path" \
+  || ko "README documents the Homebrew install path"
+
+grep -qF 'sudo apt install ./learner_' "$RM" \
+  && ok "README documents the apt/.deb install path" \
+  || ko "README documents the apt/.deb install path"
+
+grep -qF 'learner-install --level' "$RM" \
+  && ok "README documents the learner-install activation command" \
+  || ko "README documents the learner-install activation command"
 
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
@@ -1466,6 +1539,22 @@ grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE_INSTALL
   && ok "the native-Windows row itself states the POSIX reason" \
   || ko "the native-Windows row itself states the POSIX reason"
 
+grep -qF 'do not exist yet' "$SITE_INSTALL" \
+  && ko "install.html no longer claims Homebrew/apt packages don't exist" \
+  || ok "install.html no longer claims Homebrew/apt packages don't exist"
+
+grep -qF 'brew install learner' "$SITE_INSTALL" \
+  && ok "install.html documents the Homebrew install path" \
+  || ko "install.html documents the Homebrew install path"
+
+grep -qF 'sudo apt install ./learner_' "$SITE_INSTALL" \
+  && ok "install.html documents the apt/.deb install path" \
+  || ko "install.html documents the apt/.deb install path"
+
+grep -qF 'INSTALL_ORIGIN' "$SITE_INSTALL" \
+  && ok "install.html's file table documents INSTALL_ORIGIN" \
+  || ko "install.html's file table documents INSTALL_ORIGIN"
+
 grep -qF 'LEARNER-TODO' "$SITE_SAFETY" \
   && ok "safety.html shows the fill markers" \
   || ko "safety.html shows the fill markers"
@@ -1528,14 +1617,15 @@ grep -qiF 'copyleft' "$RM" \
 # three letters.
 #
 # The scanned set is what ships or is read by a user: the README, the site, and
-# the eight scripts install.sh copies or a user runs. test.sh is deliberately NOT
+# every script that ships or a user runs. test.sh is deliberately NOT
 # in it — this file names the old licence in the pattern and in its own pass/fail
 # messages, so scanning itself could never pass, and it is neither shipped nor
 # documentation. design/ is excluded too: those plans record what was decided at
 # the time, and rewriting them would falsify the record.
 LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
 hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
-hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh"
+hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
+Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
 if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
   ko "no shipped or user-facing file still claims MIT"
@@ -1548,11 +1638,73 @@ fi
 # SPDX tag is what tells a reader over there what they are holding.
 for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
          hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
-         install.sh uninstall.sh bootstrap.sh test.sh; do
+         install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
+         scripts/bump-formula.sh packaging/deb/build.sh; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
 done
+
+# --- Homebrew formula --------------------------------------------------------
+FORMULA="$ROOT/Formula/learner.rb"
+
+[ -f "$FORMULA" ] && ok "Formula/learner.rb exists" || ko "Formula/learner.rb exists"
+
+grep -qF 'depends_on "jq"' "$FORMULA" \
+  && ok "the formula depends on jq" \
+  || ko "the formula depends on jq"
+
+grep -qF '"#{pkgshare}/install.sh" --origin brew' "$FORMULA" \
+  && ok "the formula's learner-install wrapper passes --origin brew" \
+  || ko "the formula's learner-install wrapper passes --origin brew"
+
+grep -qE 'sha256 "[0-9a-f]{64}"' "$FORMULA" \
+  && ok "the formula's sha256 is a real 64-hex-char digest, not a placeholder" \
+  || ko "the formula's sha256 is a real 64-hex-char digest, not a placeholder"
+
+[ -x "$ROOT/scripts/bump-formula.sh" ] \
+  && ok "scripts/bump-formula.sh is executable" \
+  || ko "scripts/bump-formula.sh is executable"
+
+# --- Debian package -----------------------------------------------------------
+DEBBUILD="$ROOT/packaging/deb/build.sh"
+
+[ -f "$DEBBUILD" ] && ok "packaging/deb/build.sh exists" || ko "packaging/deb/build.sh exists"
+
+if command -v dpkg-deb >/dev/null 2>&1; then
+  DEBWORK="$(mktemp -d)"
+  ( cd "$DEBWORK" && bash "$DEBBUILD" ) >/dev/null 2>&1
+  DEBFILE="$DEBWORK/learner_$(cat "$ROOT/VERSION")_all.deb"
+  [ -f "$DEBFILE" ] \
+    && ok "build.sh produces learner_<VERSION>_all.deb" \
+    || ko "build.sh produces learner_<VERSION>_all.deb"
+  dpkg-deb -I "$DEBFILE" 2>/dev/null | grep -qF 'Depends: bash, jq' \
+    && ok "the .deb declares bash and jq as Depends" \
+    || ko "the .deb declares bash and jq as Depends"
+
+  dpkg-deb -x "$DEBFILE" "$DEBWORK/extracted" 2>/dev/null
+
+  for p in usr/share/learner/hooks usr/share/learner/skills \
+           usr/share/learner/install.sh usr/share/learner/uninstall.sh \
+           usr/share/learner/VERSION usr/share/learner/LICENSE \
+           usr/bin/learner-install usr/bin/learner-uninstall; do
+    [ -e "$DEBWORK/extracted/$p" ] \
+      && ok "the .deb's payload contains $p" \
+      || ko "the .deb's payload contains $p"
+  done
+
+  grep -qF -- '--origin apt' "$DEBWORK/extracted/usr/bin/learner-install" \
+    && ok "learner-install passes --origin apt" \
+    || ko "learner-install passes --origin apt"
+
+  grep -qF 'exec /usr/share/learner/uninstall.sh' "$DEBWORK/extracted/usr/bin/learner-uninstall" \
+    && ok "learner-uninstall execs uninstall.sh" \
+    || ko "learner-uninstall execs uninstall.sh"
+
+  rm -rf "$DEBWORK"
+else
+  skip "packaging/deb/build.sh smoke test (dpkg-deb not on PATH)"
+fi
 
 # --- summary ----------------------------------------------------------------
 echo

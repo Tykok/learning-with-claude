@@ -32,6 +32,7 @@
       <li><a href="#requirements">Requirements</a></li>
       <li><a href="#one-line">One line</a></li>
       <li><a href="#clone">Clone and run</a></li>
+      <li><a href="#packages">Homebrew and apt</a></li>
       <li><a href="#installed">What gets installed, and where</a></li>
       <li><a href="#platforms">Platforms</a></li>
     </ol>
@@ -129,6 +130,31 @@ cd learning-with-claude
   re-installing) while a session is already open changes nothing in it — quit and start a
   new session for the hooks to take effect.</p>
 
+  <h2 id="packages">Homebrew and apt</h2>
+
+  <p>Both stage the payload and drop <code>learner-install</code> /
+  <code>learner-uninstall</code> on <code>PATH</code> — neither touches
+  <code>~/.claude</code> on its own. Run <code>learner-install</code> afterward, same flags
+  as <a href="#clone"><code>install.sh</code></a> above.</p>
+
+<pre><code># Homebrew — a personal tap, not homebrew-core
+brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
+brew install learner
+learner-install --level S --synthesis normal --blanks 2</code></pre>
+
+<pre><code># apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
+curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
+sudo apt install ./learner_0.2.0_all.deb
+learner-install --level S --synthesis normal --blanks 2</code></pre>
+
+  <p><code>v0.2.0</code> above is illustrative — substitute the version you want from
+  <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a>.</p>
+
+  <p>Uninstalling reverses the same way: <code>brew uninstall learner</code> / removing the
+  <code>.deb</code> only removes the staged copy and these two wrapper binaries — the payload
+  under <code>~/.claude</code> still needs <code>learner-uninstall</code> (same as
+  <code>uninstall.sh</code>) to actually come out.</p>
+
   <h2 id="installed">What gets installed, and where</h2>
 
   <p>Everything lives under <code>$CLAUDE_CONFIG_DIR</code>, written <code>$CFG</code>
@@ -143,6 +169,7 @@ cd learning-with-claude
       <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> skill: dispatch, levels, config</td></tr>
       <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>update.md</code>, <code>data.md</code></td></tr>
       <tr><td><code>$CFG/skills/learner/VERSION</code></td><td>The installed version string; re-copied unconditionally on every install/re-install, so it always matches what's on disk</td></tr>
+      <tr><td><code>$CFG/skills/learner/INSTALL_ORIGIN</code></td><td>How this install got here — <code>curl</code>, <code>brew</code> or <code>apt</code>; re-stamped on every install/re-install</td></tr>
       <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced-only, never run on its own</td></tr>
       <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
       <tr><td><code>$CFG/hooks/learner-update-check.sh</code></td><td><code>SessionStart</code> (second entry) — notifies once a day when a newer version is out; no <code>jq</code> dependency</td></tr>
@@ -187,9 +214,7 @@ cd learning-with-claude
   POSIX <code>sh</code> script and each is wired as <code>sh "…"</code>, so without a
   POSIX shell on the machine there is nothing for Claude Code to execute. WSL and Git
   Bash both supply one, and on either of them Learner behaves exactly as it does on
-  Linux. Homebrew and <code>apt</code> packages do not exist yet; the one-liner and the
-  clone are the two ways in.</p>
-
+  Linux.</p>
 
   <p class="next">Next: <a href="usage.html">Usage</a> — the three shapes a question
   takes.</p>
