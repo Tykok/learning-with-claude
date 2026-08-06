@@ -23,13 +23,40 @@ rather than re-implemented: `learner_version_gt` compares the `X.Y.Z` components
 so "0.9.0" vs "0.10.0" comes out right where reading the two strings as text would not. An
 empty `$LOCAL` means this install predates versioning — treat it as older than anything, which
 is exactly what the `[ -n "$LOCAL" ]` guard does: it skips the comparison and falls straight
-through to step 2. Validate before comparing, and before anything else touches `$REMOTE`: step
-2 builds a URL out of it, and a malformed value must never reach that unchecked. A `curl`
+through to step 3. Validate before comparing, and before anything else touches `$REMOTE`: step
+3 builds a URL out of it, and a malformed value must never reach that unchecked. A `curl`
 failure on the fetch above is not silence, unlike the background check — the dev asked for
 this directly, so report it in one line and stop rather than falling through with an empty
 `$REMOTE` that `learner_version_valid` would then (correctly) reject anyway.
 
-## 2. Re-run the installer, pinned
+## 2. Check the install origin
+
+```bash
+ORIGIN=$(cat "$CFG/skills/learner/INSTALL_ORIGIN" 2>/dev/null); ORIGIN="${ORIGIN:-curl}"
+```
+
+An install from before this file existed has no marker at all — treat a missing file the same
+as `curl`, since curl or a bare clone is exactly what every install predating it used.
+
+- **`curl`** → continue to step 3, unchanged.
+- **`brew`** → print, and stop. Nothing is written — `brew` owns the payload on disk, not this
+  protocol:
+  ```
+  Installed via Homebrew. Run: brew upgrade learner && learner-install
+  ```
+- **`apt`** → print, and stop, naming the exact asset so the dev isn't left guessing at a
+  filename:
+  ```
+  Installed via apt. Download learner_$REMOTE_all.deb from
+  https://github.com/Tykok/learning-with-claude/releases/tag/v$REMOTE, then:
+    sudo apt install ./learner_$REMOTE_all.deb && learner-install
+  ```
+
+Both guidance branches point at `learner-install` rather than re-deriving `install.sh`'s own
+flags here — a third copy of "here's how to pass --level" would drift from the other two the
+same way two implementations of the installer itself would.
+
+## 3. Re-run the installer, pinned (origin: curl only)
 
 ```bash
 if ! curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/v$REMOTE/bootstrap.sh" -o /tmp/learner-bootstrap.sh 2>/dev/null; then
@@ -56,8 +83,9 @@ No other flags are needed: `learner.json` already exists — this is always a re
 a first one — so `install.sh`'s onboarding prompts stay gated off regardless, and
 `bootstrap.sh`'s no-tty guard only fires when `learner.json` is absent.
 
-## 3. Confirm
+## 4. Confirm (origin: curl only)
 
 Re-read `$CFG/skills/learner/VERSION`. If it now reads `$REMOTE`, report the new version in one
 line. If it still reads the old value, say the update did not take — never claim success on an
-assumption.
+assumption. Step 2's `brew`/`apt` branches already stopped before this point — there is
+nothing here to confirm for them.

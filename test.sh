@@ -822,6 +822,24 @@ for f in hook-quiz.md quiz.md improve.md data.md export.md update.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
 
+UPD="$ROOT/skills/learner/references/update.md"
+
+grep -qF 'INSTALL_ORIGIN' "$UPD" \
+  && ok "update.md reads the install-origin marker" \
+  || ko "update.md reads the install-origin marker"
+
+grep -qF 'brew upgrade learner' "$UPD" \
+  && ok "update.md tells a brew install to use brew upgrade" \
+  || ko "update.md tells a brew install to use brew upgrade"
+
+grep -qF 'apt install' "$UPD" \
+  && ok "update.md tells an apt install to grab a new .deb" \
+  || ko "update.md tells an apt install to grab a new .deb"
+
+grep -qF 'learner-install' "$UPD" \
+  && ok "update.md points package-managed installs at learner-install" \
+  || ko "update.md points package-managed installs at learner-install"
+
 n=$(wc -l < "$SK" | tr -d ' ')
 [ "$n" -le 120 ] \
   && ok "SKILL.md stays under 120 lines (it is always loaded)" \
