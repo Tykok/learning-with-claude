@@ -109,9 +109,8 @@ sudo apt install ./learner_0.2.0_all.deb
 learner-install --level S --synthesis normal --blanks 2
 ```
 
-(`v0.2.0` above is illustrative — substitute the version you actually want from
-[Releases](https://github.com/Tykok/learning-with-claude/releases); the currently-tagged
-`v0.1.0` predates this feature and has no `.deb` attached to it.)
+(`v0.2.0` is this release. Check [Releases](https://github.com/Tykok/learning-with-claude/releases)
+for the current version if you're reading this after a newer one has shipped.)
 
 Uninstalling reverses the same way: `brew uninstall learner` / removing the `.deb` only
 removes the staged copy and these two wrapper binaries — the payload under `~/.claude` still
