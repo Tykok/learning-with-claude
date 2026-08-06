@@ -1640,6 +1640,26 @@ if command -v dpkg-deb >/dev/null 2>&1; then
   dpkg-deb -I "$DEBFILE" 2>/dev/null | grep -qF 'Depends: bash, jq' \
     && ok "the .deb declares bash and jq as Depends" \
     || ko "the .deb declares bash and jq as Depends"
+
+  dpkg-deb -x "$DEBFILE" "$DEBWORK/extracted" 2>/dev/null
+
+  for p in usr/share/learner/hooks usr/share/learner/skills \
+           usr/share/learner/install.sh usr/share/learner/uninstall.sh \
+           usr/share/learner/VERSION usr/share/learner/LICENSE \
+           usr/bin/learner-install usr/bin/learner-uninstall; do
+    [ -e "$DEBWORK/extracted/$p" ] \
+      && ok "the .deb's payload contains $p" \
+      || ko "the .deb's payload contains $p"
+  done
+
+  grep -qF -- '--origin apt' "$DEBWORK/extracted/usr/bin/learner-install" \
+    && ok "learner-install passes --origin apt" \
+    || ko "learner-install passes --origin apt"
+
+  grep -qF 'exec /usr/share/learner/uninstall.sh' "$DEBWORK/extracted/usr/bin/learner-uninstall" \
+    && ok "learner-uninstall execs uninstall.sh" \
+    || ko "learner-uninstall execs uninstall.sh"
+
   rm -rf "$DEBWORK"
 else
   skip "packaging/deb/build.sh smoke test (dpkg-deb not on PATH)"
