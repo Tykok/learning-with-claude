@@ -37,8 +37,9 @@ directory.
 - **`bash`** on `PATH` to install, by either path: `install.sh` is a bash script, and the
   one-liner checks for `bash` up front rather than fetching a payload it could not hand over.
   This is separate from the shell the hooks need, below.
-- **`curl` and `tar`** on `PATH` for the one-line install below; the clone-and-run path does
-  not need them.
+- **`curl`** on `PATH` — needed once for the apt repository's trust-anchor setup, and for the
+  one-line install further below. **`tar`** is needed for the one-line install only. Neither is
+  needed by the clone-and-run path.
 - **`curl` is also used at run time**, by the update-check hook only, to look for a newer
   version once every 24h. Its absence there is silent, not an error — unlike `jq`, `curl` is
   never a hard requirement for anything already installed.

@@ -32,7 +32,7 @@ OUT="${1:-_site}"
 
 cleanup() {
   [ -n "${TMPDL:-}" ] && rm -rf "$TMPDL"
-  [ -n "${GNUPGHOME:-}" ] && rm -rf "$GNUPGHOME"
+  [ -n "${GPGTMP:-}" ] && rm -rf "$GPGTMP"
   return 0
 }
 trap cleanup EXIT
@@ -54,7 +54,7 @@ elif [ -n "${APT_SKIP_RELEASE_FETCH:-}" ]; then
   DEBFILE=""
 else
   TMPDL="$(mktemp -d)"
-  if gh release download --pattern 'learner_*_all.deb' --dir "$TMPDL" latest 2>/dev/null; then
+  if gh release download --pattern 'learner_*_all.deb' --dir "$TMPDL" 2>/dev/null; then
     DEBFILE=$(find "$TMPDL" -maxdepth 1 -name 'learner_*_all.deb' | head -n1)
   fi
 fi
@@ -65,11 +65,18 @@ if [ -n "$DEBFILE" ] && [ -f "$DEBFILE" ]; then
 
   ( cd "$APTDIR" && dpkg-scanpackages --arch all pool /dev/null > dists/stable/main/binary-all/Packages )
   gzip -9c "$APTDIR/dists/stable/main/binary-all/Packages" > "$APTDIR/dists/stable/main/binary-all/Packages.gz"
-  ( cd "$APTDIR/dists/stable" && apt-ftparchive release . > Release )
+  ( cd "$APTDIR/dists/stable" && apt-ftparchive \
+      -o APT::FTPArchive::Release::Origin=learner \
+      -o APT::FTPArchive::Release::Label=learner \
+      -o APT::FTPArchive::Release::Suite=stable \
+      -o APT::FTPArchive::Release::Codename=stable \
+      -o APT::FTPArchive::Release::Architectures=all \
+      -o APT::FTPArchive::Release::Components=main \
+      release . > Release )
 
-  GNUPGHOME="$(mktemp -d)"
-  chmod 700 "$GNUPGHOME"
-  export GNUPGHOME
+  GPGTMP="$(mktemp -d)"
+  chmod 700 "$GPGTMP"
+  export GNUPGHOME="$GPGTMP"
   printf '%s' "$APT_SIGNING_KEY" | gpg --batch --import
   KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
   gpg --batch --yes --clearsign -o "$APTDIR/dists/stable/InRelease" "$APTDIR/dists/stable/Release"

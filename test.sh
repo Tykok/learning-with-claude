@@ -1782,6 +1782,10 @@ ASSEMBLE="$ROOT/packaging/apt-repo/assemble-site.sh"
 
 [ -f "$ASSEMBLE" ] && ok "packaging/apt-repo/assemble-site.sh exists" || ko "packaging/apt-repo/assemble-site.sh exists"
 
+grep -qE "gh release download --pattern 'learner_\\*_all\\.deb' --dir \"\\\$TMPDL\"[[:space:]]*2>/dev/null" "$ASSEMBLE" \
+  && ok "assemble-site.sh's gh release download has no trailing literal tag argument" \
+  || ko "assemble-site.sh's gh release download has no trailing literal tag argument"
+
 # A throwaway signing key, generated fresh for this test run only — never the
 # real APT_SIGNING_KEY secret, which this file never has access to.
 TESTGNUPGHOME="$(mktemp -d)"
