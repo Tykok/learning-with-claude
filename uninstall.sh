@@ -99,7 +99,8 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/learner-onboard.sh" \
       "$CFG_DIR/hooks/learner-record-edit.sh" \
       "$CFG_DIR/hooks/learner-quiz.sh" \
-      "$CFG_DIR/hooks/learner-cleanup.sh"
+      "$CFG_DIR/hooks/learner-cleanup.sh" \
+      "$CFG_DIR/hooks/learner-update-check.sh"
 rm -rf "$CFG_DIR/skills/learner"
 echo "  ✓ hooks + skill removed"
 

@@ -118,7 +118,7 @@ fi
 mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills/learner/references" "$CFG_DIR/learner"
 
 for h in learner-config.sh learner-onboard.sh learner-record-edit.sh \
-         learner-quiz.sh learner-cleanup.sh; do
+         learner-quiz.sh learner-cleanup.sh learner-update-check.sh; do
   cp "$SRC_DIR/hooks/$h" "$CFG_DIR/hooks/$h"
   chmod +x "$CFG_DIR/hooks/$h"
 done

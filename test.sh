@@ -9,6 +9,7 @@ REC="$ROOT/hooks/learner-record-edit.sh"
 QUIZ="$ROOT/hooks/learner-quiz.sh"
 ONB="$ROOT/hooks/learner-onboard.sh"
 CLEAN="$ROOT/hooks/learner-cleanup.sh"
+UCHK="$ROOT/hooks/learner-update-check.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -197,6 +198,97 @@ out=$(printf '{}' | CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$ONB")
 [ -z "$out" ] && ok "onboard silent outside a git repo" \
              || ko "onboard silent outside a git repo"
 echo '{"level":"S"}' > "$GCFG"
+
+# --- update-check hook -------------------------------------------------------
+uchk() { printf '{}' | sh "$UCHK"; }
+VFIX="$WORK/tmp/remote-version"
+
+UC1="$WORK/uc1"; mkdir -p "$UC1/skills/learner"
+echo '0.1.0' > "$UC1/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC1" LEARNER_VERSION_URL="file://$VFIX" uchk)
+echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("v0\\.2\\.0.*v0\\.1\\.0")' >/dev/null 2>&1 \
+  && ok "update-check notifies with remote and installed version when remote is newer" \
+  || ko "update-check notifies with remote and installed version when remote is newer (got '$out')"
+
+UC2="$WORK/uc2"; mkdir -p "$UC2/skills/learner"
+echo '0.2.0' > "$UC2/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC2" LEARNER_VERSION_URL="file://$VFIX" uchk)
+[ -z "$out" ] \
+  && ok "update-check silent when versions are equal" \
+  || ko "update-check silent when versions are equal (got '$out')"
+
+UC3="$WORK/uc3"; mkdir -p "$UC3/skills/learner"
+echo '0.3.0' > "$UC3/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC3" LEARNER_VERSION_URL="file://$VFIX" uchk)
+[ -z "$out" ] \
+  && ok "update-check silent when the installed version is newer than remote" \
+  || ko "update-check silent when the installed version is newer than remote (got '$out')"
+
+UC4="$WORK/uc4"; mkdir -p "$UC4/skills/learner"
+printf '0.2.0' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC4" LEARNER_VERSION_URL="file://$VFIX" uchk)
+echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("none installed")' >/dev/null 2>&1 \
+  && ok "update-check notifies unconditionally when no local VERSION file exists" \
+  || ko "update-check notifies unconditionally when no local VERSION file exists (got '$out')"
+
+UC5="$WORK/uc5"; mkdir -p "$UC5/skills/learner"
+echo '0.1.0' > "$UC5/skills/learner/VERSION"
+printf 'not-a-version' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC5" LEARNER_VERSION_URL="file://$VFIX" uchk)
+[ -z "$out" ] \
+  && ok "update-check silent on malformed remote content" \
+  || ko "update-check silent on malformed remote content (got '$out')"
+
+UC6="$WORK/uc6"; mkdir -p "$UC6/skills/learner"
+printf 'not-a-version' > "$VFIX"
+out=$(CLAUDE_CONFIG_DIR="$UC6" LEARNER_VERSION_URL="file://$VFIX" uchk)
+[ -z "$out" ] \
+  && ok "update-check silent on malformed remote even with no local VERSION" \
+  || ko "update-check silent on malformed remote even with no local VERSION (got '$out')"
+
+# Everything except curl: date/mkdir/dirname/cat are the hook's other externals,
+# and an empty PATH (the trick used for jq elsewhere in this suite) would break
+# those too, before the curl check is ever reached.
+NOCURL_PATH="$WORK/tmp/no-curl-path"; mkdir -p "$NOCURL_PATH"
+for b in date mkdir dirname cat; do
+  bp=$(command -v "$b") && ln -sf "$bp" "$NOCURL_PATH/$b"
+done
+UC7="$WORK/uc7"; mkdir -p "$UC7/skills/learner"
+echo '0.1.0' > "$UC7/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+out=$(printf '{}' | CLAUDE_CONFIG_DIR="$UC7" LEARNER_VERSION_URL="file://$VFIX" PATH="$NOCURL_PATH" /bin/sh "$UCHK" 2>/dev/null)
+rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "update-check hook is silent, not an error, when curl is missing" \
+  || ko "update-check hook is silent, not an error, when curl is missing (out='$out' rc=$rc)"
+
+UC8="$WORK/uc8"; mkdir -p "$UC8/skills/learner"
+echo '0.1.0' > "$UC8/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+CLAUDE_CONFIG_DIR="$UC8" LEARNER_VERSION_URL="file://$VFIX" uchk >/dev/null
+out=$(CLAUDE_CONFIG_DIR="$UC8" LEARNER_VERSION_URL="file://$VFIX" uchk)
+[ -z "$out" ] \
+  && ok "update-check is throttled: a second call within 24h is silent" \
+  || ko "update-check is throttled: a second call within 24h is silent (got '$out')"
+
+UC9="$WORK/uc9"; mkdir -p "$UC9/skills/learner" "$UC9/learner"
+echo '0.1.0' > "$UC9/skills/learner/VERSION"
+printf '0.2.0' > "$VFIX"
+printf '%s' "$(( $(date +%s) - 90000 ))" > "$UC9/learner/.last-update-check"
+out=$(CLAUDE_CONFIG_DIR="$UC9" LEARNER_VERSION_URL="file://$VFIX" uchk)
+echo "$out" | jq -e '.hookSpecificOutput.additionalContext | test("0\\.2\\.0")' >/dev/null 2>&1 \
+  && ok "update-check proceeds again once the throttle stamp is 25h old" \
+  || ko "update-check proceeds again once the throttle stamp is 25h old (got '$out')"
+
+UC10="$WORK/uc10"; mkdir -p "$UC10/skills/learner"
+echo '0.1.0' > "$UC10/skills/learner/VERSION"
+CLAUDE_CONFIG_DIR="$UC10" LEARNER_VERSION_URL="file:///no/such/file" uchk >/dev/null 2>&1
+[ -f "$UC10/learner/.last-update-check" ] \
+  && ok "update-check writes the throttle stamp even when the fetch fails" \
+  || ko "update-check writes the throttle stamp even when the fetch fails"
 
 # --- record-edit ------------------------------------------------------------
 echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
@@ -400,17 +492,17 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
   || ko "install writes the global config from flags"
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
-[ "$n" = 5 ] \
-  && ok "install lays down 5 hook files" \
-  || ko "install lays down 5 hook files (got $n)"
+[ "$n" = 6 ] \
+  && ok "install lays down 6 hook files" \
+  || ko "install lays down 6 hook files (got $n)"
 
-# Only 4 are wired: learner-config.sh is sourced, never invoked by Claude Code.
+# Only 5 are wired: learner-config.sh is sourced, never invoked by Claude Code.
 n1=$(hookcount "$I")
 inst "$I" --level S >/dev/null 2>&1
 n2=$(hookcount "$I")
-{ [ "$n1" = 4 ] && [ "$n2" = 4 ]; } \
-  && ok "hook merge is idempotent (4 wired hooks)" \
-  || ko "hook merge is idempotent (got $n1 then $n2, want 4/4)"
+{ [ "$n1" = 5 ] && [ "$n2" = 5 ]; } \
+  && ok "hook merge is idempotent (5 wired hooks)" \
+  || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
 
 jq -e '[.. | .command? // empty | select(contains("learner-"))]
        | all(contains("CLAUDE_CONFIG_DIR"))' "$I/settings.json" >/dev/null 2>&1 \
@@ -628,6 +720,7 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$
 { [ "$left" = 0 ] \
   && [ ! -e "$U/hooks/learner-quiz.sh" ] \
   && [ ! -e "$U/hooks/learner-config.sh" ] \
+  && [ ! -e "$U/hooks/learner-update-check.sh" ] \
   && [ ! -d "$U/skills/learner" ]; } \
   && ok "uninstall removes hooks, skill and wiring" \
   || ko "uninstall removes hooks, skill and wiring (left=$left)"
@@ -669,7 +762,7 @@ for flag in "--project=" "--project"; do
     || ko "the '$flag' error message names the flag (got '$out')"
 done
 { [ -f "$UE/hooks/learner-quiz.sh" ] && [ -f "$UE/learner.json" ] \
-  && [ "$(hookcount "$UE")" = 4 ]; } \
+  && [ "$(hookcount "$UE")" = 5 ]; } \
   && ok "a rejected --project leaves the user-level install untouched" \
   || ko "a rejected --project leaves the user-level install untouched"
 
@@ -1418,7 +1511,7 @@ grep -qiF 'copyleft' "$RM" \
 # the time, and rewriting them would falsify the record.
 LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
 hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
-install.sh uninstall.sh bootstrap.sh"
+hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
 if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
   ko "no shipped or user-facing file still claims MIT"
@@ -1430,8 +1523,8 @@ fi
 # this repository and land somewhere with no LICENSE beside them. A one-line
 # SPDX tag is what tells a reader over there what they are holding.
 for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
-         hooks/learner-quiz.sh hooks/learner-cleanup.sh install.sh uninstall.sh \
-         bootstrap.sh test.sh; do
+         hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
+         install.sh uninstall.sh bootstrap.sh test.sh; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
