@@ -1,5 +1,5 @@
 ---
-description: Learning mode. Invoke as "learner" with a subcommand — "quiz" (Q&A on the current branch), "status" (what to improve + level), "improve" (coach one weak spot to mastery), "export" (push the recap into a Notion database), "config" (settings, incl. "off"/"on" for this repo), "help". Also invoked by the Stop hook, which passes a trigger line. Trigger on "learner", "learner quiz", "learner status", "learner improve", "learner export", "learner config", "learner off", "quiz me", "quiz me on the branch", "what should I improve", "my level", "level me up", "mode apprentissage", "interroge-moi", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "m'améliorer sur", "exporter vers Notion".
+description: Learning mode. Invoke as "learner" with a subcommand — "quiz" (Q&A on the current branch), "status" (what to improve + level), "improve" (coach one weak spot to mastery), "export" (push the recap into a Notion database), "update" (check for a newer version and refresh), "config" (settings, incl. "off"/"on" for this repo), "help". Also invoked by the Stop hook, which passes a trigger line. Trigger on "learner", "learner quiz", "learner status", "learner improve", "learner export", "learner update", "learner config", "learner off", "quiz me", "quiz me on the branch", "what should I improve", "my level", "level me up", "mode apprentissage", "interroge-moi", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "m'améliorer sur", "exporter vers Notion".
 allowed-tools: Read, Write, Edit, Grep, Bash, mcp__claude_ai_Notion, mcp__notionApi, mcp__notion
 ---
 
@@ -21,6 +21,7 @@ language the dev is using in this conversation. There is no language setting.
 | `status` | Read-only summary: level + what to improve | this file, § Status |
 | `improve [topic]` | Coach one weak spot to mastery | `references/improve.md` |
 | `export [notion-page-url]` | Push the recap into a Notion database | `references/export.md` |
+| `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | `references/update.md` |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
 | `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | — |
@@ -80,10 +81,11 @@ if it is missing. Those are the only writes into a repo.
 
 Read-only: no quiz, no config write, no data-file update.
 
-1. Level: `jq -r '.level // "not set"' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json"`
-   (a project override wins if present).
+1. Level and version: `jq -r '.level // "not set"' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json"`
+   (a project override wins if present), and
+   `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/learner/VERSION" 2>/dev/null`.
 2. Open weak spots: read the `To improve` sections of the recap (see
    `references/data.md` for paths). If nothing is recorded, say so and suggest `learner quiz`.
-3. Print one line for the level, then a handful of bullets — broad competency themes
-   grouped by domain, skipping anything already under `Mastered`. Summarise; never dump
-   the file. No tables, no history.
+3. Print one line for the level and version, then a handful of bullets — broad competency
+   themes grouped by domain, skipping anything already under `Mastered`. Summarise; never
+   dump the file. No tables, no history.

@@ -788,7 +788,7 @@ rm -rf "$L"
 SK="$ROOT/skills/learner/SKILL.md"
 REFS="$ROOT/skills/learner/references"
 
-for f in hook-quiz.md quiz.md improve.md data.md export.md; do
+for f in hook-quiz.md quiz.md improve.md data.md export.md update.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
 
@@ -822,6 +822,14 @@ grep -q 'references/hook-quiz.md' "$SK" \
 grep -q 'references/export.md' "$SK" \
   && ok "SKILL.md routes the export subcommand to references/export.md" \
   || ko "SKILL.md routes the export subcommand to references/export.md"
+
+grep -q 'references/update.md' "$SK" \
+  && ok "SKILL.md routes the update subcommand to references/update.md" \
+  || ko "SKILL.md routes the update subcommand to references/update.md"
+
+grep -qi 'skills/learner/VERSION' "$SK" \
+  && ok "SKILL.md's Status section reads the installed VERSION file" \
+  || ko "SKILL.md's Status section reads the installed VERSION file"
 
 grep -q 'references/data.md' "$REFS/hook-quiz.md" \
   && grep -q 'references/data.md' "$REFS/quiz.md" \

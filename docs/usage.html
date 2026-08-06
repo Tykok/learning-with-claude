@@ -67,6 +67,9 @@
     <dd>Pushes the recap into a Notion database — one row per competency theme, with a
     learning level derived from your session history. Needs the Notion connector; the
     parent page URL is asked for once, on the first export, and remembered after that.</dd>
+    <dt><code>learner update</code></dt>
+    <dd>Checks the remote version and, if it is newer, re-runs the installer pinned to it.
+    Safe to run any time — a no-op when you are already current.</dd>
     <dt><code>learner config [key=value …]</code></dt>
     <dd>Views or edits settings. <code>learner config project …</code> scopes the edit to
     the current repository instead of the global default; with no arguments it prints
