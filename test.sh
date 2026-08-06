@@ -1078,7 +1078,7 @@ grep -qF 'deploy-pages:' "$CI_YML" \
   && ok "CI defines a deploy-pages job" \
   || ko "CI defines a deploy-pages job"
 
-grep -qF 'packaging/apt-repo/assemble-site.sh' "$CI_YML" \
+grep -qF 'run: bash packaging/apt-repo/assemble-site.sh' "$CI_YML" \
   && ok "deploy-pages runs the site assembler" \
   || ko "deploy-pages runs the site assembler"
 
