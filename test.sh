@@ -1089,6 +1089,18 @@ ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claud
   && ok "the README links to the site" \
   || ko "the README links to the site"
 
+grep -qF 'brew install learner' "$RM" \
+  && ok "README documents the Homebrew install path" \
+  || ko "README documents the Homebrew install path"
+
+grep -qF 'sudo apt install ./learner_' "$RM" \
+  && ok "README documents the apt/.deb install path" \
+  || ko "README documents the apt/.deb install path"
+
+grep -qF 'learner-install' "$RM" \
+  && ok "README documents the learner-install activation command" \
+  || ko "README documents the learner-install activation command"
+
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
 
@@ -1526,6 +1538,22 @@ grep -qF '<tr><td>Windows, native</td><td>no</td>' "$SITE_INSTALL" \
 grep -qiE '<tr><td>Windows, native</td><td>no</td><td>[^<]*posix' "$SITE_INSTALL" \
   && ok "the native-Windows row itself states the POSIX reason" \
   || ko "the native-Windows row itself states the POSIX reason"
+
+grep -qF 'do not exist yet' "$SITE_INSTALL" \
+  && ko "install.html no longer claims Homebrew/apt packages don't exist" \
+  || ok "install.html no longer claims Homebrew/apt packages don't exist"
+
+grep -qF 'brew install learner' "$SITE_INSTALL" \
+  && ok "install.html documents the Homebrew install path" \
+  || ko "install.html documents the Homebrew install path"
+
+grep -qF 'sudo apt install ./learner_' "$SITE_INSTALL" \
+  && ok "install.html documents the apt/.deb install path" \
+  || ko "install.html documents the apt/.deb install path"
+
+grep -qF 'INSTALL_ORIGIN' "$SITE_INSTALL" \
+  && ok "install.html's file table documents INSTALL_ORIGIN" \
+  || ko "install.html's file table documents INSTALL_ORIGIN"
 
 grep -qF 'LEARNER-TODO' "$SITE_SAFETY" \
   && ok "safety.html shows the fill markers" \
