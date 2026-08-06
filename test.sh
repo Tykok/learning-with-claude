@@ -1074,6 +1074,28 @@ grep -qF 'softprops/action-gh-release' "$CI_YML" \
   && ok "CI publishes the .deb as a release asset" \
   || ko "CI publishes the .deb as a release asset"
 
+grep -qF 'deploy-pages:' "$CI_YML" \
+  && ok "CI defines a deploy-pages job" \
+  || ko "CI defines a deploy-pages job"
+
+grep -qF 'packaging/apt-repo/assemble-site.sh' "$CI_YML" \
+  && ok "deploy-pages runs the site assembler" \
+  || ko "deploy-pages runs the site assembler"
+
+grep -qF 'actions/upload-pages-artifact' "$CI_YML" \
+  && grep -qF 'actions/deploy-pages' "$CI_YML" \
+  && ok "deploy-pages uploads and deploys the Pages artifact" \
+  || ko "deploy-pages uploads and deploys the Pages artifact"
+
+grep -qF 'pages: write' "$CI_YML" \
+  && grep -qF 'id-token: write' "$CI_YML" \
+  && ok "deploy-pages grants pages:write and id-token:write" \
+  || ko "deploy-pages grants pages:write and id-token:write"
+
+grep -qF 'needs: [ci, release]' "$CI_YML" \
+  && ok "deploy-pages runs after both ci and release" \
+  || ko "deploy-pages runs after both ci and release"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
