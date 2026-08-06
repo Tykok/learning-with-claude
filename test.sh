@@ -365,6 +365,16 @@ inst "$I" --level S --synthesis often --blanks 3 >/dev/null 2>&1
   && ok "install copies hooks, skill and references" \
   || ko "install copies hooks, skill and references"
 
+[ -f "$I/skills/learner/VERSION" ] && [ "$(cat "$I/skills/learner/VERSION")" = "$(cat "$ROOT/VERSION")" ] \
+  && ok "install stamps the installed VERSION" \
+  || ko "install stamps the installed VERSION"
+
+echo '9.9.9' > "$I/skills/learner/VERSION"
+inst "$I" --level S >/dev/null 2>&1
+[ "$(cat "$I/skills/learner/VERSION")" = "$(cat "$ROOT/VERSION")" ] \
+  && ok "a re-install always refreshes VERSION, unlike learner.json" \
+  || ko "a re-install always refreshes VERSION, unlike learner.json"
+
 jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise == 3' \
   "$I/learner.json" >/dev/null 2>&1 \
   && ok "install writes the global config from flags" \
