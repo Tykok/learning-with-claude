@@ -1008,6 +1008,8 @@ grep -qE "tags:[[:space:]]*\['?v\*'?\]" "$CI_YML" \
 grep -qF 'startsWith(github.ref' "$CI_YML" \
   && grep -qF 'TAG="${GITHUB_REF_NAME#v}"' "$CI_YML" \
   && grep -qF 'FILE="$(cat VERSION)"' "$CI_YML" \
+  && grep -qF '[ "$TAG" != "$FILE" ]' "$CI_YML" \
+  && grep -qF 'exit 1' "$CI_YML" \
   && ok "CI guards a tag push against the VERSION file" \
   || ko "CI guards a tag push against the VERSION file"
 
