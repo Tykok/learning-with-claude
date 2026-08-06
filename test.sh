@@ -1123,6 +1123,26 @@ grep -qF 'learner-install --level' "$RM" \
   && ok "README documents the learner-install activation command" \
   || ko "README documents the learner-install activation command"
 
+apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
+brew_line=$(grep -n '^### Homebrew' "$RM" | head -1 | cut -d: -f1)
+clone_line=$(grep -n '^### Clone and run$' "$RM" | head -1 | cut -d: -f1)
+alt_line=$(grep -n '^### Alternative: the curl one-liner$' "$RM" | head -1 | cut -d: -f1)
+
+{ [ -n "$apt_line" ] && [ -n "$brew_line" ] && [ -n "$clone_line" ] && [ -n "$alt_line" ] \
+  && [ "$apt_line" -lt "$brew_line" ] \
+  && [ "$brew_line" -lt "$clone_line" ] \
+  && [ "$clone_line" -lt "$alt_line" ]; } \
+  && ok "README orders Install as apt, Homebrew, clone, then the curl alternative" \
+  || ko "README orders Install as apt, Homebrew, clone, then the curl alternative"
+
+grep -qF 'sudo apt install learner' "$RM" \
+  && ok "README documents installing directly from the apt repository" \
+  || ko "README documents installing directly from the apt repository"
+
+grep -qF 'learner.gpg' "$RM" \
+  && ok "README documents the apt repo's signing key setup" \
+  || ko "README documents the apt repo's signing key setup"
+
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
 
