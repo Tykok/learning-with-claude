@@ -1001,6 +1001,20 @@ CI_SHELLCHECK=$(awk '/name: shellcheck/{getline; sub(/^[[:space:]]*run:[[:space:
   && ok "README's Development shellcheck line matches .github/workflows/ci.yml" \
   || ko "README's Development shellcheck line matches .github/workflows/ci.yml"
 
+grep -qE "tags:[[:space:]]*\['?v\*'?\]" "$CI_YML" \
+  && ok "CI triggers on version tags, for the VERSION-vs-tag guard" \
+  || ko "CI triggers on version tags, for the VERSION-vs-tag guard"
+
+grep -qF 'startsWith(github.ref' "$CI_YML" \
+  && grep -qF 'TAG="${GITHUB_REF_NAME#v}"' "$CI_YML" \
+  && grep -qF 'FILE="$(cat VERSION)"' "$CI_YML" \
+  && ok "CI guards a tag push against the VERSION file" \
+  || ko "CI guards a tag push against the VERSION file"
+
+grep -qF 'update-check hook' "$RM" \
+  && ok "README notes curl as a soft run-time dependency for the update-check hook" \
+  || ko "README notes curl as a soft run-time dependency for the update-check hook"
+
 # The install one-liner appears in two files by design. Pin them to each other so
 # they cannot drift: this is the whole reason the split is acceptable.
 ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh'

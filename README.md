@@ -37,6 +37,9 @@ directory.
   This is separate from the shell the hooks need, below.
 - **`curl` and `tar`** on `PATH` for the one-line install below; the clone-and-run path does
   not need them.
+- **`curl` is also used at run time**, by the update-check hook only, to look for a newer
+  version once every 24h. Its absence there is silent, not an error — unlike `jq`, `curl` is
+  never a hard requirement for anything already installed.
 - **A POSIX-compliant shell to run the hooks** — a run-time requirement, not an install-time
   one, and not `bash`: the hooks are plain `sh` scripts, wired into `settings.json` as
   `sh "$CFG/hooks/…"`. Which platforms provide one, and which do not, is on
