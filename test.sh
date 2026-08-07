@@ -1074,6 +1074,28 @@ grep -qF 'softprops/action-gh-release' "$CI_YML" \
   && ok "CI publishes the .deb as a release asset" \
   || ko "CI publishes the .deb as a release asset"
 
+grep -qF 'deploy-pages:' "$CI_YML" \
+  && ok "CI defines a deploy-pages job" \
+  || ko "CI defines a deploy-pages job"
+
+grep -qF 'run: bash packaging/apt-repo/assemble-site.sh' "$CI_YML" \
+  && ok "deploy-pages runs the site assembler" \
+  || ko "deploy-pages runs the site assembler"
+
+grep -qF 'actions/upload-pages-artifact' "$CI_YML" \
+  && grep -qF 'actions/deploy-pages' "$CI_YML" \
+  && ok "deploy-pages uploads and deploys the Pages artifact" \
+  || ko "deploy-pages uploads and deploys the Pages artifact"
+
+grep -qF 'pages: write' "$CI_YML" \
+  && grep -qF 'id-token: write' "$CI_YML" \
+  && ok "deploy-pages grants pages:write and id-token:write" \
+  || ko "deploy-pages grants pages:write and id-token:write"
+
+grep -qF 'needs: [ci, release]' "$CI_YML" \
+  && ok "deploy-pages runs after both ci and release" \
+  || ko "deploy-pages runs after both ci and release"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
@@ -1084,6 +1106,26 @@ ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claud
 { grep -qF "$ONELINER" "$RM" && grep -qF "$ONELINER" "$SITE_INSTALL"; } \
   && ok "the install one-liner is identical in the README and on install.html" \
   || ko "the install one-liner is identical in the README and on install.html"
+
+apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+homebrew_h2=$(grep -n '<h2 id="homebrew">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+clone_h2=$(grep -n '<h2 id="clone">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+alt_h2=$(grep -n '<h2 id="alternative">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+
+{ [ -n "$apt_h2" ] && [ -n "$homebrew_h2" ] && [ -n "$clone_h2" ] && [ -n "$alt_h2" ] \
+  && [ "$apt_h2" -lt "$homebrew_h2" ] \
+  && [ "$homebrew_h2" -lt "$clone_h2" ] \
+  && [ "$clone_h2" -lt "$alt_h2" ]; } \
+  && ok "install.html orders sections as apt, Homebrew, clone, then the curl alternative" \
+  || ko "install.html orders sections as apt, Homebrew, clone, then the curl alternative"
+
+grep -qF 'sudo apt install learner' "$SITE_INSTALL" \
+  && ok "install.html documents installing directly from the apt repository" \
+  || ko "install.html documents installing directly from the apt repository"
+
+grep -qF '<h2 id="packages">' "$SITE_INSTALL" \
+  && ko "install.html no longer has the old combined packages section" \
+  || ok "install.html no longer has the old combined packages section"
 
 { grep -qF 'docs/index.html' "$RM" || grep -qiF 'github.io' "$RM"; } \
   && ok "the README links to the site" \
@@ -1100,6 +1142,26 @@ grep -qF 'sudo apt install ./learner_' "$RM" \
 grep -qF 'learner-install --level' "$RM" \
   && ok "README documents the learner-install activation command" \
   || ko "README documents the learner-install activation command"
+
+apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
+brew_line=$(grep -n '^### Homebrew' "$RM" | head -1 | cut -d: -f1)
+clone_line=$(grep -n '^### Clone and run$' "$RM" | head -1 | cut -d: -f1)
+alt_line=$(grep -n '^### Alternative: the curl one-liner$' "$RM" | head -1 | cut -d: -f1)
+
+{ [ -n "$apt_line" ] && [ -n "$brew_line" ] && [ -n "$clone_line" ] && [ -n "$alt_line" ] \
+  && [ "$apt_line" -lt "$brew_line" ] \
+  && [ "$brew_line" -lt "$clone_line" ] \
+  && [ "$clone_line" -lt "$alt_line" ]; } \
+  && ok "README orders Install as apt, Homebrew, clone, then the curl alternative" \
+  || ko "README orders Install as apt, Homebrew, clone, then the curl alternative"
+
+grep -qF 'sudo apt install learner' "$RM" \
+  && ok "README documents installing directly from the apt repository" \
+  || ko "README documents installing directly from the apt repository"
+
+grep -qF 'learner.gpg' "$RM" \
+  && ok "README documents the apt repo's signing key setup" \
+  || ko "README documents the apt repo's signing key setup"
 
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
@@ -1503,6 +1565,10 @@ grep -qF 'learner-uninstall' "$SITE_SAFETY" \
   && ok "safety.html's Uninstall section covers the brew/apt path" \
   || ko "safety.html's Uninstall section covers the brew/apt path"
 
+grep -qF 'apt remove learner' "$SITE_SAFETY" \
+  && ok "safety.html's Uninstall section names apt remove specifically" \
+  || ko "safety.html's Uninstall section names apt remove specifically"
+
 # Letter levels, as real table cells rather than prose. The markup shape is fixed by
 # the plan (`<td><code>D</code></td>`) so this can be a fixed-string match — a bracket
 # expression trying to allow several shapes is how the `\`` ERE bug got in last time.
@@ -1629,7 +1695,8 @@ grep -qiF 'copyleft' "$RM" \
 LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
 hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
 hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
-Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh"
+Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh
+packaging/apt-repo/assemble-site.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
 if git -C "$ROOT" grep -qE '(^|[^A-Z])MIT([^A-Z]|$)' -- $LIC_SCAN; then
   ko "no shipped or user-facing file still claims MIT"
@@ -1643,7 +1710,7 @@ fi
 for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
          hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
          install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
-         scripts/bump-formula.sh packaging/deb/build.sh; do
+         scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
@@ -1709,6 +1776,90 @@ if command -v dpkg-deb >/dev/null 2>&1; then
 else
   skip "packaging/deb/build.sh smoke test (dpkg-deb not on PATH)"
 fi
+
+# --- apt repo assembler --------------------------------------------------------
+ASSEMBLE="$ROOT/packaging/apt-repo/assemble-site.sh"
+
+[ -f "$ASSEMBLE" ] && ok "packaging/apt-repo/assemble-site.sh exists" || ko "packaging/apt-repo/assemble-site.sh exists"
+
+grep -qE "gh release download --pattern 'learner_\\*_all\\.deb' --dir \"\\\$TMPDL\"[[:space:]]*2>/dev/null" "$ASSEMBLE" \
+  && ok "assemble-site.sh's gh release download has no trailing literal tag argument" \
+  || ko "assemble-site.sh's gh release download has no trailing literal tag argument"
+
+# A throwaway signing key, generated fresh for this test run only — never the
+# real APT_SIGNING_KEY secret, which this file never has access to.
+TESTGNUPGHOME="$(mktemp -d)"
+chmod 700 "$TESTGNUPGHOME"
+GNUPGHOME="$TESTGNUPGHOME" gpg --batch --gen-key <<'EOF' >/dev/null 2>&1
+%no-protection
+Key-Type: RSA
+Key-Length: 2048
+Key-Usage: sign
+Name-Real: test key
+Name-Email: test@example.invalid
+Expire-Date: 0
+EOF
+TESTKEYID=$(GNUPGHOME="$TESTGNUPGHOME" gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+TESTSIGNINGKEY=$(GNUPGHOME="$TESTGNUPGHOME" gpg --armor --export-secret-keys "$TESTKEYID")
+
+if command -v dpkg-scanpackages >/dev/null 2>&1 && command -v apt-ftparchive >/dev/null 2>&1; then
+  ASMOUT="$(mktemp -d)"
+
+  # No APT_DEB_SOURCE, and APT_SKIP_RELEASE_FETCH=1 tells the script to treat
+  # this as "no release found" without ever invoking `gh` — keeps this test
+  # fully off the network (the same offline-fixture pattern bootstrap.sh's
+  # and the update-check hook's tests already use), rather than relying on a
+  # `gh` call against a nonexistent repo that merely fails fast and harmlessly.
+  # Must still assemble the hand-written site and must not fail the whole
+  # build over a missing package.
+  ( APT_SIGNING_KEY="$TESTSIGNINGKEY" APT_SKIP_RELEASE_FETCH=1 \
+    bash "$ASSEMBLE" "$ASMOUT/no-release" )
+  rc=$?
+  { [ "$rc" = 0 ] && [ -f "$ASMOUT/no-release/index.html" ] && [ ! -d "$ASMOUT/no-release/apt" ]; } \
+    && ok "assemble-site.sh ships the site with no apt/ tree when no release is available" \
+    || ko "assemble-site.sh ships the site with no apt/ tree when no release is available (rc=$rc)"
+
+  # A fixture .deb via APT_DEB_SOURCE, mirroring how test.sh keeps every other
+  # network-touching script (bootstrap.sh, the update-check hook) offline.
+  FIXDEB="$(mktemp -d)/learner_9.9.9_all.deb"
+  FIXROOT="$(mktemp -d)"
+  mkdir -p "$FIXROOT/DEBIAN"
+  printf 'Package: learner\nVersion: 9.9.9\nArchitecture: all\nMaintainer: test\nDescription: test fixture\n' \
+    > "$FIXROOT/DEBIAN/control"
+  dpkg-deb --build --root-owner-group "$FIXROOT" "$FIXDEB" >/dev/null 2>&1
+
+  APT_SIGNING_KEY="$TESTSIGNINGKEY" APT_DEB_SOURCE="$FIXDEB" bash "$ASSEMBLE" "$ASMOUT/with-release"
+  rc=$?
+  { [ "$rc" = 0 ] \
+    && [ -f "$ASMOUT/with-release/index.html" ] \
+    && [ -f "$ASMOUT/with-release/apt/pool/main/l/learner/learner_9.9.9_all.deb" ] \
+    && [ -f "$ASMOUT/with-release/apt/dists/stable/main/binary-all/Packages" ] \
+    && [ -f "$ASMOUT/with-release/apt/dists/stable/InRelease" ] \
+    && [ -f "$ASMOUT/with-release/apt/learner.gpg" ]; } \
+    && ok "assemble-site.sh builds the full apt tree from a fixture .deb" \
+    || ko "assemble-site.sh builds the full apt tree from a fixture .deb (rc=$rc)"
+
+  grep -qF 'learner_9.9.9_all.deb' "$ASMOUT/with-release/apt/dists/stable/main/binary-all/Packages" \
+    && ok "the generated Packages file names the fixture package" \
+    || ko "the generated Packages file names the fixture package"
+
+  GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+  gpg --batch --import <(printf '%s' "$TESTSIGNINGKEY") >/dev/null 2>&1
+  gpg --verify "$ASMOUT/with-release/apt/dists/stable/InRelease" >/dev/null 2>&1 \
+    && ok "InRelease's signature verifies against the exported public key" \
+    || ko "InRelease's signature verifies against the exported public key"
+  unset GNUPGHOME
+
+  # The private key text must never appear in what got written to disk.
+  if grep -rqF "$TESTSIGNINGKEY" "$ASMOUT" 2>/dev/null; then
+    ko "the private signing key never leaks into the assembled output"
+  else
+    ok "the private signing key never leaks into the assembled output"
+  fi
+else
+  skip "packaging/apt-repo/assemble-site.sh tests (dpkg-scanpackages/apt-ftparchive not on PATH)"
+fi
+rm -rf "$TESTGNUPGHOME"
 
 # --- summary ----------------------------------------------------------------
 echo

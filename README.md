@@ -37,8 +37,9 @@ directory.
 - **`bash`** on `PATH` to install, by either path: `install.sh` is a bash script, and the
   one-liner checks for `bash` up front rather than fetching a payload it could not hand over.
   This is separate from the shell the hooks need, below.
-- **`curl` and `tar`** on `PATH` for the one-line install below; the clone-and-run path does
-  not need them.
+- **`curl`** on `PATH` — needed once for the apt repository's trust-anchor setup, and for the
+  one-line install further below. **`tar`** is needed for the one-line install only. Neither is
+  needed by the clone-and-run path.
 - **`curl` is also used at run time**, by the update-check hook only, to look for a newer
   version once every 24h. Its absence there is silent, not an error — unlike `jq`, `curl` is
   never a hard requirement for anything already installed.
@@ -52,27 +53,54 @@ directory.
 
 ## Install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
-```
-
-It asks for your level, how often you want a synthesis question, and how many holes a `fill`
-exercise leaves — then writes everything under your Claude Code config directory. To skip the
-prompts, pass the same flags `install.sh` takes; `bootstrap.sh` forwards them through unchanged:
+### apt (Debian/Ubuntu)
 
 ```bash
-curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
+# one time
+curl -fsSL https://tykok.github.io/learning-with-claude/apt/learner.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/learner.gpg
+echo "deb [signed-by=/usr/share/keyrings/learner.gpg] https://tykok.github.io/learning-with-claude/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/learner.list
+
+# from then on
+sudo apt update && sudo apt install learner
+learner-install --level S --synthesis normal --blanks 2
 ```
 
-To install a specific revision instead of whatever `main` says today, name the ref twice — once
-in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. `$REF` is anything
-git resolves: a release tag, a branch name, or a commit SHA.
+One `curl` remains — fetching the repository's trust anchor once, the same pattern Docker's
+and HashiCorp's own apt repos use. There is no keyless way to establish that first trust, but
+after this one-time step, `sudo apt update && sudo apt upgrade learner` is the whole update
+story — no more `curl` involved, ever.
+
+Prefer not to add a repository? Grab the `.deb` directly from
+[Releases](https://github.com/Tykok/learning-with-claude/releases) instead:
 
 ```bash
-REF=v0.1.0   # or a branch name, or a commit SHA
-curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
-  | LEARNER_REF="$REF" sh
+curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
+sudo apt install ./learner_0.2.0_all.deb
+learner-install --level S --synthesis normal --blanks 2
 ```
+
+(`v0.2.0` is this release. Check [Releases](https://github.com/Tykok/learning-with-claude/releases)
+for the current version if you're reading this after a newer one has shipped.)
+
+### Homebrew (macOS or Linux)
+
+```bash
+brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
+brew install learner
+learner-install --level S --synthesis normal --blanks 2
+```
+
+A personal tap, not homebrew-core.
+
+Both apt and Homebrew only stage the files and drop `learner-install`/`learner-uninstall` on
+`PATH` — neither touches `~/.claude` by itself; run `learner-install` afterward, same flags
+`install.sh` takes below. Uninstalling reverses the same way: `sudo apt remove learner` /
+`brew uninstall learner` only remove those two wrapper binaries — the payload under
+`~/.claude` still needs `learner-uninstall` (same as `uninstall.sh`) to actually come out.
+
+### Clone and run
 
 Prefer to read the code before running it? Clone and use the installer directly — it stays a
 first-class path, not a fallback:
@@ -93,35 +121,41 @@ cd learning-with-claude
 - `--dry-run` — print what would be written; write nothing.
 - `--yes` (`-y`) — never prompt; fill in anything not passed with its default.
 
-On macOS via Homebrew, or on Debian/Ubuntu via a downloaded `.deb`, the package only stages
-the files and drops `learner-install`/`learner-uninstall` on `PATH` — it never touches
-`~/.claude` by itself. Run `learner-install` afterward, same flags as `install.sh` above.
-
-```bash
-# Homebrew — a personal tap, not homebrew-core
-brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
-brew install learner
-learner-install --level S --synthesis normal --blanks 2
-
-# apt — a .deb downloaded from GitHub Releases; there is no hosted apt repository
-curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
-sudo apt install ./learner_0.2.0_all.deb
-learner-install --level S --synthesis normal --blanks 2
-```
-
-(`v0.2.0` is this release. Check [Releases](https://github.com/Tykok/learning-with-claude/releases)
-for the current version if you're reading this after a newer one has shipped.)
-
-Uninstalling reverses the same way: `brew uninstall learner` / removing the `.deb` only
-removes the staged copy and these two wrapper binaries — the payload under `~/.claude` still
-needs `learner-uninstall` (same as `uninstall.sh`) to actually come out.
-
 The installer is idempotent: re-running re-copies the hooks and the skill and re-merges the
 hook wiring into `settings.json` without duplicating entries, and it never overwrites an
 existing config. **It writes nothing into any repository** — every path it touches sits under
 `$CLAUDE_CONFIG_DIR` (default `~/.claude`), and every hook command it wires into
 `settings.json` carries the literal `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, so moving your
 config directory later needs no reinstall.
+
+### Alternative: the curl one-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
+```
+
+It asks for your level, how often you want a synthesis question, and how many holes a `fill`
+exercise leaves — then writes everything under your Claude Code config directory; this is what
+it fetches and runs under the hood. To skip the prompts, pass the same flags `install.sh`
+takes; `bootstrap.sh` forwards them through unchanged:
+
+```bash
+curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
+```
+
+To install a specific revision instead of whatever `main` says today, name the ref twice — once
+in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. `$REF` is anything
+git resolves: a release tag, a branch name, or a commit SHA.
+
+```bash
+REF=v0.1.0   # or a branch name, or a commit SHA
+curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
+  | LEARNER_REF="$REF" sh
+```
+
+`LEARNER_REF` pins the payload, not `bootstrap.sh` itself — your shell has already read that
+from the URL by the time the variable is visible. Pinning only one of the two still runs
+whatever `main` says, which is why the ref appears in both places.
 
 On trust: the fetch is plain HTTPS from `codeload.github.com`, and `LEARNER_REF` pins the
 payload to an exact ref rather than tracking `main`. Be clear about what that does *not* cover —
@@ -139,7 +173,7 @@ a session is already open changes nothing in it — quit and start a new session
 
 ```bash
 ./test.sh                                                     # hook + installer + skill tests
-shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh
+shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
 The `hooks/*.sh` glob covers all six shipped hook files, including `learner-config.sh`. CI
