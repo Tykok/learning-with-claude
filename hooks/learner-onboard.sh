@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SessionStart: report a broken learner install and nothing else.
 #
-# install.sh does the onboarding now, so there is no conversational setup here.
+# install.sh does the onboarding for a traditional install; a plugin install has no
+# install.sh at all, so this hook is the only place either kind of first-run gets a nudge.
 # Output goes to additionalContext, which is not rendered in the console.
 
 if ! command -v jq >/dev/null 2>&1; then

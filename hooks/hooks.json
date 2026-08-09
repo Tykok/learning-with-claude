@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-onboard.sh\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-record-edit.sh\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-quiz.sh\"", "timeout": 10, "statusMessage": "Learner: checking understanding..." }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-cleanup.sh\"", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}

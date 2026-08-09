@@ -840,6 +840,14 @@ grep -qF 'learner-install' "$UPD" \
   && ok "update.md points package-managed installs at learner-install" \
   || ko "update.md points package-managed installs at learner-install"
 
+grep -qF '/plugins/' "$UPD" \
+  && ok "update.md detects a plugin install by its own load path" \
+  || ko "update.md detects a plugin install by its own load path"
+
+grep -qF '/plugin update learner' "$UPD" \
+  && ok "update.md points a plugin install at /plugin update" \
+  || ko "update.md points a plugin install at /plugin update"
+
 n=$(wc -l < "$SK" | tr -d ' ')
 [ "$n" -le 120 ] \
   && ok "SKILL.md stays under 120 lines (it is always loaded)" \
@@ -878,6 +886,10 @@ grep -q 'references/update.md' "$SK" \
 grep -qi 'skills/learner/VERSION' "$SK" \
   && ok "SKILL.md's Status section reads the installed VERSION file" \
   || ko "SKILL.md's Status section reads the installed VERSION file"
+
+grep -qF '/plugin' "$SK" \
+  && ok "SKILL.md's Status section is plugin-aware" \
+  || ko "SKILL.md's Status section is plugin-aware"
 
 grep -q 'references/data.md' "$REFS/hook-quiz.md" \
   && grep -q 'references/data.md' "$REFS/quiz.md" \
@@ -1096,6 +1108,14 @@ grep -qF 'needs: [ci, release]' "$CI_YML" \
   && ok "deploy-pages runs after both ci and release" \
   || ko "deploy-pages runs after both ci and release"
 
+grep -qF 'plugin.json version matches VERSION' "$CI_YML" \
+  && ok "CI guards plugin.json's version against the VERSION file" \
+  || ko "CI guards plugin.json's version against the VERSION file"
+
+grep -qF "jq -r '.version' .claude-plugin/plugin.json" "$CI_YML" \
+  && ok "the plugin.json version guard reads the real field" \
+  || ko "the plugin.json version guard reads the real field"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
@@ -1118,6 +1138,17 @@ alt_h2=$(grep -n '<h2 id="alternative">' "$SITE_INSTALL" | head -1 | cut -d: -f1
   && [ "$clone_h2" -lt "$alt_h2" ]; } \
   && ok "install.html orders sections as apt, Homebrew, clone, then the curl alternative" \
   || ko "install.html orders sections as apt, Homebrew, clone, then the curl alternative"
+
+plugin_h2=$(grep -n '<h2 id="plugin">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+
+{ [ -n "$plugin_h2" ] && [ -n "$apt_h2" ] && [ "$plugin_h2" -lt "$apt_h2" ]; } \
+  && ok "install.html lists the plugin section before apt" \
+  || ko "install.html lists the plugin section before apt"
+
+grep -qF 'claude plugin install learner' "$SITE_INSTALL" \
+  && ok "install.html documents installing the plugin by name" \
+  || ko "install.html documents installing the plugin by name"
 
 grep -qF 'sudo apt install learner' "$SITE_INSTALL" \
   && ok "install.html documents installing directly from the apt repository" \
@@ -1162,6 +1193,29 @@ grep -qF 'sudo apt install learner' "$RM" \
 grep -qF 'learner.gpg' "$RM" \
   && ok "README documents the apt repo's signing key setup" \
   || ko "README documents the apt repo's signing key setup"
+
+plugin_line=$(grep -n '^### Claude Code plugin$' "$RM" | head -1 | cut -d: -f1)
+apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
+
+{ [ -n "$plugin_line" ] && [ -n "$apt_line" ] && [ "$plugin_line" -lt "$apt_line" ]; } \
+  && ok "README lists the Claude Code plugin before apt" \
+  || ko "README lists the Claude Code plugin before apt"
+
+grep -qF 'claude plugin install learner' "$RM" \
+  && ok "README documents installing the plugin by name" \
+  || ko "README documents installing the plugin by name"
+
+grep -qF 'claude plugin marketplace add Tykok/learning-with-claude' "$RM" \
+  && ok "README documents adding the self-hosted marketplace" \
+  || ko "README documents adding the self-hosted marketplace"
+
+grep -qF 'wires every hook twice' "$RM" \
+  && ok "README warns against installing both the plugin and a traditional install" \
+  || ko "README warns against installing both the plugin and a traditional install"
+
+grep -qF 'wires every hook twice' "$SITE_INSTALL" \
+  && ok "install.html warns against installing both the plugin and a traditional install" \
+  || ko "install.html warns against installing both the plugin and a traditional install"
 
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
@@ -1860,6 +1914,65 @@ else
   skip "packaging/apt-repo/assemble-site.sh tests (dpkg-scanpackages/apt-ftparchive not on PATH)"
 fi
 rm -rf "$TESTGNUPGHOME"
+
+# --- Claude Code plugin ------------------------------------------------------
+PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
+MARKETPLACE_JSON="$ROOT/.claude-plugin/marketplace.json"
+PLUGIN_HOOKS="$ROOT/hooks/hooks.json"
+
+[ -f "$PLUGIN_JSON" ] && ok ".claude-plugin/plugin.json exists" || ko ".claude-plugin/plugin.json exists"
+[ -f "$MARKETPLACE_JSON" ] && ok ".claude-plugin/marketplace.json exists" || ko ".claude-plugin/marketplace.json exists"
+[ -f "$PLUGIN_HOOKS" ] && ok "hooks/hooks.json exists" || ko "hooks/hooks.json exists"
+
+jq -e . "$PLUGIN_JSON" >/dev/null 2>&1 \
+  && ok "plugin.json is valid JSON" \
+  || ko "plugin.json is valid JSON"
+
+jq -e . "$MARKETPLACE_JSON" >/dev/null 2>&1 \
+  && ok "marketplace.json is valid JSON" \
+  || ko "marketplace.json is valid JSON"
+
+jq -e . "$PLUGIN_HOOKS" >/dev/null 2>&1 \
+  && ok "hooks/hooks.json is valid JSON" \
+  || ko "hooks/hooks.json is valid JSON"
+
+[ "$(jq -r '.name' "$PLUGIN_JSON")" = "learner" ] \
+  && ok "plugin.json names the plugin learner" \
+  || ko "plugin.json names the plugin learner"
+
+[ "$(jq -r '.plugins[0].name' "$MARKETPLACE_JSON")" = "learner" ] \
+  && [ "$(jq -r '.plugins[0].source' "$MARKETPLACE_JSON")" = "./" ] \
+  && ok "marketplace.json lists learner with source ./" \
+  || ko "marketplace.json lists learner with source ./"
+
+for h in SessionStart PostToolUse Stop SessionEnd; do
+  jq -e --arg h "$h" '.hooks[$h]' "$PLUGIN_HOOKS" >/dev/null 2>&1 \
+    && ok "hooks/hooks.json wires $h" \
+    || ko "hooks/hooks.json wires $h"
+done
+
+for script in learner-onboard.sh learner-record-edit.sh learner-quiz.sh learner-cleanup.sh; do
+  grep -qF "$script" "$PLUGIN_HOOKS" \
+    && ok "hooks/hooks.json references $script" \
+    || ko "hooks/hooks.json references $script"
+done
+
+grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
+  && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
+
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "4" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "4" ]; } \
+  && ok "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+
+grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
+  && ko "hooks/hooks.json does not wire learner-update-check.sh" \
+  || ok "hooks/hooks.json does not wire learner-update-check.sh"
+
+[ "$(jq -r '.version' "$PLUGIN_JSON")" = "$(cat "$ROOT/VERSION")" ] \
+  && ok "plugin.json's version matches the VERSION file" \
+  || ko "plugin.json's version matches the VERSION file"
 
 # --- summary ----------------------------------------------------------------
 echo

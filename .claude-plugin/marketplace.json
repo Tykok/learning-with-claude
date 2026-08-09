@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "learning-with-claude",
+  "description": "Claude Learner — quizzes you on your own diffs, at your level.",
+  "owner": {
+    "name": "Tykok",
+    "url": "https://github.com/Tykok"
+  },
+  "plugins": [
+    {
+      "name": "learner",
+      "description": "Turns Claude Code into a learning loop: quizzes you on your own diffs, tracks weak spots per developer.",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://tykok.github.io/learning-with-claude/"
+    }
+  ]
+}

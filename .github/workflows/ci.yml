@@ -18,6 +18,14 @@ jobs:
       - name: tests
         run: ./test.sh
 
+      - name: plugin.json version matches VERSION
+        run: |
+          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          FILE="$(cat VERSION)"
+          if [ "$PLUGIN_VERSION" != "$FILE" ]; then
+            echo "plugin.json version ($PLUGIN_VERSION) does not match VERSION file ($FILE)"; exit 1
+          fi
+
       - name: tag matches VERSION
         if: startsWith(github.ref, 'refs/tags/')
         run: |

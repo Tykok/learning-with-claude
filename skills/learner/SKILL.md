@@ -83,7 +83,11 @@ Read-only: no quiz, no config write, no data-file update.
 
 1. Level and version: `jq -r '.level // "not set"' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json"`
    (a project override wins if present), and
-   `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/learner/VERSION" 2>/dev/null`.
+   `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/learner/VERSION" 2>/dev/null` — unless this
+   skill's own base directory (visible in your context when it loaded) contains `/plugins/`,
+   in which case report the version as `plugin-managed` instead: a plugin install never
+   creates that file, and Claude Code's own `/plugin` command is the source of truth for which
+   version is installed.
 2. Open weak spots: read the `To improve` sections of the recap (see
    `references/data.md` for paths). If nothing is recorded, say so and suggest `learner quiz`.
 3. Print one line for the level and version, then a handful of bullets — broad competency

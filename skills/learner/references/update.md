@@ -1,10 +1,30 @@
 # Update mode
 
 `learner update` — check the remote version, and if it is newer, re-run the installer pinned
-to it. Read-only until step 1 decides an update is actually needed: nothing is written,
+to it. Read-only until step 2 decides an update is actually needed: nothing is written,
 locally or remotely, when the dev is already current.
 
-## 1. Read, validate and compare
+## 1. Check whether this is a Claude Code plugin install
+
+Before anything else — including the network fetch in step 2 — check whether this skill was
+loaded as a Claude Code plugin rather than a traditional install. The base directory this
+`SKILL.md` was read from is already visible in your own context (it was named when the skill
+loaded); if that path contains `/plugins/`, this is a plugin install.
+
+If so, stop here — report and go no further:
+
+```
+Installed as a Claude Code plugin. Run `/plugin update learner` (or
+`claude plugin update learner`) instead — Claude Code manages this install's version, not
+this file.
+```
+
+A plugin install never runs `install.sh`, so `$CFG/skills/learner/VERSION` and
+`$CFG/skills/learner/INSTALL_ORIGIN` (steps 2 and 3 below) never exist for it — proceeding
+past this check would either misreport "no version installed" or, worse, curl-bootstrap a
+second, traditional install directly on top of a plugin install that already works.
+
+## 2. Read, validate and compare
 
 ```bash
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
@@ -23,13 +43,13 @@ rather than re-implemented: `learner_version_gt` compares the `X.Y.Z` components
 so "0.9.0" vs "0.10.0" comes out right where reading the two strings as text would not. An
 empty `$LOCAL` means this install predates versioning — treat it as older than anything, which
 is exactly what the `[ -n "$LOCAL" ]` guard does: it skips the comparison and falls straight
-through to step 3. Validate before comparing, and before anything else touches `$REMOTE`: step
-3 builds a URL out of it, and a malformed value must never reach that unchecked. A `curl`
+through to step 4. Validate before comparing, and before anything else touches `$REMOTE`: step
+4 builds a URL out of it, and a malformed value must never reach that unchecked. A `curl`
 failure on the fetch above is not silence, unlike the background check — the dev asked for
 this directly, so report it in one line and stop rather than falling through with an empty
 `$REMOTE` that `learner_version_valid` would then (correctly) reject anyway.
 
-## 2. Check the install origin
+## 3. Check the install origin
 
 ```bash
 ORIGIN=$(cat "$CFG/skills/learner/INSTALL_ORIGIN" 2>/dev/null); ORIGIN="${ORIGIN:-curl}"
@@ -38,7 +58,7 @@ ORIGIN=$(cat "$CFG/skills/learner/INSTALL_ORIGIN" 2>/dev/null); ORIGIN="${ORIGIN
 An install from before this file existed has no marker at all — treat a missing file the same
 as `curl`, since curl or a bare clone is exactly what every install predating it used.
 
-- **`curl`** → continue to step 3, unchanged.
+- **`curl`** → continue to step 4, unchanged.
 - **`brew`** → print, and stop. Nothing is written — `brew` owns the payload on disk, not this
   protocol:
   ```
@@ -56,7 +76,7 @@ Both guidance branches point at `learner-install` rather than re-deriving `insta
 flags here — a third copy of "here's how to pass --level" would drift from the other two the
 same way two implementations of the installer itself would.
 
-## 3. Re-run the installer, pinned (origin: curl only)
+## 4. Re-run the installer, pinned (origin: curl only)
 
 ```bash
 if ! curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/v$REMOTE/bootstrap.sh" -o /tmp/learner-bootstrap.sh 2>/dev/null; then
@@ -83,9 +103,9 @@ No other flags are needed: `learner.json` already exists — this is always a re
 a first one — so `install.sh`'s onboarding prompts stay gated off regardless, and
 `bootstrap.sh`'s no-tty guard only fires when `learner.json` is absent.
 
-## 4. Confirm (origin: curl only)
+## 5. Confirm (origin: curl only)
 
 Re-read `$CFG/skills/learner/VERSION`. If it now reads `$REMOTE`, report the new version in one
 line. If it still reads the old value, say the update did not take — never claim success on an
-assumption. Step 2's `brew`/`apt` branches already stopped before this point — there is
-nothing here to confirm for them.
+assumption. Step 3's `brew`/`apt` branches, and step 1's plugin branch, already stopped before
+this point — there is nothing here to confirm for them.
