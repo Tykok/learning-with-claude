@@ -1,0 +1,12 @@
+{
+  "name": "learner",
+  "description": "Turns Claude Code into a learning loop: quizzes you on your own diffs, tracks weak spots per developer.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Tykok",
+    "url": "https://github.com/Tykok"
+  },
+  "homepage": "https://tykok.github.io/learning-with-claude/",
+  "repository": "https://github.com/Tykok/learning-with-claude",
+  "license": "GPL-3.0-or-later"
+}

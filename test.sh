@@ -1861,6 +1861,60 @@ else
 fi
 rm -rf "$TESTGNUPGHOME"
 
+# --- Claude Code plugin ------------------------------------------------------
+PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
+MARKETPLACE_JSON="$ROOT/.claude-plugin/marketplace.json"
+PLUGIN_HOOKS="$ROOT/hooks/hooks.json"
+
+[ -f "$PLUGIN_JSON" ] && ok ".claude-plugin/plugin.json exists" || ko ".claude-plugin/plugin.json exists"
+[ -f "$MARKETPLACE_JSON" ] && ok ".claude-plugin/marketplace.json exists" || ko ".claude-plugin/marketplace.json exists"
+[ -f "$PLUGIN_HOOKS" ] && ok "hooks/hooks.json exists" || ko "hooks/hooks.json exists"
+
+jq -e . "$PLUGIN_JSON" >/dev/null 2>&1 \
+  && ok "plugin.json is valid JSON" \
+  || ko "plugin.json is valid JSON"
+
+jq -e . "$MARKETPLACE_JSON" >/dev/null 2>&1 \
+  && ok "marketplace.json is valid JSON" \
+  || ko "marketplace.json is valid JSON"
+
+jq -e . "$PLUGIN_HOOKS" >/dev/null 2>&1 \
+  && ok "hooks/hooks.json is valid JSON" \
+  || ko "hooks/hooks.json is valid JSON"
+
+[ "$(jq -r '.name' "$PLUGIN_JSON")" = "learner" ] \
+  && ok "plugin.json names the plugin learner" \
+  || ko "plugin.json names the plugin learner"
+
+[ "$(jq -r '.plugins[0].name' "$MARKETPLACE_JSON")" = "learner" ] \
+  && [ "$(jq -r '.plugins[0].source' "$MARKETPLACE_JSON")" = "./" ] \
+  && ok "marketplace.json lists learner with source ./" \
+  || ko "marketplace.json lists learner with source ./"
+
+for h in SessionStart PostToolUse Stop SessionEnd; do
+  jq -e --arg h "$h" '.hooks[$h]' "$PLUGIN_HOOKS" >/dev/null 2>&1 \
+    && ok "hooks/hooks.json wires $h" \
+    || ko "hooks/hooks.json wires $h"
+done
+
+for script in learner-onboard.sh learner-record-edit.sh learner-quiz.sh learner-cleanup.sh; do
+  grep -qF "$script" "$PLUGIN_HOOKS" \
+    && ok "hooks/hooks.json references $script" \
+    || ko "hooks/hooks.json references $script"
+done
+
+grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
+  && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
+
+grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
+  && ko "hooks/hooks.json does not wire learner-update-check.sh" \
+  || ok "hooks/hooks.json does not wire learner-update-check.sh"
+
+[ "$(jq -r '.version' "$PLUGIN_JSON")" = "$(cat "$ROOT/VERSION")" ] \
+  && ok "plugin.json's version matches the VERSION file" \
+  || ko "plugin.json's version matches the VERSION file"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
