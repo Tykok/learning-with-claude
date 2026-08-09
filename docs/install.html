@@ -73,7 +73,9 @@ claude plugin install learner</code></pre>
   <p>Installs and enables the skill and its hooks natively — no <code>~/.claude</code> file
   copying, no <code>learner-install</code> step. Claude Code manages updates itself
   (<code>/plugin update learner</code>); run <code>learner update</code> and it will tell you
-  the same thing rather than trying to curl a second, traditional install on top.</p>
+  the same thing rather than trying to curl a second, traditional install on top. Already
+  installed via curl, clone, Homebrew, or apt? Run <code>uninstall.sh</code> (or
+  <code>learner-uninstall</code>) first — running both wires every hook twice.</p>
 
   <h2 id="apt">apt (Debian/Ubuntu)</h2>
 

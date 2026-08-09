@@ -1209,6 +1209,14 @@ grep -qF 'claude plugin marketplace add Tykok/learning-with-claude' "$RM" \
   && ok "README documents adding the self-hosted marketplace" \
   || ko "README documents adding the self-hosted marketplace"
 
+grep -qF 'wires every hook twice' "$RM" \
+  && ok "README warns against installing both the plugin and a traditional install" \
+  || ko "README warns against installing both the plugin and a traditional install"
+
+grep -qF 'wires every hook twice' "$SITE_INSTALL" \
+  && ok "install.html warns against installing both the plugin and a traditional install" \
+  || ko "install.html warns against installing both the plugin and a traditional install"
+
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"
 
@@ -1952,6 +1960,11 @@ done
 grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
+
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "4" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "4" ]; } \
+  && ok "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
