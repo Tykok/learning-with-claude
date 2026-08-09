@@ -840,6 +840,14 @@ grep -qF 'learner-install' "$UPD" \
   && ok "update.md points package-managed installs at learner-install" \
   || ko "update.md points package-managed installs at learner-install"
 
+grep -qF '/plugins/' "$UPD" \
+  && ok "update.md detects a plugin install by its own load path" \
+  || ko "update.md detects a plugin install by its own load path"
+
+grep -qF '/plugin update learner' "$UPD" \
+  && ok "update.md points a plugin install at /plugin update" \
+  || ko "update.md points a plugin install at /plugin update"
+
 n=$(wc -l < "$SK" | tr -d ' ')
 [ "$n" -le 120 ] \
   && ok "SKILL.md stays under 120 lines (it is always loaded)" \
@@ -878,6 +886,10 @@ grep -q 'references/update.md' "$SK" \
 grep -qi 'skills/learner/VERSION' "$SK" \
   && ok "SKILL.md's Status section reads the installed VERSION file" \
   || ko "SKILL.md's Status section reads the installed VERSION file"
+
+grep -qF '/plugin' "$SK" \
+  && ok "SKILL.md's Status section is plugin-aware" \
+  || ko "SKILL.md's Status section is plugin-aware"
 
 grep -q 'references/data.md' "$REFS/hook-quiz.md" \
   && grep -q 'references/data.md' "$REFS/quiz.md" \
