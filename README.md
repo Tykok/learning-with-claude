@@ -53,6 +53,18 @@ directory.
 
 ## Install
 
+### Claude Code plugin
+
+```bash
+claude plugin marketplace add Tykok/learning-with-claude
+claude plugin install learner
+```
+
+Installs and enables the skill and its hooks natively — no `~/.claude` file copying, no
+`learner-install` step. Claude Code manages updates itself (`/plugin update learner`); run
+`learner update` and it will tell you the same thing rather than trying to curl a second,
+traditional install on top.
+
 ### apt (Debian/Ubuntu)
 
 ```bash

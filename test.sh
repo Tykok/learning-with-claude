@@ -1131,6 +1131,17 @@ alt_h2=$(grep -n '<h2 id="alternative">' "$SITE_INSTALL" | head -1 | cut -d: -f1
   && ok "install.html orders sections as apt, Homebrew, clone, then the curl alternative" \
   || ko "install.html orders sections as apt, Homebrew, clone, then the curl alternative"
 
+plugin_h2=$(grep -n '<h2 id="plugin">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
+
+{ [ -n "$plugin_h2" ] && [ -n "$apt_h2" ] && [ "$plugin_h2" -lt "$apt_h2" ]; } \
+  && ok "install.html lists the plugin section before apt" \
+  || ko "install.html lists the plugin section before apt"
+
+grep -qF 'claude plugin install learner' "$SITE_INSTALL" \
+  && ok "install.html documents installing the plugin by name" \
+  || ko "install.html documents installing the plugin by name"
+
 grep -qF 'sudo apt install learner' "$SITE_INSTALL" \
   && ok "install.html documents installing directly from the apt repository" \
   || ko "install.html documents installing directly from the apt repository"
@@ -1174,6 +1185,21 @@ grep -qF 'sudo apt install learner' "$RM" \
 grep -qF 'learner.gpg' "$RM" \
   && ok "README documents the apt repo's signing key setup" \
   || ko "README documents the apt repo's signing key setup"
+
+plugin_line=$(grep -n '^### Claude Code plugin$' "$RM" | head -1 | cut -d: -f1)
+apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
+
+{ [ -n "$plugin_line" ] && [ -n "$apt_line" ] && [ "$plugin_line" -lt "$apt_line" ]; } \
+  && ok "README lists the Claude Code plugin before apt" \
+  || ko "README lists the Claude Code plugin before apt"
+
+grep -qF 'claude plugin install learner' "$RM" \
+  && ok "README documents installing the plugin by name" \
+  || ko "README documents installing the plugin by name"
+
+grep -qF 'claude plugin marketplace add Tykok/learning-with-claude' "$RM" \
+  && ok "README documents adding the self-hosted marketplace" \
+  || ko "README documents adding the self-hosted marketplace"
 
 # --- bootstrap --------------------------------------------------------------
 BOOT="$ROOT/bootstrap.sh"

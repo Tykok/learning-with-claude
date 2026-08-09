@@ -30,6 +30,7 @@
     <p class="toc-title" id="toc-title">On this page</p>
     <ol>
       <li><a href="#requirements">Requirements</a></li>
+      <li><a href="#plugin">Claude Code plugin</a></li>
       <li><a href="#apt">apt (Debian/Ubuntu)</a></li>
       <li><a href="#homebrew">Homebrew</a></li>
       <li><a href="#clone">Clone and run</a></li>
@@ -63,6 +64,16 @@
     <li><strong>Claude Code</strong> — either <code>claude</code> on <code>PATH</code> or
     an existing config directory.</li>
   </ul>
+
+  <h2 id="plugin">Claude Code plugin</h2>
+
+<pre><code>claude plugin marketplace add Tykok/learning-with-claude
+claude plugin install learner</code></pre>
+
+  <p>Installs and enables the skill and its hooks natively — no <code>~/.claude</code> file
+  copying, no <code>learner-install</code> step. Claude Code manages updates itself
+  (<code>/plugin update learner</code>); run <code>learner update</code> and it will tell you
+  the same thing rather than trying to curl a second, traditional install on top.</p>
 
   <h2 id="apt">apt (Debian/Ubuntu)</h2>
 
