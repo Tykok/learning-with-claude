@@ -1108,6 +1108,14 @@ grep -qF 'needs: [ci, release]' "$CI_YML" \
   && ok "deploy-pages runs after both ci and release" \
   || ko "deploy-pages runs after both ci and release"
 
+grep -qF 'plugin.json version matches VERSION' "$CI_YML" \
+  && ok "CI guards plugin.json's version against the VERSION file" \
+  || ko "CI guards plugin.json's version against the VERSION file"
+
+grep -qF "jq -r '.version' .claude-plugin/plugin.json" "$CI_YML" \
+  && ok "the plugin.json version guard reads the real field" \
+  || ko "the plugin.json version guard reads the real field"
+
 grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
