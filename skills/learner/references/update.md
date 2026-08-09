@@ -67,9 +67,9 @@ as `curl`, since curl or a bare clone is exactly what every install predating it
 - **`apt`** → print, and stop, naming the exact asset so the dev isn't left guessing at a
   filename:
   ```
-  Installed via apt. Download learner_$REMOTE_all.deb from
+  Installed via apt. Download learner_${REMOTE}_all.deb from
   https://github.com/Tykok/learning-with-claude/releases/tag/v$REMOTE, then:
-    sudo apt install ./learner_$REMOTE_all.deb && learner-install
+    sudo apt install ./learner_${REMOTE}_all.deb && learner-install
   ```
 
 Both guidance branches point at `learner-install` rather than re-deriving `install.sh`'s own
