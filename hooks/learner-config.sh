@@ -8,6 +8,7 @@
 #   learner_level RAW               canonical level letter, empty when invalid
 #   learner_level_name LETTER       human name for a level letter
 #   learner_synthesis_n WORD        questions between synthesis questions (0 = off)
+#   learner_excluded PATH CFG       true when PATH is never quiz/coach material
 #   learner_version_valid V         true if V is "X.Y.Z" with X/Y/Z decimal integers
 #   learner_version_gt A B          true if A > B (both must satisfy learner_version_valid)
 #   learner_repo_root               git toplevel of the project dir, empty if none
@@ -69,6 +70,44 @@ learner_synthesis_n() {
     often) printf '2' ;;
     *)     printf '4' ;;
   esac
+}
+
+# learner_excluded PATH CFG — true (0) when PATH must never become quiz or coach
+# material. Two layers:
+#
+#   1. A built-in floor, deliberately NOT overridable through config: without it
+#      every package-lock.json and generated file would become quiz material.
+#   2. The user's `untrackGlobs` on top of that floor.
+#
+# PATH is absolute. Globs are whitespace-separated, so a glob containing a space
+# is not supported (documented in README).
+learner_excluded() {
+  _lxp="$1"
+  _lxcfg="$2"
+
+  case "$_lxp" in
+    */node_modules/*|*/build/*|*/dist/*|*/out/*|*/target/*|*/vendor/*) return 0 ;;
+    */.git/*|*/.gradle/*|*/__pycache__/*|*/.venv/*|*/coverage/*|*/__snapshots__/*) return 0 ;;
+  esac
+  case "$_lxp" in
+    *.lock|*-lock.*|*.min.*|*.generated.*|*.snap) return 0 ;;
+  esac
+
+  # `set -f` is a shell-wide option and this is a sourced function, so the
+  # caller's globbing state has to be restored on every exit path — including
+  # the match. A hook that silently disabled globbing for the rest of its own
+  # run would be a very hard bug to find.
+  case "$-" in *f*) _lxf=1 ;; *) _lxf=0 ;; esac
+  _lxhit=1
+  set -f
+  # shellcheck disable=SC2046,SC2086  # intentional word splitting on the glob list
+  for _lxo in $(printf '%s' "$_lxcfg" | jq -r '(.untrackGlobs // [])[]' 2>/dev/null); do
+    [ -n "$_lxo" ] || continue
+    # shellcheck disable=SC2254  # $_lxo is a glob pattern on purpose
+    case "$_lxp" in $_lxo) _lxhit=0; break ;; esac
+  done
+  [ "$_lxf" = 1 ] || set +f
+  return "$_lxhit"
 }
 
 # learner_version_valid V — true if V is "X.Y.Z" with X/Y/Z decimal integers.

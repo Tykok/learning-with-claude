@@ -40,26 +40,9 @@ case "$FP" in
     esac ;;
 esac
 
-# Built-in floor, not overridable through config: without it, every
-# package-lock.json and generated file would become quiz material.
-case "$FP" in
-  */node_modules/*|*/build/*|*/dist/*|*/out/*|*/target/*|*/vendor/*) exit 0 ;;
-  */.git/*|*/.gradle/*|*/__pycache__/*|*/.venv/*|*/coverage/*|*/__snapshots__/*) exit 0 ;;
-esac
-case "$FP" in
-  *.lock|*-lock.*|*.min.*|*.generated.*|*.snap) exit 0 ;;
-esac
-
-# User exclusions on top of the floor. Globs are whitespace-separated, so a glob
-# containing a space is not supported (documented in README).
-GLOBS=$(printf '%s' "$CFG" | jq -r '(.untrackGlobs // [])[]' 2>/dev/null)
-set -f
-# shellcheck disable=SC2086,SC2254  # intentional word splitting + glob patterns
-for g in $GLOBS; do
-  [ -n "$g" ] || continue
-  case "$FP" in $g) exit 0 ;; esac
-done
-set +f
+# Exclusions live in learner-config.sh so the coach watcher applies the exact
+# same list (see learner_excluded).
+learner_excluded "$FP" "$CFG" && exit 0
 
 # Pending edits since the last quiz, plus a session-wide log that is never
 # cleared (the synthesis question uses it).
