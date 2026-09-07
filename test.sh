@@ -165,6 +165,35 @@ cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
   && ko "learner_active fails under a disabled path" \
   || ok "learner_active fails under a disabled path"
 
+# --- learner_excluded -------------------------------------------------------
+echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
+rm -f "$PCFG"
+XCFG=$(cfgsh 'learner_config')
+
+excl() { cfgsh "learner_excluded '$1' '$XCFG'"; }
+
+excl "$WORK/proj/src/Main.kt"            && ko "plain source is material"            || ok "plain source is material"
+excl "$WORK/proj/node_modules/x/i.js"    && ok "node_modules is excluded"             || ko "node_modules is excluded"
+excl "$WORK/proj/build/gen/A.kt"         && ok "build/ is excluded"                   || ko "build/ is excluded"
+excl "$WORK/proj/target/out.jar"         && ok "target/ is excluded"                  || ko "target/ is excluded"
+excl "$WORK/proj/.git/COMMIT_EDITMSG"    && ok ".git/ is excluded"                    || ko ".git/ is excluded"
+excl "$WORK/proj/pnpm-lock.yaml"         && ok "*-lock.* is excluded"                 || ko "*-lock.* is excluded"
+excl "$WORK/proj/yarn.lock"              && ok "*.lock is excluded"                   || ko "*.lock is excluded"
+excl "$WORK/proj/app.min.js"             && ok "*.min.* is excluded"                  || ko "*.min.* is excluded"
+excl "$WORK/proj/api.generated.ts"       && ok "*.generated.* is excluded"            || ko "*.generated.* is excluded"
+excl "$WORK/proj/README.md"              && ok "untrackGlobs *.md is excluded"        || ko "untrackGlobs *.md is excluded"
+excl "$WORK/proj/pkg.json"               && ok "untrackGlobs *.json is excluded"      || ko "untrackGlobs *.json is excluded"
+
+# An empty untrackGlobs must not accidentally exclude everything.
+echo '{"level":"C"}' > "$GCFG"
+XCFG=$(cfgsh 'learner_config')
+excl "$WORK/proj/src/Main.kt" && ko "no globs: source still material" || ok "no globs: source still material"
+
+# The helper must not leave `set -f` on in the caller's shell, or every later
+# glob expansion in that shell silently stops working.
+out=$(cfgsh "learner_excluded '$WORK/proj/src/Main.kt' '$XCFG'; case \"\$-\" in *f*) echo LEAKED ;; *) echo CLEAN ;; esac")
+[ "$out" = "CLEAN" ] && ok "learner_excluded restores globbing" || ko "learner_excluded restores globbing"
+
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | sh "$ONB")
