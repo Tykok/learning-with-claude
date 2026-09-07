@@ -502,6 +502,19 @@ for tool in Write Edit NotebookEdit; do
   denied "$out" && ok "$tool is gated" || ko "$tool is gated"
 done
 
+# The suggested glob must never be a bare `**` — that would invite the dev to
+# delegate the entire repo, which is the opposite of what coach mode is for.
+out=$(gate "$SID_G" "$WORK/proj/TopLevel.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "TopLevel.kt" ] && ok "a top-level file suggests itself, not a bare **" \
+  || ko "a top-level file suggests itself, not a bare ** (got '$sug')"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "src/main/service/**" ] && ok "a nested file suggests its directory glob" \
+  || ko "a nested file suggests its directory glob (got '$sug')"
+
 # Delegation: the matching path is allowed, its sibling is still denied.
 printf 'src/**/repository/**\n' > "$(scope "$SID_G")"
 [ -z "$(gate "$SID_G" "$WORK/proj/src/main/repository/UserRepo.kt")" ] \
@@ -610,10 +623,20 @@ if [ -f "$SCOPE" ]; then
   done < "$SCOPE"
 fi
 
+# The suggested glob must never widen to the whole repo. `sed 's:[^/]*$:**:'` on a
+# top-level file like `Foo.kt` yields the bare glob `**`, which would invite the
+# dev to delegate the entire repository — the exact opposite of the point. Only a
+# path with a directory component gets a directory glob; anything else suggests
+# itself.
+case "$REL" in
+  */*) SUGGEST=$(printf '%s' "$REL" | sed 's:[^/]*$:**:') ;;
+  *)   SUGGEST="$REL" ;;
+esac
+
 REASON="🧑‍🏫 Coach mode — $REL is not delegated to you.
 The dev writes this code. Describe the approach, name the file and the lead, and point at the
 lines you would change — do not write them. If this slice really is yours, the dev can delegate
-it: learner coach delegate '$(printf '%s' "$REL" | sed 's:[^/]*$:**:')'"
+it: learner coach delegate '$SUGGEST'"
 
 jq -n --arg r "$REASON" '{
   hookSpecificOutput: {
@@ -625,9 +648,11 @@ jq -n --arg r "$REASON" '{
 exit 0
 ```
 
-The `sed` in the reason turns `src/main/service/Service.kt` into `src/main/service/**` — a
-delegation glob the dev can copy verbatim instead of composing one from scratch. That is the
-difference between an escape hatch a dev uses and one they read past.
+The `sed` turns `src/main/service/Service.kt` into `src/main/service/**` — a delegation glob
+the dev can copy verbatim instead of composing one from scratch. That is the difference between
+an escape hatch a dev uses and one they read past. The `case` guard around it is not
+decoration: without it a top-level file yields the bare glob `**`, and the hook would be
+suggesting that the dev hand Claude the whole repository.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -791,6 +816,20 @@ out=$(material "$SID_W")
   && ok "emptying a file counts its deleted lines" || ko "emptying a file counts its deleted lines"
 rm -f "$CREPO/src/Empty.kt"
 
+# coach_delta must print exactly one number. `grep -c` prints "0" and exits 1 on
+# no matches, so a naive `|| printf '0'` would yield "00" here.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 6 > "$CREPO/src/Single.kt"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+printf 'x' >> "$CREPO/src/Single.kt"
+out=$(material "$SID_W")
+d=$(printf '%s' "$out" | awk -F'\t' '$2=="src/Single.kt"{print $1}')
+case "$d" in
+  [0-9]) ok "delta is a single normalised integer" ;;
+  *) ko "delta is a single normalised integer (got '$d')" ;;
+esac
+rm -f "$CREPO/src/Single.kt"
+
 # The watcher must be as silent as the gate when the regime is off.
 echo '{"level":"C","coach":false}' > "$GCFG"
 out=$(material "$SID_W")
@@ -912,17 +951,23 @@ coach_delta() {
   _cdr="$1"
   _cda="$ROOT/$_cdr"
   _cdb="$BASEDIR/$(coach_key "$_cdr")"
+  # `grep -c` prints its count AND exits 1 when that count is zero, so a
+  # `grep -c … || printf '0'` would emit "00". Arithmetic reads "00" as zero, so
+  # such a bug would survive review and only mislead whoever debugs the trigger
+  # later. Capture once, normalise once, print once.
   if [ -f "$_cdb" ] && [ -f "$_cda" ]; then
     # `[^+-]|$` so an added or removed *blank* line still counts, while diff's
     # own `---`/`+++` headers (second character is - or +) do not.
-    diff -u "$_cdb" "$_cda" 2>/dev/null | grep -Ec '^[+-]([^+-]|$)' || printf '0'
+    _cdn=$(diff -u "$_cdb" "$_cda" 2>/dev/null | grep -Ec '^[+-]([^+-]|$)')
   elif [ -f "$_cda" ]; then
-    grep -c '' "$_cda" 2>/dev/null || printf '0'
+    _cdn=$(grep -c '' "$_cda" 2>/dev/null)
   elif [ -f "$_cdb" ]; then
-    grep -c '' "$_cdb" 2>/dev/null || printf '0'
+    _cdn=$(grep -c '' "$_cdb" 2>/dev/null)
   else
-    printf '0'
+    _cdn=0
   fi
+  case "$_cdn" in ''|*[!0-9]*) _cdn=0 ;; esac
+  printf '%s' "$_cdn"
 }
 
 # "<delta>\t<rel>" per file with a non-zero delta.
