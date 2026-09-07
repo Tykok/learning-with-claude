@@ -206,11 +206,20 @@ Scope globs are matched with `case`, in which `*` crosses `/`. So `src/**/reposi
 `src/*/repository/*` behave identically — documented rather than worked around, since the
 permissive reading is the one a dev writing that glob intends.
 
-**To verify before writing this hook:** the exact `PreToolUse` deny payload
-(`hookSpecificOutput.permissionDecision: "deny"` + `permissionDecisionReason`, versus the older
-top-level `decision`). Checked against the Claude Code hooks documentation at implementation
-time, not assumed — a gate that silently fails open is worse than no gate, because the dev
-would believe they were protected.
+**Deny payload — verified against the hooks reference**, not assumed. A gate that silently
+fails open is worse than no gate, because the dev would believe they were protected.
+
+```json
+{"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": "…"}}
+```
+
+Confirmed with it: exit `0` alongside that JSON; `permissionDecision` is one of
+`allow`/`deny`/`ask`/`defer`; exit 0 with no stdout is the correct "allow, unchanged" no-op;
+`Write`, `Edit` **and** `NotebookEdit` all carry the path as `.tool_input.file_path`; and a
+matcher made only of names and `|` is matched exactly, so `Write|Edit|NotebookEdit` hits those
+three and `Edit` alone would *not* also match `NotebookEdit`.
 
 ## 4. The review protocol — `skills/learner/references/coach.md`
 
@@ -282,12 +291,17 @@ above their stated floor.
 ## 6. Arming, and what has to change elsewhere
 
 **`hooks/learner-onboard.sh`** (already a `SessionStart` hook) gains one branch: when learner
-is active and `coach` is true, its `additionalContext` tells Claude to arm the watcher —
+is active and `coach` is true, and the payload's `source` is `startup` or `resume`, its
+`additionalContext` tells Claude to arm the watcher —
 `Monitor` with `command: sh <hooks-dir>/coach-watch.sh <session-id>`, `persistent: true`,
 description `coach: the dev's changes`. The hook knows its own directory via `$(dirname "$0")`,
 which is how every other hook in this repo already resolves its neighbours, so this works
 identically for a plugin install and a traditional one. The dev types nothing at session start
 (decision #6).
+
+The `source` check is not decoration. `SessionStart` also fires on `clear`, `compact` and
+`fork`; arming on a mid-session context compaction would start a **second** watcher against the
+same session id, and the dev would receive every review twice on two drifting cadences.
 
 **`hooks/learner-cleanup.sh`** also removes `claude-learner-<sid>.coach-scope` and the
 `claude-learner-<sid>.coach-base/` directory.
