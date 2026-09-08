@@ -674,6 +674,34 @@ n2=$(hookcount "$I")
   && ok "hook merge is idempotent (5 wired hooks)" \
   || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
 
+# install.sh's own dedup — exercised end to end, not a re-typed copy of its
+# jq — must catch every hook this project wires, coach's PreToolUse entry
+# included. Installing twice (what `learner update` does on every version
+# bump) must leave exactly one coach-gate.sh entry, not one per install:
+# otherwise every Write/Edit/NotebookEdit spawns one more subprocess per
+# reinstall, forever.
+IC="$WORK/inst-coach-dedup"; mkdir -p "$IC"
+inst "$IC" --level S >/dev/null 2>&1
+inst "$IC" --level S >/dev/null 2>&1
+n=$(jq '[.. | .command? // empty | select(contains("coach-gate.sh"))] | length' "$IC/settings.json")
+[ "$n" = 1 ] \
+  && ok "install's dedup keeps exactly one coach-gate.sh entry across two installs" \
+  || ko "install's dedup keeps exactly one coach-gate.sh entry across two installs (got $n)"
+
+# The opposite guard, same as strip_wiring's: an unrelated third-party hook
+# already present in settings.json must survive a re-install intact. A fresh
+# directory, not $IC: reusing it would let $IC's own corrupted-command debris
+# (if the predicate were ever wrong) silently abort a later jq call and leave
+# this assertion passing for the wrong reason.
+IC2="$WORK/inst-coach-survival"; mkdir -p "$IC2"
+inst "$IC2" --level S >/dev/null 2>&1
+jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"sh /opt/otherteam/hooks/pretty-linter.sh"}]}]' \
+  "$IC2/settings.json" > "$IC2/settings.json.tmp" && mv "$IC2/settings.json.tmp" "$IC2/settings.json"
+inst "$IC2" --level S >/dev/null 2>&1
+jq -e '[.. | .command? // empty] | any(. == "sh /opt/otherteam/hooks/pretty-linter.sh")' "$IC2/settings.json" >/dev/null 2>&1 \
+  && ok "install's dedup leaves an unrelated third-party hook intact" \
+  || ko "install's dedup leaves an unrelated third-party hook intact (got $(jq -c '.hooks.PreToolUse' "$IC2/settings.json"))"
+
 jq -e '[.. | .command? // empty | select(contains("learner-"))]
        | all(contains("CLAUDE_CONFIG_DIR"))' "$I/settings.json" >/dev/null 2>&1 \
   && ok "hook commands resolve CLAUDE_CONFIG_DIR at run time" \

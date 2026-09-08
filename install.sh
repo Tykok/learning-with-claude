@@ -151,13 +151,19 @@ TMP="$(mktemp)"
 jq -n \
   --argjson base "$(cat "$SETTINGS")" \
   --argjson add "$(cat "$SRC_DIR/hooks/settings.snippet.json")" '
-  # For each event the snippet defines, drop existing "learner-" entries then
-  # append the fresh ones, so re-running never duplicates.
+  # For each event the snippet defines, drop existing entries this project
+  # installed, then append the fresh ones, so re-running never duplicates.
+  #
+  # Matched by naming convention (every hook script this project ships lives
+  # under a "hooks/" directory and is named "learner-*.sh" or "coach-*.sh"),
+  # not a literal list, so a future same-convention script is deduped without
+  # another edit here. This is intentionally the same predicate as
+  # strip_wiring() in uninstall.sh — keep the two in sync if either changes.
   reduce ($add.hooks | keys[]) as $ev (
     $base;
     .hooks[$ev] = (
       ((.hooks[$ev] // [])
-        | map(select(any(.hooks[]; .command | contains("learner-")) | not)))
+        | map(select(any(.hooks[]; .command | test("/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not)))
       + $add.hooks[$ev]
     )
   )
