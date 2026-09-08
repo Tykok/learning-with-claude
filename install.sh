@@ -154,16 +154,44 @@ jq -n \
   # For each event the snippet defines, drop existing entries this project
   # installed, then append the fresh ones, so re-running never duplicates.
   #
-  # Matched by naming convention (every hook script this project ships lives
-  # under a "hooks/" directory and is named "learner-*.sh" or "coach-*.sh"),
-  # not a literal list, so a future same-convention script is deduped without
-  # another edit here. This is intentionally the same predicate as
-  # strip_wiring() in uninstall.sh — keep the two in sync if either changes.
+  # Matched by naming convention, not by an exhaustive per-script list: every
+  # hook script this project ships is named "learner-*.sh" or "coach-*.sh"
+  # (see install.sh'"'"'s copy loop and hooks/settings.snippet.json). A
+  # convention-based match keeps pace with new scripts on its own — no list
+  # to remember to update here — which is exactly what a literal-name or
+  # single-prefix match cannot do (a coach-*.sh hook once slipped past a
+  # "learner-"-only match this same way).
+  #
+  # The name match alone is not enough: a bare "/hooks/(learner|coach)-*.sh"
+  # matches that path shape anywhere on disk, so a sibling tool that also
+  # ships a "hooks/" directory with a same-prefixed script (plausible —
+  # "coach" is a generic word, and $CLAUDE_CONFIG_DIR/hooks is a directory
+  # other tools can also write into) would get silently swept up. Anchoring
+  # on a literal ".claude" segment (with an optional trailing "}", closing
+  # the "${VAR:-default}" this project'"'"'s own commands are always wrapped
+  # in) immediately before "/hooks/" requires the match to run through a
+  # Claude Code config tree specifically — every shape this project has ever
+  # wired does: today'"'"'s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/", the
+  # old per-project "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/", and the legacy
+  # bare ".claude/hooks/" — while a path with no ".claude" segment at all,
+  # like /opt/otherteam/hooks/coach-lint.sh, is rejected outright. Anchoring
+  # tighter, to today'"'"'s exact "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/"
+  # literal, was considered and rejected: it would stop recognising the older
+  # forms above, leaving that wiring behind forever on an uninstall — the
+  # same kind of leak this predicate exists to prevent. Residual risk
+  # accepted: another tool that specifically nests its own hook under a
+  # ".claude/hooks/" tree with a learner-/coach-prefixed name would still
+  # collide; that requires deliberately mimicking this project'"'"'s install
+  # location and naming convention together, which is a much narrower target
+  # than the bare path-shape match this predicate replaces.
+  #
+  # This is intentionally the same predicate as strip_wiring() in
+  # uninstall.sh — keep the two in sync if either changes.
   reduce ($add.hooks | keys[]) as $ev (
     $base;
     .hooks[$ev] = (
       ((.hooks[$ev] // [])
-        | map(select(any(.hooks[]; .command | test("/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not)))
+        | map(select(any(.hooks[]; .command | test("\\.claude\\}?/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not)))
       + $add.hooks[$ev]
     )
   )
