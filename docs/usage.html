@@ -77,18 +77,52 @@
     <dt><code>learner off</code> / <code>learner on</code></dt>
     <dd>Silences or restores the automatic quiz in the current repository. See
     <a href="config.html#off">Turning it off</a> for what that writes and why.</dd>
-    <dt><code>learner coach on</code> / <code>learner coach off</code></dt>
-    <dd>Turns the coach regime on or off in this repository: the dev writes the code and
-    Claude challenges it on a cadence, rather than quizzing afterwards. See
-    <a href="config.html">Configuration</a> for the <code>coach*</code> keys that tune it.</dd>
-    <dt><code>learner coach delegate &lt;glob&gt; …</code></dt>
-    <dd>Lets Claude write inside the given globs for this session; <code>learner coach
-    delegate none</code> clears it.</dd>
-    <dt><code>learner coach review [base-ref]</code></dt>
-    <dd>Runs one coach review right now, off-cadence, instead of waiting for the watcher.</dd>
     <dt><code>learner help</code></dt>
     <dd>Prints its subcommand and parameter reference, then stops.</dd>
   </dl>
+
+  <h2 id="coach">Coach mode — you write, Claude challenges</h2>
+
+  <p>The regime above has Claude write the code and quiz you afterwards. Coach mode inverts
+  it: you write the code, and Claude watches your working tree and comes back at intervals
+  with one socratic question, up to three findings anchored <code>file:line</code>, and up to
+  two leads — never a patch. Your <a href="config.html#levels">level</a> drives both what the
+  challenge attacks and the register it is written in.</p>
+
+  <dl>
+    <dt><code>learner coach on</code> / <code>learner coach off</code></dt>
+    <dd>Turns the coach regime on or off in this repository. Off is the default — a dev who
+    never runs this sees no change. Once on, Claude is <strong>denied</strong> write access to
+    your source: a <code>PreToolUse</code> hook refuses any <code>Write</code>,
+    <code>Edit</code> or <code>NotebookEdit</code> outside the slice you delegate below, and
+    hands back a copy-pasteable glob in the refusal.</dd>
+    <dt><code>learner coach delegate &lt;glob&gt; …</code></dt>
+    <dd>Lets Claude write inside the given globs for this session, e.g.
+    <code>learner coach delegate 'src/**/repository/**'</code> — the layer that looks the same
+    in every project, leaving you the service and the business logic.
+    <code>learner coach delegate none</code> clears it.</dd>
+    <dt><code>learner coach review [base-ref]</code></dt>
+    <dd>Runs one coach review right now, off-cadence, instead of waiting for the watcher.</dd>
+  </dl>
+
+  <p>Reviews arrive on a <strong>pomodoro</strong> by default: a 25-minute work block in
+  silence, then one notification, then an ~8-minute challenge window. The work block grows 5
+  minutes per completed cycle, capped at 45 — only for cycles where you actually wrote
+  something. After two consecutive empty blocks the watcher stops itself and asks whether you
+  want to continue. Prefer change-driven reviews to time-driven ones?
+  <code>learner config coachCadence=threshold</code> swaps the clock for
+  <code>coachLines</code>, <code>coachFiles</code> and <code>coachEveryMinutes</code>, gated by
+  <code>coachCooldownMinutes</code>. See <a href="config.html">Configuration</a> for the
+  <code>coach*</code> keys that tune all of this.</p>
+
+  <p>Both regimes feed the same record: Claude quizzes you on what it wrote, the coach
+  challenges you on what you wrote, and <code>learner status</code> sees all of it.</p>
+
+  <p>Coach mode needs an <strong>interactive</strong> Claude Code session: the watcher runs as
+  a <code>Monitor</code>, which does not exist in <code>claude -p</code>, in a subagent, or in
+  a cloud session. The write refusal above still applies everywhere, because it is an ordinary
+  hook — so a non-interactive session with coach mode on gets the denials without ever
+  receiving a review.</p>
 
   <p class="next">Next: <a href="config.html">Configuration</a> — every setting
   Learner reads.</p>

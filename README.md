@@ -29,6 +29,40 @@ The only file Learner ever *adds* to a repository is `.claude/learner.local.json
 of your own source files instead. Everything else lives under your Claude Code config
 directory.
 
+## Coach mode — you write, Claude challenges
+
+The default regime has Claude write the code and quiz you afterwards. Coach mode inverts it:
+you write the code, and Claude watches your working tree and comes back at intervals with one
+question, a few findings and a couple of leads — never with a patch.
+
+```
+learner coach on
+```
+
+From then on, Claude is **denied** write access to your source: a `PreToolUse` hook refuses any
+`Write` or `Edit` outside the slice you hand it explicitly.
+
+```
+learner coach delegate 'src/**/repository/**'
+```
+
+Now Claude writes the repositories — the layer that looks the same in every project — and you
+write the service and the business logic. Both regimes feed the same record: Claude quizzes you
+on what it wrote, the coach challenges you on what you wrote, and `learner status` sees all of
+it.
+
+Reviews arrive on a pomodoro by default: a 25-minute work block in silence, then one
+notification, then an ~8-minute challenge window. The work block grows 5 minutes per cycle
+(capped at 45) — only for cycles where you actually wrote something. After two consecutive
+empty blocks the watcher stops itself and asks whether you want to continue.
+
+Prefer change-driven reviews to time-driven ones? `learner config coachCadence=threshold`, then
+tune `coachLines`, `coachFiles` and `coachCooldownMinutes`.
+
+Coach mode needs an interactive Claude Code session: the watcher runs as a `Monitor`, which
+does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still
+applies everywhere, since it is an ordinary hook.
+
 ## Requirements
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
