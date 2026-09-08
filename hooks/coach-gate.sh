@@ -43,19 +43,38 @@ FP=$(printf '%s' "$DATA" | jq -r '.tool_input.file_path // .tool_input.notebook_
 # instead of silently allowing. A resolution that somehow still comes back
 # empty fails CLOSED — treated as in-repo, falling through to the deny path —
 # so a future edit here cannot reintroduce a silent allow.
+#
+# RESOLVED_FP starts as FP itself (the fast-path case: FP already shares
+# ROOT's physical prefix, nothing to resolve) and is only overwritten below
+# when the slow path actually resolves a symlinked ancestor. REL, further
+# down, is derived from RESOLVED_FP rather than FP — this is the one place
+# that resolution happens, reused by both the outside-the-repo check and the
+# delegation match, so the two can never disagree about what "in the repo"
+# means. Deriving REL from the raw FP instead (this hook's earlier bug) left
+# delegation permanently unmatchable on any repo reached through a symlink —
+# ROOT is physical but the stripped prefix wasn't, so REL stayed an absolute
+# path that no relative glob could ever match.
+RESOLVED_FP="$FP"
+
 case "$FP" in
   "$ROOT"/*) ;;
   *)
     _gd="${FP%/*}"
+    _gs=''
     while [ -n "$_gd" ] && [ ! -d "$_gd" ]; do
       case "$_gd" in
-        */*) _gd="${_gd%/*}" ;;
-        *)   _gd='' ;;
+        */*) _gs="${_gd##*/}${_gs:+/$_gs}"; _gd="${_gd%/*}" ;;
+        *)   _gs="$_gd${_gs:+/$_gs}"; _gd='' ;;
       esac
     done
     _gd=$(cd "${_gd:-/}" 2>/dev/null && pwd -P)
     case "${_gd:+$_gd/}" in
-      "$ROOT"/*) ;;
+      "$ROOT"/*)
+        # _gs is the tail that doesn't exist on disk yet (expected: PreToolUse
+        # fires before the write). It can't itself hide a symlink to resolve,
+        # so it is reattached to the resolved ancestor as plain text, along
+        # with the file's own basename (never part of the ancestor walk).
+        RESOLVED_FP="$_gd${_gs:+/$_gs}/${FP##*/}" ;;
       '') ;;      # resolution failed: fail closed, treat as in-repo
       *) exit 0 ;;
     esac ;;
@@ -65,7 +84,7 @@ esac
 # README write would be friction with no pedagogical payoff.
 learner_excluded "$FP" "$CFG" && exit 0
 
-REL=${FP#"$ROOT"/}
+REL=${RESOLVED_FP#"$ROOT"/}
 SCOPE="${TMPDIR:-/tmp}/claude-learner-${SID}.coach-scope"
 
 # Delegated globs, one per line. Matched with `case`, in which `*` crosses `/` —
