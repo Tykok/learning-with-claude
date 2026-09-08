@@ -35,12 +35,28 @@ FP=$(printf '%s' "$DATA" | jq -r '.tool_input.file_path // .tool_input.notebook_
 # whatever path the session used, so a repo reached through a symlink has to be
 # resolved before it can be called "outside" — the same slow path
 # learner-record-edit.sh already takes, and only when the cheap match fails.
+#
+# This is a PreToolUse hook: it fires before the write, so the immediate parent
+# of a brand-new file in a not-yet-created subdirectory legitimately does not
+# exist yet, and `cd` on it fails. Walking up to the deepest EXISTING ancestor
+# (terminating at "/", which always exists) gives a definite answer either way
+# instead of silently allowing. A resolution that somehow still comes back
+# empty fails CLOSED — treated as in-repo, falling through to the deny path —
+# so a future edit here cannot reintroduce a silent allow.
 case "$FP" in
   "$ROOT"/*) ;;
   *)
-    _rd=$(cd "${FP%/*}" 2>/dev/null && pwd -P) || _rd=''
-    case "${_rd:-/dev/null}/" in
+    _gd="${FP%/*}"
+    while [ -n "$_gd" ] && [ ! -d "$_gd" ]; do
+      case "$_gd" in
+        */*) _gd="${_gd%/*}" ;;
+        *)   _gd='' ;;
+      esac
+    done
+    _gd=$(cd "${_gd:-/}" 2>/dev/null && pwd -P)
+    case "${_gd:+$_gd/}" in
       "$ROOT"/*) ;;
+      '') ;;      # resolution failed: fail closed, treat as in-repo
       *) exit 0 ;;
     esac ;;
 esac
@@ -56,7 +72,12 @@ SCOPE="${TMPDIR:-/tmp}/claude-learner-${SID}.coach-scope"
 # so `src/**/repository/**` and `src/*/repository/*` behave identically. That
 # permissive reading is what a dev writing such a glob intends.
 if [ -f "$SCOPE" ]; then
-  while IFS= read -r _g; do
+  # `|| [ -n "$_g" ]` covers a final line with no trailing newline: `read`
+  # still delivers it in $_g but returns non-zero, so a bare `while read` loop
+  # would drop it silently — the writer's most recently delegated glob, the
+  # one most likely to matter. The redirect (not a pipe) keeps this loop in
+  # the current shell, so `exit 0` below still exits the whole hook.
+  while IFS= read -r _g || [ -n "$_g" ]; do
     [ -n "$_g" ] || continue
     case "$_g" in \#*) continue ;; esac
     # shellcheck disable=SC2254  # $_g is a glob pattern on purpose
