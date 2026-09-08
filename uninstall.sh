@@ -49,7 +49,18 @@ require_parsable() {
   }
 }
 
-# Strip every learner hook entry from a settings.json, dropping events left empty.
+# Strip every hook entry this project wires from a settings.json, dropping
+# events left empty.
+#
+# Matched by naming convention, not by an exhaustive per-script list: every
+# hook script this project ships lives under a "hooks/" directory and is
+# named "learner-*.sh" or "coach-*.sh" (see install.sh's copy loop and
+# hooks/settings.snippet.json). A convention-based match keeps pace with new
+# scripts on its own — no list to remember to update here — which is exactly
+# what a literal-name or single-prefix match cannot do (a coach-*.sh hook
+# once slipped past a "learner-"-only match this same way). It still requires
+# the "hooks/" path segment immediately before the name, so it won't reach
+# past this project's own commands into an unrelated tool's hook.
 strip_wiring() {
   local settings="$1"
   [ -f "$settings" ] || return 0
@@ -58,7 +69,9 @@ strip_wiring() {
   jq '
     if .hooks then
       .hooks |= (
-        (with_entries(.value |= map(select(any(.hooks[]?; .command | contains("learner-")) | not))))
+        (with_entries(.value |= map(select(
+          any(.hooks[]?; .command | test("/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not
+        ))))
         | with_entries(select(.value | length > 0))
       )
       | (if (.hooks | length) == 0 then del(.hooks) else . end)
@@ -75,7 +88,9 @@ if [ -n "$PROJECT" ]; then
         "$TARGET/.claude/hooks/learner-record-edit.sh" \
         "$TARGET/.claude/hooks/learner-quiz.sh" \
         "$TARGET/.claude/hooks/learner-cleanup.sh" \
-        "$TARGET/.claude/hooks/learner-config.sh"
+        "$TARGET/.claude/hooks/learner-config.sh" \
+        "$TARGET/.claude/hooks/coach-gate.sh" \
+        "$TARGET/.claude/hooks/coach-watch.sh"
   rm -rf "$TARGET/.claude/skills/learner"
   strip_wiring "$TARGET/.claude/settings.json"
   GI="$TARGET/.gitignore"
@@ -100,7 +115,9 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/learner-record-edit.sh" \
       "$CFG_DIR/hooks/learner-quiz.sh" \
       "$CFG_DIR/hooks/learner-cleanup.sh" \
-      "$CFG_DIR/hooks/learner-update-check.sh"
+      "$CFG_DIR/hooks/learner-update-check.sh" \
+      "$CFG_DIR/hooks/coach-gate.sh" \
+      "$CFG_DIR/hooks/coach-watch.sh"
 rm -rf "$CFG_DIR/skills/learner"
 echo "  ✓ hooks + skill removed"
 
