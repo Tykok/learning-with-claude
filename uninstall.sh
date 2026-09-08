@@ -61,6 +61,9 @@ require_parsable() {
 # once slipped past a "learner-"-only match this same way). It still requires
 # the "hooks/" path segment immediately before the name, so it won't reach
 # past this project's own commands into an unrelated tool's hook.
+#
+# This is intentionally the same predicate as the reinstall-dedup in
+# install.sh — keep the two in sync if either changes.
 strip_wiring() {
   local settings="$1"
   [ -f "$settings" ] || return 0
