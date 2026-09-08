@@ -54,7 +54,7 @@ BASEDIR="$TMPD/claude-learner-${SID}.coach-base"
 # a file the dev revisits in three consecutive blocks would look like three
 # times the work.
 #
-# <key> is `git hash-object --stdin` of the repo-relative path — 40 hex
+# <key> is `git hash-object --stdin` of the repo-relative path — hex
 # characters, so any path becomes a safe filename.
 coach_key() { printf '%s' "$1" | git hash-object --stdin; }
 
@@ -151,15 +151,24 @@ coach_advance() {
     done < "$BASEDIR/.manifest"
   fi
   mv "$_canew" "$BASEDIR/.manifest" 2>/dev/null
-  # A repo with zero commits yet has no HEAD to record. Falling back to git's
-  # well-known empty-tree object id (rather than an empty string) keeps the
+  # A repo with zero commits yet has no HEAD to record. Falling back to the
+  # empty-tree object id (rather than an empty string) keeps the
   # <baseline-HEAD>..HEAD diff term in coach_candidates meaningful once the
   # dev's first commit lands: diffing the empty tree against HEAD lists every
   # file HEAD now contains, which is exactly the committed-since-baseline set.
   # An empty string would make that term silently skip forever, cutting a dev
   # off right after the block where they committed for the first time.
-  git -C "$ROOT" rev-parse HEAD > "$BASEDIR/.head" 2>/dev/null \
-    || printf '%s' '4b825dc642cb6eb9a060e54bf8d69288fbee4904' > "$BASEDIR/.head"
+  #
+  # The empty-tree id is derived with `hash-object -t tree /dev/null` rather
+  # than hardcoded: its value depends on the repo's hash algorithm (SHA-1 vs
+  # SHA-256, `git init --object-format`), and a SHA-1 constant silently fails
+  # to resolve in a SHA-256 repo — reproducing this exact bug for that format.
+  # If the derivation itself yields nothing, leave `.head` empty rather than
+  # writing a value that would make every later `git diff` on it fail.
+  if ! git -C "$ROOT" rev-parse HEAD > "$BASEDIR/.head" 2>/dev/null; then
+    _caempty=$(git -C "$ROOT" hash-object -t tree /dev/null 2>/dev/null)
+    printf '%s' "$_caempty" > "$BASEDIR/.head"
+  fi
 }
 
 if [ "$ADVANCE_ONLY" = 1 ]; then
