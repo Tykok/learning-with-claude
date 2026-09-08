@@ -2357,6 +2357,39 @@ out=$(CLAUDE_PROJECT_DIR="$NREPO" sh "$WATCH" watch-fresh --once --print-materia
   || ko "repo with no commits still measures untracked files"
 rm -rf "$(basedir watch-fresh)"
 
+# Regression: the empty-tree fallback in coach_advance (for a baseline taken
+# before any commit exists) must resolve under either of git's object
+# formats. A hardcoded SHA-1 empty-tree id silently fails to resolve in a
+# SHA-256 repo, reproducing the exact "work committed since the baseline
+# still counts" bug for that format. `--object-format=sha256` needs a git
+# recent enough to support it, so probe first and skip cleanly rather than
+# fail the suite on an older git.
+if git init --object-format=sha256 -q "$WORK/sha256-probe" >/dev/null 2>&1; then
+  rm -rf "$WORK/sha256-probe"
+  SREPO="$WORK/srepo"
+  mkdir -p "$SREPO/.claude"
+  git -C "$SREPO" init --object-format=sha256 -q
+  git -C "$SREPO" config user.email t@t.t
+  git -C "$SREPO" config user.name t
+  SREPO="$(cd "$SREPO" && pwd -P)"
+  SID_S=watch-sha256
+
+  # Baseline taken while the repo has zero commits.
+  lines 5 > "$SREPO/Sha.kt"
+  CLAUDE_PROJECT_DIR="$SREPO" sh "$WATCH" "$SID_S" --once --advance >/dev/null
+  # The dev appends 6 lines and commits them.
+  lines 6 | sed 's/^/committed /' >> "$SREPO/Sha.kt"
+  git -C "$SREPO" add -A >/dev/null 2>&1
+  git -C "$SREPO" commit -q -m "dev commits mid-block in a sha256 repo"
+  out=$(CLAUDE_PROJECT_DIR="$SREPO" sh "$WATCH" "$SID_S" --once --print-material)
+  [ "$(printf '%s' "$out" | awk -F'\t' '$2=="Sha.kt"{print $1}')" = "6" ] \
+    && ok "work committed since the baseline still counts in a sha256 repo" \
+    || ko "work committed since the baseline still counts in a sha256 repo"
+  rm -rf "$(basedir "$SID_S")"
+else
+  skip "sha256-repo regression test (git lacks --object-format=sha256 support)"
+fi
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
