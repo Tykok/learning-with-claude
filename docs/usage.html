@@ -77,6 +77,15 @@
     <dt><code>learner off</code> / <code>learner on</code></dt>
     <dd>Silences or restores the automatic quiz in the current repository. See
     <a href="config.html#off">Turning it off</a> for what that writes and why.</dd>
+    <dt><code>learner coach on</code> / <code>learner coach off</code></dt>
+    <dd>Turns the coach regime on or off in this repository: the dev writes the code and
+    Claude challenges it on a cadence, rather than quizzing afterwards. See
+    <a href="config.html">Configuration</a> for the <code>coach*</code> keys that tune it.</dd>
+    <dt><code>learner coach delegate &lt;glob&gt; …</code></dt>
+    <dd>Lets Claude write inside the given globs for this session; <code>learner coach
+    delegate none</code> clears it.</dd>
+    <dt><code>learner coach review [base-ref]</code></dt>
+    <dd>Runs one coach review right now, off-cadence, instead of waiting for the watcher.</dd>
     <dt><code>learner help</code></dt>
     <dd>Prints its subcommand and parameter reference, then stops.</dd>
   </dl>
