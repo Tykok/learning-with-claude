@@ -1827,11 +1827,11 @@ pages, matching the structure each already has.
 **Files:**
 - Modify: `README.md`
 - Modify: `docs/usage.html`
-- Modify: `docs/config.html`
+- Modify: `docs/config.html` — **grouping only**; the twelve rows landed in Task 2 (see Step 5)
 - Modify: `test.sh` — doc guards
 
 **Interfaces:**
-- Consumes: the config table (Task 2), the subcommands (Task 7).
+- Consumes: the config table (Task 2, which also already placed the `config.html` rows), the subcommands (Task 7).
 - Produces: nothing.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1912,12 +1912,22 @@ growth and its idle stop, `learner coach review` for an off-cadence review, and 
 interactive-session-only limitation. Add `<a href="#coach">` to whatever in-page navigation the
 file already has.
 
-- [ ] **Step 5: Add the coach keys to `docs/config.html`**
+- [ ] **Step 5: Group the coach keys already in `docs/config.html`**
 
-Add the twelve rows to the existing key table (find it with `sed -n '25,85p' docs/config.html`),
-with the same `<td>` structure and the same value/default/effect columns the existing rows use.
-Group them under a sub-heading or a visually separated block so the pomodoro keys and the
-threshold-only keys are distinguishable, exactly as the spec's table distinguishes them.
+**Scope narrowed by a ruling during execution — read this before you start.** The twelve rows
+are already in the table: `test.sh:1670-1689` is a pre-existing invariant that parses
+`LEARNER_DEFAULTS` out of `hooks/learner-config.sh` and asserts every key's default appears in
+`docs/config.html`, so Task 2 could not land green without adding them. It added twelve plain
+rows using the spec's own wording. Three of this task's `config.html` assertions therefore
+already pass at the RED step — that is expected, not a sign you have the wrong brief.
+
+Your job here is presentation, not content: group the rows so the pomodoro keys and the
+threshold-only keys are visually distinguishable, exactly as the spec's table distinguishes
+them, using the same `<td>` structure the existing rows use (inspect with
+`sed -n '25,110p' docs/config.html`). Do not restate a default in prose — the invariant above
+parses the table, and a second copy of a default is a second thing to keep in sync.
+
+Leave the `learner.json.example` allow-list in `test.sh` alone; Task 2 already widened it.
 
 - [ ] **Step 6: Run the tests, and check the site still renders**
 
