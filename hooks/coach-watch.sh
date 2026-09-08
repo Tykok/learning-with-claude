@@ -181,17 +181,42 @@ if [ "$PRINT_MATERIAL" = 1 ]; then
 fi
 
 # --- cadence ----------------------------------------------------------------
-LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
-CADENCE=$(printf '%s' "$CFG" | jq -r '.coachCadence // "pomodoro"')
-case "$CADENCE" in threshold) ;; *) CADENCE=pomodoro ;; esac
+# All of this is re-derived from $CFG by coach_load_cadence, called once here
+# and again at the top of every loop iteration below: `learner coach off`
+# (or a cadence retune) is a config-file edit the dev makes mid-session, and
+# nothing else re-reads it once the watcher is armed as a Monitor.
+coach_load_cadence() {
+  LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
+  CADENCE=$(printf '%s' "$CFG" | jq -r '.coachCadence // "pomodoro"')
+  case "$CADENCE" in threshold) ;; *) CADENCE=pomodoro ;; esac
 
-IDLE_MAX=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachIdleCycles // empty')" 2 1)
-CHALLENGE=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachChallengeMinutes // empty')" 8 0)
-POLL=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachPollSeconds // empty')" 45 5)
-THR_LINES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachLines // empty')" 40 1)
-THR_FILES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachFiles // empty')" 3 1)
-THR_EVERY=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachEveryMinutes // empty')" 0 0)
-COOLDOWN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachCooldownMinutes // empty')" 5 0)
+  IDLE_MAX=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachIdleCycles // empty')" 2 1)
+  CHALLENGE=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachChallengeMinutes // empty')" 8 0)
+  POLL=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachPollSeconds // empty')" 45 5)
+  THR_LINES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachLines // empty')" 40 1)
+  THR_FILES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachFiles // empty')" 3 1)
+  THR_EVERY=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachEveryMinutes // empty')" 0 0)
+  COOLDOWN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachCooldownMinutes // empty')" 5 0)
+  WORK_MINUTES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachWorkMinutes // empty')" 25 1)
+
+  # coachIdleCycles is documented (spec §2.4) as idle periods of one
+  # work-block-equivalent (coachWorkMinutes), in both cadences. In pomodoro,
+  # coach_cycle already runs once per work block, so one poll == one period. In
+  # threshold, coach_cycle runs once per coachPollSeconds — many times faster —
+  # so IDLE_MAX must be scaled into polls-per-period, or "2 idle cycles" becomes
+  # two 45-second polls instead of two work blocks. The division is guarded to
+  # never yield less than 1: a coachPollSeconds larger than the work block would
+  # otherwise floor to 0 and make the very first empty poll look like a whole
+  # elapsed period.
+  if [ "$CADENCE" = threshold ]; then
+    POLLS_PER_PERIOD=$(( WORK_MINUTES * 60 / POLL ))
+    [ "$POLLS_PER_PERIOD" -lt 1 ] && POLLS_PER_PERIOD=1
+  else
+    POLLS_PER_PERIOD=1
+  fi
+  IDLE_LIMIT=$((IDLE_MAX * POLLS_PER_PERIOD))
+}
+coach_load_cadence
 
 # The empty-cycle counter has to survive `--once`, which is a fresh process per
 # cycle in tests and the only way the idle path is testable at all.
@@ -216,7 +241,7 @@ coach_cycle() {
     _cce=$(coach_read_int "$EMPTYF" 0)
     _cce=$((_cce + 1))
     printf '%s' "$_cce" > "$EMPTYF"
-    if [ "$_cce" -ge "$IDLE_MAX" ]; then
+    if [ "$_cce" -ge "$IDLE_LIMIT" ]; then
       # One line, then stop. The watcher costs nothing while it waits, but every
       # notification opens a turn — so an abandoned session must not keep
       # producing them.
@@ -274,6 +299,14 @@ fi
 CYCLE=1
 rm -f "$EMPTYF" "$LASTF"
 while :; do
+  # `learner coach off` (or a retune) is a config-file edit made mid-session,
+  # with nothing else to re-read it once this loop is running as a Monitor —
+  # re-check on every iteration so it takes effect within one cycle instead of
+  # only at the next re-arm.
+  CFG=$(learner_config)
+  learner_coach_active "$CFG" "$ROOT" || exit 0
+  coach_load_cadence
+
   if [ "$CADENCE" = threshold ]; then
     sleep "$POLL"
   else
