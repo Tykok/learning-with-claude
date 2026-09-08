@@ -2242,6 +2242,131 @@ denied "$out" && ok "symlinked path into a not-yet-created directory is still de
 [ -z "$(gate "$SID_G" "")" ] && ok "missing file_path is a no-op" || ko "missing file_path is a no-op"
 [ -z "$(printf 'not json' | sh "$GATE")" ] && ok "non-JSON payload is a no-op" || ko "non-JSON payload is a no-op"
 
+# --- coach watcher: candidates and metric -----------------------------------
+WATCH="$ROOT/hooks/coach-watch.sh"
+basedir() { echo "$TMPDIR/claude-learner-$1.coach-base"; }
+sess() { echo "$TMPDIR/claude-learner-$1.session"; }
+
+# A dedicated repo so the watcher tests cannot disturb the record-edit ones.
+CREPO="$WORK/crepo"
+mkdir -p "$CREPO/.claude"
+git -C "$CREPO" init -q
+git -C "$CREPO" config user.email t@t.t
+git -C "$CREPO" config user.name t
+CREPO="$(cd "$CREPO" && pwd -P)"
+
+lines() { i=1; while [ "$i" -le "$1" ]; do echo "line $i"; i=$((i + 1)); done; }
+
+# $1 = session id — one measurement cycle, material on stdout as "<delta>\t<rel>"
+material() { CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$1" --once --print-material; }
+
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+rm -f "$PCFG"
+SID_W=watch1
+rm -rf "$(basedir "$SID_W")"; rm -f "$(sess "$SID_W")"
+
+# No baseline yet: a new untracked file counts every one of its lines.
+mkdir -p "$CREPO/src"
+lines 10 > "$CREPO/src/Service.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "10" ] \
+  && ok "new untracked file counts all its lines" || ko "new untracked file counts all its lines"
+
+# Advance the baseline, change nothing: an empty cycle.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+out=$(material "$SID_W")
+[ -z "$out" ] && ok "unchanged file after baseline is an empty cycle" \
+  || ko "unchanged file after baseline is an empty cycle"
+
+# Three lines appended must count as 3, not as the file's full 13. This is the
+# assertion that catches a regression to measuring against HEAD.
+lines 3 | sed 's/^/extra /' >> "$CREPO/src/Service.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "3" ] \
+  && ok "delta is measured since the last review, not since HEAD" \
+  || ko "delta is measured since the last review, not since HEAD"
+
+# Work the dev committed since the baseline still counts. Without the
+# <baseline-HEAD>..HEAD term the candidate set would be empty here and the dev
+# would be cut off for idleness right after their most productive block.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 4 | sed 's/^/committed /' >> "$CREPO/src/Service.kt"
+git -C "$CREPO" add -A >/dev/null 2>&1
+git -C "$CREPO" commit -q -m "dev commits mid-block"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "4" ] \
+  && ok "work committed since the baseline still counts" \
+  || ko "work committed since the baseline still counts"
+
+# Claude's own writes are the quiz's material, not the coach's.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+mkdir -p "$CREPO/src/repository"
+lines 20 > "$CREPO/src/repository/UserRepo.kt"
+echo "$CREPO/src/repository/UserRepo.kt" > "$(sess "$SID_W")"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/repository/UserRepo.kt"{print $1}')" ] \
+  && ok "a path Claude wrote this session is excluded" \
+  || ko "a path Claude wrote this session is excluded"
+rm -f "$(sess "$SID_W")"
+
+# Exclusions come from the shared helper, so both layers must apply.
+mkdir -p "$CREPO/node_modules/x"
+lines 50 > "$CREPO/node_modules/x/index.js"
+lines 30 > "$CREPO/NOTES.md"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2 ~ /node_modules/{print $1}')" ] \
+  && ok "node_modules is excluded from the metric" || ko "node_modules is excluded from the metric"
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="NOTES.md"{print $1}')" ] \
+  && ok "untrackGlobs is excluded from the metric" || ko "untrackGlobs is excluded from the metric"
+rm -rf "$CREPO/node_modules" "$CREPO/NOTES.md"
+
+# A line count over a PNG is noise.
+printf 'PNG\000\001\002binary\000data' > "$CREPO/src/logo.png"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/logo.png"{print $1}')" ] \
+  && ok "binary file is excluded from the metric" || ko "binary file is excluded from the metric"
+rm -f "$CREPO/src/logo.png"
+
+# An emptied file is a real 10-line change, not a binary and not nothing.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 10 > "$CREPO/src/Empty.kt"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+: > "$CREPO/src/Empty.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Empty.kt"{print $1}')" = "10" ] \
+  && ok "emptying a file counts its deleted lines" || ko "emptying a file counts its deleted lines"
+rm -f "$CREPO/src/Empty.kt"
+
+# coach_delta must print exactly one number. `grep -c` prints "0" and exits 1 on
+# no matches, so a naive `|| printf '0'` would yield "00" here.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 6 > "$CREPO/src/Single.kt"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+printf 'x' >> "$CREPO/src/Single.kt"
+out=$(material "$SID_W")
+d=$(printf '%s' "$out" | awk -F'\t' '$2=="src/Single.kt"{print $1}')
+case "$d" in
+  [0-9]) ok "delta is a single normalised integer" ;;
+  *) ko "delta is a single normalised integer (got '$d')" ;;
+esac
+rm -f "$CREPO/src/Single.kt"
+
+# The watcher must be as silent as the gate when the regime is off.
+echo '{"level":"C","coach":false}' > "$GCFG"
+out=$(material "$SID_W")
+[ -z "$out" ] && ok "watcher silent when coach is off" || ko "watcher silent when coach is off"
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
+# A repo with no commits at all: the untracked term alone must still work.
+NREPO="$WORK/nrepo"; mkdir -p "$NREPO"; git -C "$NREPO" init -q
+NREPO="$(cd "$NREPO" && pwd -P)"
+lines 7 > "$NREPO/fresh.kt"
+out=$(CLAUDE_PROJECT_DIR="$NREPO" sh "$WATCH" watch-fresh --once --print-material)
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="fresh.kt"{print $1}')" = "7" ] \
+  && ok "repo with no commits still measures untracked files" \
+  || ko "repo with no commits still measures untracked files"
+rm -rf "$(basedir watch-fresh)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
