@@ -2189,11 +2189,36 @@ printf 'src/**/repository/**\nsrc/**/mapper/**\n' > "$(scope "$SID_G")"
 mkdir -p "$WORK/proj/src/main/mapper"
 [ -z "$(gate "$SID_G" "$WORK/proj/src/main/mapper/UserMapper.kt")" ] \
   && ok "second delegated glob is allowed" || ko "second delegated glob is allowed"
+
+# Regression (fix round 1, Finding 2): `read` delivers a final line with no
+# trailing newline but returns non-zero, so a bare `while read` loop drops it
+# silently. The scope file below ends without a trailing newline on its last
+# glob, which must still match.
+printf 'src/**/repository/**\nsrc/**/mapper/**' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/mapper/UserMapper2.kt")" ] \
+  && ok "delegated glob with no trailing newline on the last line still matches" \
+  || ko "delegated glob with no trailing newline on the last line still matches"
 rm -f "$(scope "$SID_G")"
 
 # Outside the repo: Claude's own config and the scratchpad are never coach material.
 [ -z "$(gate "$SID_G" "$WORK/cfg/learner.json")" ] \
   && ok "path outside the repo is allowed" || ko "path outside the repo is allowed"
+
+# Regression (fix round 1, Finding 1): a PreToolUse hook fires before the write,
+# so the immediate parent of a brand-new file in a not-yet-created subdirectory
+# legitimately does not exist yet. Reached through a symlinked repo path, the
+# slow outside-the-repo resolution must walk up to the deepest EXISTING
+# ancestor rather than giving up at the first missing directory and silently
+# allowing an in-repo, undelegated write.
+ln -sf "$WORK/proj" "$WORK/proj-link"
+out=$(gate "$SID_G" "$WORK/proj-link/src/coachbrandnew/NewFile.kt")
+denied "$out" && ok "symlinked path into a not-yet-created directory is still denied" \
+  || ko "symlinked path into a not-yet-created directory is still denied"
+# Companion: a genuinely outside path through a not-yet-created directory chain
+# must still be allowed, so the walk-up fix cannot pass by denying everything.
+[ -z "$(gate "$SID_G" "$WORK/cfg/brandnew/sub/F.kt")" ] \
+  && ok "genuinely outside path into a not-yet-created directory is still allowed" \
+  || ko "genuinely outside path into a not-yet-created directory is still allowed"
 
 # untrackGlobs material is allowed: blocking a README write is friction with no
 # pedagogical payoff.
