@@ -1875,6 +1875,24 @@ for sub in $SUBCOMMANDS; do
     || ko "usage.html documents the 'learner $sub' subcommand"
 done
 
+# --- coach docs -------------------------------------------------------------
+grep -qi 'coach' "$RM" && ok "README covers coach mode" || ko "README covers coach mode"
+grep -q 'learner coach on' "$RM" \
+  && ok "README shows how to turn coach on" || ko "README shows how to turn coach on"
+grep -q 'coach delegate' "$RM" \
+  && ok "README shows delegation" || ko "README shows delegation"
+grep -qi 'coach' "$SITE_USAGE" && ok "usage.html covers coach mode" \
+  || ko "usage.html covers coach mode"
+for k in coachCadence coachWorkMinutes coachIdleCycles; do
+  grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
+    || ko "config.html documents $k"
+done
+# The interactive-session-only limitation must be stated where a dev will hit it,
+# not only in the design doc they will never read.
+grep -qi 'interactive' "$SITE_USAGE" \
+  && ok "usage.html states the interactive-session limitation" \
+  || ko "usage.html states the interactive-session limitation"
+
 grep -qF -- '--project' "$SITE_SAFETY" \
   && ok "safety.html documents the legacy cleanup flag" \
   || ko "safety.html documents the legacy cleanup flag"
