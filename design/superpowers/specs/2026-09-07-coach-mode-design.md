@@ -345,6 +345,13 @@ Nothing about the quiz side changes, and the two regimes compose rather than col
    could, which is what `coachCooldownMinutes` is for.
 7. **The watcher does not survive the session.** `SessionEnd` is the end of the cadence; the
    next session re-arms at cycle 1. Growing work blocks reset with it.
+8. **A coach challenge and a quiz block can land in the same turn.** With a delegated slice,
+   Claude writing inside it triggers `learner-record-edit.sh` → a pending quiz edit, while the
+   dev's own concurrent changes outside it can trigger a coach notification — both protocols
+   want the same turn, and both write `memory.md`/`recap.md`. `hooks/learner-quiz.sh` is
+   deliberately unaware of coach mode; teaching Claude to finish one protocol before starting the
+   other (see `references/coach.md`) covers the common case, but whether the quiz should suppress
+   itself while a coach challenge is outstanding is a product decision, not made here.
 
 ## Files touched
 
