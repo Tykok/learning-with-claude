@@ -2431,6 +2431,28 @@ denied "$out" && ok "symlinked path into a not-yet-created directory is still de
   && ok "genuinely outside path into a not-yet-created directory is still allowed" \
   || ko "genuinely outside path into a not-yet-created directory is still allowed"
 
+# Regression (task-3b / fix round 2): REL was derived from the RAW file_path,
+# not the resolved one, so on a repo reached through a symlink no delegated
+# glob could ever match — ROOT is physical but the stripped prefix wasn't, so
+# REL stayed an absolute path that no relative glob could match. Reproduces
+# through the same $WORK/proj-link symlink used above, this time with a glob
+# actually delegated.
+printf 'src/**/repository/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj-link/src/main/repository/UserRepo.kt")" ] \
+  && ok "delegated glob matches through a symlinked repo path" \
+  || ko "delegated glob matches through a symlinked repo path"
+out=$(gate "$SID_G" "$WORK/proj-link/src/main/service/Service.kt")
+denied "$out" && ok "undelegated sibling through a symlinked repo path is still denied" \
+  || ko "undelegated sibling through a symlinked repo path is still denied"
+
+# The sharpest case: PreToolUse fires before the write, so the target
+# directory reached through the symlink may not exist on disk yet either.
+printf 'src/newmodule/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj-link/src/newmodule/NewRepo.kt")" ] \
+  && ok "delegated glob matches a not-yet-created directory through a symlink" \
+  || ko "delegated glob matches a not-yet-created directory through a symlink"
+rm -f "$(scope "$SID_G")"
+
 # untrackGlobs material is allowed: blocking a README write is friction with no
 # pedagogical payoff.
 [ -z "$(gate "$SID_G" "$WORK/proj/README.md")" ] \
