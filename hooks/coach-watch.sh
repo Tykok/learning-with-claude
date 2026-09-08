@@ -9,11 +9,13 @@
 # tree is the only mechanism that can see the dev's edits, which is what coach
 # mode is entirely about.
 #
-# Usage: sh coach-watch.sh <session-id> [--once] [--print-material] [--advance]
+# Usage: sh coach-watch.sh <session-id> [--once] [--print-material] [--advance] [--cycle N]
 #   --once             run a single cycle without sleeping, then return (tests)
 #   --print-material   print "<delta>\t<rel>" per changed file instead of a
 #                      trigger line (tests)
 #   --advance          advance the baseline and return, emitting nothing (tests)
+#   --cycle N          inject the cycle number a real loop would hold at this
+#                      point, for the trigger line's "cycle: N" field (tests)
 #
 # The session id is an argument, not stdin: a hook receives it in its payload
 # but a Monitor command does not, so whoever arms the watcher substitutes it.
@@ -127,6 +129,9 @@ coach_material() {
 # Rewrite the baseline from the repo-relative paths on stdin. Called at emission
 # time, immediately after a line is printed — never after the review finishes: a
 # review Claude never runs must not re-fire the same material one cycle later.
+# Crash window: the content copies below are written before the pointers
+# (.manifest, .head) advance, so a kill between them costs at most one cycle
+# of under-reported deltas next time — never a lost or duplicated file.
 coach_advance() {
   mkdir -p "$BASEDIR" 2>/dev/null || return 0
   _canew="$BASEDIR/.manifest.new"
