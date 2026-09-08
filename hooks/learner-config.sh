@@ -181,6 +181,12 @@ learner_active() {
 learner_int() {
   _lir="${1:-}"; _lif="$2"; _lil="${3:-1}"
   case "$_lir" in ''|null|*[!0-9]*) printf '%s' "$_lif"; return 0 ;; esac
+  # Strip leading zeros: a value like "008" is digit-only and passes the guard
+  # above, but /bin/sh's POSIX-mode arithmetic treats a leading-zero literal as
+  # octal and aborts on an invalid digit, which would otherwise crash the
+  # caller's arithmetic instead of just returning an integer. "0" and "00" stay
+  # "0" rather than becoming empty.
+  while [ ${#_lir} -gt 1 ] && [ "${_lir#0}" != "$_lir" ]; do _lir=${_lir#0}; done
   [ "$_lir" -lt "$_lil" ] && { printf '%s' "$_lif"; return 0; }
   printf '%s' "$_lir"
 }

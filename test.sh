@@ -266,6 +266,46 @@ WCFG=$(cfgsh 'learner_config')
 [ "$(wm 1)" = "25" ] && ok "non-numeric coachWorkMinutes falls back to 25" \
   || ko "non-numeric coachWorkMinutes falls back to 25"
 
+# --- learner_int leading-zero safety (regression) ---------------------------
+# /bin/sh's POSIX-mode arithmetic parses a leading-zero digit string as octal
+# and aborts on an invalid digit (e.g. "008"); learner_int's digit-only guard
+# lets such a string through, so it must normalise before ever reaching a
+# caller's $(( )). Driven through cfgsh (sh -c), the interpreter every hook
+# actually runs under: this does NOT reproduce under an interactive zsh, where
+# $((008)) silently evaluates to 8, so asserting on the numeric result (not
+# just "no error") is what keeps this test meaningful.
+li() { cfgsh "learner_int '$1' '$2' '$3'"; }
+[ "$(li 008 25 1)" = "8" ]  && ok "learner_int strips leading zeros (008 -> 8)" \
+  || ko "learner_int strips leading zeros (008 -> 8)"
+[ "$(li 0 5 0)" = "0" ]    && ok "learner_int keeps a legitimate 0 at floor 0" \
+  || ko "learner_int keeps a legitimate 0 at floor 0"
+[ "$(li 00 5 0)" = "0" ]   && ok "learner_int normalises 00 to 0 at floor 0" \
+  || ko "learner_int normalises 00 to 0 at floor 0"
+[ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
+  || ko "learner_int leaves a plain 25 unchanged"
+
+# End-to-end: the exact crash reported against learner_coach_work_minutes — a
+# leading-zero coachWorkMinutes must not abort the caller's arithmetic (which
+# would print nothing and hand a cadence sleep an empty operand).
+echo '{"level":"C","coach":true,"coachWorkMinutes":"008"}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "8" ] && ok "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)" \
+  || ko "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)"
+
+# --- docs/config.html: threshold-only prose count matches its table --------
+# Counted dynamically rather than hard-coded, so a table row added or removed
+# later turns this red instead of leaving stale prose silently wrong again.
+tcount=$(grep -c -- '— <code>threshold</code>' "$ROOT/docs/config.html")
+case "$tcount" in
+  4) tword=four ;;
+  5) tword=five ;;
+  6) tword=six ;;
+  *) tword='__no-word-mapped__' ;;
+esac
+grep -qF "last $tword keys" "$ROOT/docs/config.html" \
+  && ok "config.html's threshold-only prose count matches its table ($tcount)" \
+  || ko "config.html's threshold-only prose count matches its table ($tcount)"
+
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | sh "$ONB")
