@@ -663,8 +663,8 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
 [ "$n" = 6 ] \
-  && ok "install lays down 6 hook files" \
-  || ko "install lays down 6 hook files (got $n)"
+  && ok "install lays down 6 learner-*.sh hook files" \
+  || ko "install lays down 6 learner-*.sh hook files (got $n)"
 
 # Only 5 are wired: learner-config.sh is sourced, never invoked by Claude Code.
 n1=$(hookcount "$I")
@@ -1888,10 +1888,76 @@ for k in coachCadence coachWorkMinutes coachIdleCycles; do
     || ko "config.html documents $k"
 done
 # The interactive-session-only limitation must be stated where a dev will hit it,
-# not only in the design doc they will never read.
-grep -qi 'interactive' "$SITE_USAGE" \
+# not only in the design doc they will never read. Anchored to 'claude -p' rather
+# than the bare word "interactive": line 38's "The interactive exercise above…"
+# (about the fill question style) has satisfied a looser grep since long before
+# this branch, and would stay green even with the whole limitation paragraph
+# deleted — this is the third instance of that non-discriminating-grep defect
+# in this plan.
+grep -qF 'claude -p' "$SITE_USAGE" \
   && ok "usage.html states the interactive-session limitation" \
   || ko "usage.html states the interactive-session limitation"
+
+# --- hook count drift guard ---------------------------------------------------
+# Five prose spots (README twice, index.html, safety.html, install.html) each
+# state how many hook files ship, and none of them turned red when coach-gate.sh
+# and coach-watch.sh joined the original six — "six" quietly went stale in all
+# five at once. Ground truth is read from the filesystem and from
+# hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
+# above (test.sh:1837-1854) and the threshold-only prose-count check further up
+# (search "docs/config.html: threshold-only prose count"), so a ninth hook (or
+# a wiring change) turns every stale copy red automatically instead of leaving
+# a plausible-sounding number wrong forever.
+hook_files=$(find "$ROOT/hooks" -maxdepth 1 -name '*.sh' | sort)
+hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
+case "$hook_n" in
+  6) hook_word=six ;;
+  7) hook_word=seven ;;
+  8) hook_word=eight ;;
+  9) hook_word=nine ;;
+  10) hook_word=ten ;;
+  *) hook_word='__no-word-mapped__' ;;
+esac
+
+wired_n=$(jq '[.. | .command? // empty] | length' "$ROOT/hooks/settings.snippet.json")
+case "$wired_n" in
+  5) wired_word=five ;;
+  6) wired_word=six ;;
+  7) wired_word=seven ;;
+  8) wired_word=eight ;;
+  *) wired_word='__no-word-mapped__' ;;
+esac
+
+# The strongest guard: every shipped hook file must be named in install.html's
+# "what gets installed" table, the one place that lists them individually
+# rather than as a bare count — this is what would have caught coach-watch.sh
+# missing from that table entirely, which no count-matching check below can.
+for hf in $hook_files; do
+  base=$(basename "$hf")
+  grep -qF "hooks/$base" "$SITE_INSTALL" \
+    && ok "install.html's table lists $base" \
+    || ko "install.html's table lists $base"
+done
+
+grep -qiF "$hook_word POSIX \`sh\` hooks plus a \`learner\` skill" "$RM" \
+  && ok "README's hook-count intro matches the $hook_n files on disk" \
+  || ko "README's hook-count intro matches the $hook_n files on disk"
+
+grep -qiF "covers all $hook_word shipped hook files" "$RM" \
+  && ok "README's hooks/*.sh gloss matches the $hook_n files on disk" \
+  || ko "README's hooks/*.sh gloss matches the $hook_n files on disk"
+
+grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
+  && ok "index.html's hook count matches the $hook_n files on disk" \
+  || ko "index.html's hook count matches the $hook_n files on disk"
+
+grep -qiF "the $hook_word hook files, the skill" "$SITE_SAFETY" \
+  && ok "safety.html's hook count matches the $hook_n files on disk" \
+  || ko "safety.html's hook count matches the $hook_n files on disk"
+
+grep -qiF "$hook_word hook files ship and $wired_word are wired" "$SITE_INSTALL" \
+  && ok "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)" \
+  || ko "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)"
 
 grep -qF -- '--project' "$SITE_SAFETY" \
   && ok "safety.html documents the legacy cleanup flag" \
