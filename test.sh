@@ -194,6 +194,78 @@ excl "$WORK/proj/src/Main.kt" && ko "no globs: source still material" || ok "no 
 out=$(cfgsh "learner_excluded '$WORK/proj/src/Main.kt' '$XCFG'; case \"\$-\" in *f*) echo LEAKED ;; *) echo CLEAN ;; esac")
 [ "$out" = "CLEAN" ] && ok "learner_excluded restores globbing" || ko "learner_excluded restores globbing"
 
+# --- coach config -----------------------------------------------------------
+echo '{"level":"C"}' > "$GCFG"
+rm -f "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "false" ] \
+  && [ "$(echo "$out" | jq -r .coachCadence)" = "pomodoro" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "25" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkGrowthMinutes)" = "5" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMaxMinutes)" = "45" ] \
+  && [ "$(echo "$out" | jq -r .coachChallengeMinutes)" = "8" ] \
+  && [ "$(echo "$out" | jq -r .coachIdleCycles)" = "2" ]; } \
+  && ok "coach defaults are present" || ko "coach defaults are present"
+
+# `coach` is a boolean, so it must survive the `*` merge (which `//` would break).
+echo '{"level":"C","coach":true}' > "$GCFG"
+echo '{"coach":false}' > "$PCFG"
+out=$(cfgsh 'learner_config')
+[ "$(echo "$out" | jq -r .coach)" = "false" ] \
+  && ok "project layer can turn coach off" || ko "project layer can turn coach off"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+echo '{"coach":true,"coachWorkMinutes":10}' > "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "true" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "10" ]; } \
+  && ok "project layer can turn coach on and retune it" \
+  || ko "project layer can turn coach on and retune it"
+
+# --- learner_coach_active ---------------------------------------------------
+echo '{"level":"C","coach":true}' > "$GCFG"
+rm -f "$PCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ok "coach active with level + coach:true" || ko "coach active with level + coach:true"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive when coach:false" || ok "coach inactive when coach:false"
+
+echo '{"coach":true}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive without a level" || ok "coach inactive without a level"
+
+echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive when learner is disabled" || ok "coach inactive when learner is disabled"
+
+# --- learner_coach_work_minutes --------------------------------------------
+echo '{"level":"C","coach":true}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+wm() { cfgsh "learner_coach_work_minutes $1 '$WCFG'"; }
+[ "$(wm 1)" = "25" ] && ok "work block cycle 1 = 25" || ko "work block cycle 1 = 25"
+[ "$(wm 2)" = "30" ] && ok "work block cycle 2 = 30" || ko "work block cycle 2 = 30"
+[ "$(wm 5)" = "45" ] && ok "work block cycle 5 = 45 (capped)" || ko "work block cycle 5 = 45 (capped)"
+[ "$(wm 99)" = "45" ] && ok "work block stays at the cap" || ko "work block stays at the cap"
+
+echo '{"level":"C","coach":true,"coachWorkGrowthMinutes":0}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 7)" = "25" ] && ok "growth 0 keeps a fixed work block" || ko "growth 0 keeps a fixed work block"
+
+# max below min is unambiguous in intent: clamp, do not reject.
+echo '{"level":"C","coach":true,"coachWorkMinutes":30,"coachWorkMaxMinutes":10}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "30" ] && ok "coachWorkMaxMinutes below min clamps to min" \
+  || ko "coachWorkMaxMinutes below min clamps to min"
+
+# A garbage value must fall back to the default rather than produce an empty
+# sleep interval, which would spin the watcher at 100% CPU.
+echo '{"level":"C","coach":true,"coachWorkMinutes":"soon"}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "25" ] && ok "non-numeric coachWorkMinutes falls back to 25" \
+  || ko "non-numeric coachWorkMinutes falls back to 25"
+
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | sh "$ONB")
@@ -629,7 +701,7 @@ jq -e '.level == "S"' "$I8/learner.json" >/dev/null 2>&1 \
   && ok "re-install keeps an existing config" \
   || ko "re-install keeps an existing config"
 
-jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths"] | length == 0' \
+jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachCadence","coachWorkMinutes","coachWorkGrowthMinutes","coachWorkMaxMinutes","coachChallengeMinutes","coachIdleCycles","coachPollSeconds","coachLines","coachFiles","coachEveryMinutes","coachCooldownMinutes"] | length == 0' \
   "$ROOT/learner.json.example" >/dev/null 2>&1 \
   && ok "learner.json.example carries only supported keys" \
   || ko "learner.json.example carries only supported keys"

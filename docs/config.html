@@ -56,9 +56,28 @@
       <tr><td><code>blanksPerExercise</code></td><td>int ≥ 1</td><td><code>2</code></td><td><code>// LEARNER-TODO</code> holes cut in a <code>fill</code> exercise</td></tr>
       <tr><td><code>untrackGlobs</code></td><td>array of globs</td><td><code>[]</code></td><td>Extra paths excluded from <a href="safety.html#material">quiz material</a></td></tr>
       <tr><td><code>disabledPaths</code></td><td>array of path prefixes</td><td><code>[]</code></td><td>Repositories where Learner stays silent</td></tr>
+      <tr><td><code>coach</code></td><td>bool</td><td><code>false</code></td><td>Coach regime: the dev writes, Claude challenges</td></tr>
+      <tr><td><code>coachCadence</code></td><td><code>pomodoro</code>/<code>threshold</code></td><td><code>pomodoro</code></td><td>Which clock drives reviews</td></tr>
+      <tr><td><code>coachWorkMinutes</code></td><td>int ≥ 1</td><td><code>25</code></td><td>First work block</td></tr>
+      <tr><td><code>coachWorkGrowthMinutes</code></td><td>int ≥ 0</td><td><code>5</code></td><td>Added to the work block per completed cycle</td></tr>
+      <tr><td><code>coachWorkMaxMinutes</code></td><td>int ≥ 1</td><td><code>45</code></td><td>Work-block ceiling</td></tr>
+      <tr><td><code>coachChallengeMinutes</code></td><td>int ≥ 0</td><td><code>8</code></td><td>Challenge window, fixed</td></tr>
+      <tr><td><code>coachIdleCycles</code></td><td>int ≥ 1</td><td><code>2</code></td><td>Empty work blocks before the watcher stops</td></tr>
+      <tr><td><code>coachPollSeconds</code></td><td>int ≥ 5</td><td><code>45</code></td><td>Poll interval — <code>threshold</code> cadence only</td></tr>
+      <tr><td><code>coachLines</code></td><td>int ≥ 1</td><td><code>40</code></td><td>Lines since last review that trigger one — <code>threshold</code> only</td></tr>
+      <tr><td><code>coachFiles</code></td><td>int ≥ 1</td><td><code>3</code></td><td>Changed files that trigger one — <code>threshold</code> only</td></tr>
+      <tr><td><code>coachEveryMinutes</code></td><td>int ≥ 0</td><td><code>0</code></td><td>Elapsed-time trigger, <code>0</code> = off — <code>threshold</code> only</td></tr>
+      <tr><td><code>coachCooldownMinutes</code></td><td>int ≥ 0</td><td><code>5</code></td><td>Floor between two reviews — <code>threshold</code> only</td></tr>
     </tbody>
   </table>
   </div>
+
+  <p>The seven keys above configure the automatic quiz. The twelve <code>coach*</code> keys
+  configure the coach regime, where the dev writes the code and Claude challenges it on a
+  cadence: <code>coach</code> plus the pomodoro-cadence keys are read regardless of
+  <code>coachCadence</code>; the last four keys, marked "threshold only" above, are read only
+  when <code>coachCadence</code> is <code>"threshold"</code>. See the coach section of
+  <a href="usage.html">Usage</a> for how the cadence behaves.</p>
 
   <p><code>level</code> is the only one of the seven with no default. The other six have
   theirs in <code>LEARNER_DEFAULTS</code> at the top of
