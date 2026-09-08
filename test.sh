@@ -2115,6 +2115,98 @@ grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ok "plugin.json's version matches the VERSION file" \
   || ko "plugin.json's version matches the VERSION file"
 
+# --- coach gate -------------------------------------------------------------
+GATE="$ROOT/hooks/coach-gate.sh"
+scope() { echo "$TMPDIR/claude-learner-$1.coach-scope"; }
+
+# $1 = session id, $2 = file path, $3 = tool name (default Edit)
+gate() {
+  printf '{"session_id":"%s","tool_name":"%s","tool_input":{"file_path":"%s"}}' \
+    "$1" "${3:-Edit}" "$2" | sh "$GATE"
+}
+denied() { printf '%s' "$1" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1; }
+
+SID_G=gate1
+rm -f "$(scope "$SID_G")"
+
+# Coach off: the gate must be completely silent, whatever the path.
+echo '{"level":"C","coach":false}' > "$GCFG"
+rm -f "$PCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent when coach is off" || ko "gate silent when coach is off"
+
+# Learner inactive beats coach:true — same five conditions as the quiz.
+echo '{"coach":true}' > "$GCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent without a level" || ko "gate silent without a level"
+echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent when learner is disabled" || ko "gate silent when learner is disabled"
+
+# Coach on, nothing delegated: repo source is denied.
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+mkdir -p "$WORK/proj/src/main/repository" "$WORK/proj/src/main/service"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+denied "$out" && ok "undelegated repo source is denied" || ko "undelegated repo source is denied"
+
+# The deny payload must be valid JSON and must name the file and the escape hatch,
+# or Claude gets a refusal it cannot act on and the dev never learns how to delegate.
+{ printf '%s' "$out" | jq -e . >/dev/null 2>&1 \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'Service.kt' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'coach delegate'; } \
+  && ok "deny payload is valid JSON naming the file and the escape hatch" \
+  || ko "deny payload is valid JSON naming the file and the escape hatch"
+
+# All three write tools are gated.
+for tool in Write Edit NotebookEdit; do
+  out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt" "$tool")
+  denied "$out" && ok "$tool is gated" || ko "$tool is gated"
+done
+
+# The suggested glob must never be a bare `**` — that would invite the dev to
+# delegate the entire repo, which is the opposite of what coach mode is for.
+out=$(gate "$SID_G" "$WORK/proj/TopLevel.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "TopLevel.kt" ] && ok "a top-level file suggests itself, not a bare **" \
+  || ko "a top-level file suggests itself, not a bare ** (got '$sug')"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "src/main/service/**" ] && ok "a nested file suggests its directory glob" \
+  || ko "a nested file suggests its directory glob (got '$sug')"
+
+# Delegation: the matching path is allowed, its sibling is still denied.
+printf 'src/**/repository/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/repository/UserRepo.kt")" ] \
+  && ok "delegated glob is allowed" || ko "delegated glob is allowed"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+denied "$out" && ok "sibling of a delegated glob is still denied" \
+  || ko "sibling of a delegated glob is still denied"
+
+# Several globs, one per line.
+printf 'src/**/repository/**\nsrc/**/mapper/**\n' > "$(scope "$SID_G")"
+mkdir -p "$WORK/proj/src/main/mapper"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/mapper/UserMapper.kt")" ] \
+  && ok "second delegated glob is allowed" || ko "second delegated glob is allowed"
+rm -f "$(scope "$SID_G")"
+
+# Outside the repo: Claude's own config and the scratchpad are never coach material.
+[ -z "$(gate "$SID_G" "$WORK/cfg/learner.json")" ] \
+  && ok "path outside the repo is allowed" || ko "path outside the repo is allowed"
+
+# untrackGlobs material is allowed: blocking a README write is friction with no
+# pedagogical payoff.
+[ -z "$(gate "$SID_G" "$WORK/proj/README.md")" ] \
+  && ok "untrackGlobs path is allowed" || ko "untrackGlobs path is allowed"
+[ -z "$(gate "$SID_G" "$WORK/proj/node_modules/x/i.js")" ] \
+  && ok "floor path is allowed" || ko "floor path is allowed"
+
+# Degenerate payloads must never block a tool call.
+[ -z "$(printf '{}' | sh "$GATE")" ] && ok "empty payload is a no-op" || ko "empty payload is a no-op"
+[ -z "$(gate "$SID_G" "")" ] && ok "missing file_path is a no-op" || ko "missing file_path is a no-op"
+[ -z "$(printf 'not json' | sh "$GATE")" ] && ok "non-JSON payload is a no-op" || ko "non-JSON payload is a no-op"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
