@@ -2400,6 +2400,94 @@ else
   skip "sha256-repo regression test (git lacks --object-format=sha256 support)"
 fi
 
+# --- coach watcher: cadence and emission ------------------------------------
+# --once runs one cycle with no sleep, so the whole cadence is testable in
+# milliseconds. `--cycle N` injects the cycle number a real loop would hold.
+cycle_out() { CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$1" --once --cycle "$2"; }
+
+echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+rm -f "$PCFG"
+SID_C=watch2
+rm -rf "$(basedir "$SID_C")"; rm -f "$(sess "$SID_C")"
+rm -f "$CREPO/src/Service.kt"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean 2>/dev/null
+
+mkdir -p "$CREPO/src"
+lines 12 > "$CREPO/src/A.kt"
+lines 8  > "$CREPO/src/B.kt"
+out=$(cycle_out "$SID_C" 3)
+
+printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 20)' \
+  && ok "trigger line carries level, cycle, files and lines" \
+  || ko "trigger line carries level, cycle, files and lines"
+printf '%s' "$out" | grep -q 'src/A.kt' && printf '%s' "$out" | grep -q 'src/B.kt' \
+  && ok "trigger line names the changed files" || ko "trigger line names the changed files"
+printf '%s' "$out" | grep -q 'references/coach.md' \
+  && ok "trigger line points at the protocol, not at the protocol's content" \
+  || ko "trigger line points at the protocol, not at the protocol's content"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "one emission per cycle, never two" || ko "one emission per cycle, never two"
+
+# Emitting advances the baseline, so the very next cycle is empty. Otherwise the
+# dev gets challenged twice on one diff.
+out=$(cycle_out "$SID_C" 4)
+[ -z "$out" ] && ok "emission advances the baseline" || ko "emission advances the baseline"
+
+# Baseline advance only copies content per-SID; it never touches git, so
+# A.kt/B.kt are still untracked. Commit them so a brand-new SID below starts
+# from a clean tree instead of seeing this test's own leftovers as material.
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean2 2>/dev/null
+
+# Idle: coachIdleCycles empty cycles in a row, then one line and exit 0.
+echo '{"level":"S","coach":true,"coachIdleCycles":2}' > "$GCFG"
+SID_I=watch3
+rm -rf "$(basedir "$SID_I")"
+out1=$(cycle_out "$SID_I" 1)   # empty 1 of 2
+[ -z "$out1" ] && ok "first empty cycle says nothing" || ko "first empty cycle says nothing"
+out2=$(cycle_out "$SID_I" 1)   # empty 2 of 2 -> idle
+printf '%s' "$out2" | grep -q 'the watcher has stopped' \
+  && ok "idle line is emitted after coachIdleCycles empty cycles" \
+  || ko "idle line is emitted after coachIdleCycles empty cycles"
+printf '%s' "$out2" | grep -qi 'continue' \
+  && ok "idle line asks about continuing the session" || ko "idle line asks about continuing the session"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_I" --once --cycle 1 >/dev/null 2>&1
+[ "$?" = "0" ] && ok "watcher exits 0 on idle" || ko "watcher exits 0 on idle"
+
+# A cycle with material resets the empty counter: two empty blocks must be
+# *consecutive* to stop the watcher.
+SID_R=watch4
+rm -rf "$(basedir "$SID_R")"
+cycle_out "$SID_R" 1 >/dev/null                       # empty 1
+lines 5 > "$CREPO/src/C.kt"
+cycle_out "$SID_R" 1 >/dev/null                       # material -> reset
+out=$(cycle_out "$SID_R" 1)                           # empty 1 again, not 2
+[ -z "$out" ] && ok "material resets the empty-cycle counter" \
+  || ko "material resets the empty-cycle counter"
+rm -f "$CREPO/src/C.kt"
+
+# The threshold cadence fires on the OR of its three triggers.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
+SID_T=watch5
+rm -rf "$(basedir "$SID_T")"
+lines 25 > "$CREPO/src/D.kt"
+out=$(cycle_out "$SID_T" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold cadence fires on coachLines" || ko "threshold cadence fires on coachLines"
+
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":1,"coachCooldownMinutes":0}' > "$GCFG"
+rm -rf "$(basedir "$SID_T")"
+out=$(cycle_out "$SID_T" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold cadence fires on coachFiles" || ko "threshold cadence fires on coachFiles"
+
+# Under both thresholds and inside the cooldown: silence.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
+rm -rf "$(basedir "$SID_T")"
+out=$(cycle_out "$SID_T" 1)
+[ -z "$out" ] && ok "threshold cadence is silent below every trigger" \
+  || ko "threshold cadence is silent below every trigger"
+rm -f "$CREPO/src/D.kt"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

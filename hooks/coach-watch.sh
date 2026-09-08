@@ -24,14 +24,13 @@ SID="${1:-}"
 [ -n "$SID" ] || exit 0
 shift
 
-ONCE=0; PRINT_MATERIAL=0; ADVANCE_ONLY=0
-# ONCE is read by Task 5's cadence loop, not yet by this measurement-only stub.
-# shellcheck disable=SC2034
+ONCE=0; PRINT_MATERIAL=0; ADVANCE_ONLY=0; CYCLE=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --once) ONCE=1 ;;
     --print-material) PRINT_MATERIAL=1; ONCE=1 ;;
     --advance) ADVANCE_ONLY=1; ONCE=1 ;;
+    --cycle) shift; CYCLE="${1:-1}"; case "$CYCLE" in ''|*[!0-9]*) CYCLE=1 ;; esac ;;
     *) ;;
   esac
   shift
@@ -181,5 +180,104 @@ if [ "$PRINT_MATERIAL" = 1 ]; then
   exit 0
 fi
 
-# Task 5 replaces this with the cadence loop.
-exit 0
+# --- cadence ----------------------------------------------------------------
+LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
+CADENCE=$(printf '%s' "$CFG" | jq -r '.coachCadence // "pomodoro"')
+case "$CADENCE" in threshold) ;; *) CADENCE=pomodoro ;; esac
+
+IDLE_MAX=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachIdleCycles // empty')" 2 1)
+CHALLENGE=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachChallengeMinutes // empty')" 8 0)
+POLL=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachPollSeconds // empty')" 45 5)
+THR_LINES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachLines // empty')" 40 1)
+THR_FILES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachFiles // empty')" 3 1)
+THR_EVERY=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachEveryMinutes // empty')" 0 0)
+COOLDOWN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachCooldownMinutes // empty')" 5 0)
+
+# The empty-cycle counter has to survive `--once`, which is a fresh process per
+# cycle in tests and the only way the idle path is testable at all.
+EMPTYF="$TMPD/claude-learner-${SID}.coach-empty"
+LASTF="$TMPD/claude-learner-${SID}.coach-last"
+
+coach_read_int() { _cri=$(cat "$1" 2>/dev/null); case "$_cri" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$_cri" ;; esac; }
+
+# One measurement + decision + emission. Returns 0 to keep going, 1 to stop
+# (idle cut-off). CYCLE is read from the environment so --once can inject it.
+coach_cycle() {
+  _ccm=$(coach_material)
+
+  if [ -z "$_ccm" ]; then
+    _cce=$(coach_read_int "$EMPTYF" 0)
+    _cce=$((_cce + 1))
+    printf '%s' "$_cce" > "$EMPTYF"
+    if [ "$_cce" -ge "$IDLE_MAX" ]; then
+      # One line, then stop. The watcher costs nothing while it waits, but every
+      # notification opens a turn — so an abandoned session must not keep
+      # producing them.
+      printf '%s\n' "🧑‍🏫 Coach — no tracked changes for $IDLE_MAX work blocks; the watcher has stopped.
+Ask the dev whether they want to continue the coaching session. If they do, re-arm the watcher."
+      rm -f "$EMPTYF"
+      return 1
+    fi
+    return 0
+  fi
+
+  _ccn=$(printf '%s\n' "$_ccm" | grep -c '')
+  _ccl=$(printf '%s\n' "$_ccm" | awk -F'\t' '{s += $1} END {print s + 0}')
+  _ccnow=$(date +%s)
+  _cclast=$(coach_read_int "$LASTF" 0)
+  _ccelapsed=$(( (_ccnow - _cclast) / 60 ))
+  [ "$_cclast" = 0 ] && _ccelapsed=$((COOLDOWN + THR_EVERY + 1))
+
+  if [ "$CADENCE" = threshold ]; then
+    [ "$_ccelapsed" -lt "$COOLDOWN" ] && return 0
+    _ccfire=0
+    [ "$_ccl" -ge "$THR_LINES" ] && _ccfire=1
+    [ "$_ccn" -ge "$THR_FILES" ] && _ccfire=1
+    [ "$THR_EVERY" -gt 0 ] && [ "$_ccelapsed" -ge "$THR_EVERY" ] && _ccfire=1
+    [ "$_ccfire" = 1 ] || return 0
+  fi
+
+  _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
+
+  # Same contract as the quiz trigger: parameters and a pointer to the protocol,
+  # never the protocol itself. Rendered in the console, so it stays one screen.
+  printf '%s\n' "🧑‍🏫 Coach (level: $LEVEL, cycle: ${CYCLE:-1}, files: $_ccn, lines: $_ccl) — $_ccfiles
+Invoke the \`learner\` skill and follow references/coach.md. One challenge, then wait for the dev's answer."
+
+  coach_candidates | coach_advance
+  printf '%s' "$_ccnow" > "$LASTF"
+  rm -f "$EMPTYF"
+  return 0
+}
+
+if [ "$ONCE" = 1 ]; then
+  coach_cycle
+  exit 0
+fi
+
+# The real loop. Pomodoro sleeps the whole work block and measures once at the
+# end — no polling at all; coachPollSeconds exists only for the threshold
+# cadence. An empty block does NOT advance CYCLE: the work block grows as a
+# reward for writing code, not for leaving the editor open.
+CYCLE=1
+rm -f "$EMPTYF" "$LASTF"
+while :; do
+  if [ "$CADENCE" = threshold ]; then
+    sleep "$POLL"
+  else
+    sleep $(( $(learner_coach_work_minutes "$CYCLE" "$CFG") * 60 ))
+  fi
+
+  coach_cycle || exit 0
+
+  # coach_cycle removes the counter file when it emits and writes it when the
+  # cycle was empty, so "did this cycle emit" is exactly "is the counter gone".
+  # On an emission: sleep the challenge window and grow the work block. The
+  # script stays silent at the end of that window — the challenge ends when the
+  # dev answers and goes back to coding, and a "back to work" line would cost a
+  # full turn per cycle for no information.
+  if [ ! -f "$EMPTYF" ]; then
+    [ "$CADENCE" = pomodoro ] && [ "$CHALLENGE" -gt 0 ] && sleep $((CHALLENGE * 60))
+    CYCLE=$((CYCLE + 1))
+  fi
+done
