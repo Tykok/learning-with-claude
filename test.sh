@@ -1891,7 +1891,12 @@ grep -q 'learner coach on' "$RM" \
   && ok "README shows how to turn coach on" || ko "README shows how to turn coach on"
 grep -q 'coach delegate' "$RM" \
   && ok "README shows delegation" || ko "README shows delegation"
-grep -qi 'coach' "$SITE_USAGE" && ok "usage.html covers coach mode" \
+# Anchored to the section heading itself, not a bare 'coach' grep: merge-base
+# usage.html already said "Coaches one weak spot… to mastery" under `learner
+# improve`, so a loose grep passed before this feature existed and would stay
+# green with the entire coach section deleted. id="coach" only exists once the
+# section itself does.
+grep -qF 'id="coach"' "$SITE_USAGE" && ok "usage.html covers coach mode" \
   || ko "usage.html covers coach mode"
 for k in coachCadence coachWorkMinutes coachIdleCycles; do
   grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \

@@ -6,6 +6,20 @@ Read on a `🧑‍🏫 Coach (…)` trigger, and on `learner coach review`. Read
 **Language: mirror the dev**, exactly as everywhere else in this skill. The trigger line is an
 English machine parameter list — it is not what the dev reads.
 
+## Resolving `<session-id>`
+
+Every `<session-id>` below (and in `SKILL.md`'s status line) is the same value the hooks key
+their per-session files on. When a session *starts* with coach already on, it is handed to you
+literally: the `SessionStart` context that tells you to arm the watcher spells out the exact
+`sh ".../coach-watch.sh" "<sid>"` command to run, `<sid>` included. That context does not
+reappear later — `learner coach on` turned on mid-session gets no such nudge, and a `/compact`
+deliberately does not re-inject it — so when you need the id and it is not sitting in context,
+recover it from disk: `ls -t "$TMPDIR"/claude-learner-*.session 2>/dev/null | head -n 1` names
+the current session's file, and the id is the part between `claude-learner-` and `.session`.
+Never guess or invent one — `coach delegate` writing to the wrong id's scope file leaves the
+gate finding none and denying forever, with its own refusal message pointing at the very command
+that just silently failed.
+
 ## The regime
 
 The dev writes the code. You do not implement, and a `PreToolUse` hook enforces that: a
@@ -60,6 +74,14 @@ The same defect, at two levels:
 
 Calibrating the question while leaving the feedback at a fixed register is the failure this
 table exists to prevent.
+
+## A quiz block landing mid-challenge
+
+With a delegated slice, your own writes there can queue a quiz question (`hooks/learner-quiz.sh`
+is unaware of coach mode) while a coach notification arrives for the dev's concurrent changes
+elsewhere — both wanting the same turn. Do not stack them: finish the coach challenge you are
+already in — get the dev's answer, update `memory.md`/`recap.md` for it — before opening the
+quiz question, never both at once.
 
 ## On the idle line
 
