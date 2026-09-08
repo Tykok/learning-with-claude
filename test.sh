@@ -2542,6 +2542,28 @@ out=$(material "$SID_W")
   || ko "a path Claude wrote this session is excluded"
 rm -f "$(sess "$SID_W")"
 
+# Regression (Finding 2): learner-record-edit.sh wrote the RAW file_path into
+# .session, but coach-watch.sh compares candidates (built from the always-
+# physical ROOT) against .session with a plain string match. On a repo
+# reached through a symlink the two representations never agreed, so a file
+# Claude wrote sailed past the "already in .session" check and was reviewed
+# as if the dev had written it — the one direction the coach spec rules out.
+ln -sfn "$CREPO" "$WORK/crepo-link"
+CLINK="$WORK/crepo-link"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 15 > "$CREPO/src/ClaudeWrote.kt"
+printf '{"session_id":"%s","tool_input":{"file_path":"%s"}}' "$SID_W" "$CLINK/src/ClaudeWrote.kt" \
+  | CLAUDE_PROJECT_DIR="$CLINK" sh "$REC"
+lines 10 > "$CREPO/src/DevWrote.kt"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/ClaudeWrote.kt"{print $1}')" ] \
+  && ok "a path Claude wrote through a symlinked repo is still excluded from coach material" \
+  || ko "a path Claude wrote through a symlinked repo is still excluded from coach material"
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/DevWrote.kt"{print $1}')" = "10" ] \
+  && ok "control: a path only the dev touched still appears as coach material" \
+  || ko "control: a path only the dev touched still appears as coach material"
+rm -f "$(sess "$SID_W")" "$CREPO/src/ClaudeWrote.kt" "$CREPO/src/DevWrote.kt"
+
 # Exclusions come from the shared helper, so both layers must apply.
 mkdir -p "$CREPO/node_modules/x"
 lines 50 > "$CREPO/node_modules/x/index.js"
@@ -2778,11 +2800,14 @@ out=$(cycle_out "$SID_TC" 1)                          # empty again — must be 
 [ -z "$out" ] && ok "threshold: cooldown-blocked material resets the empty-cycle counter" \
   || ko "threshold: cooldown-blocked material resets the empty-cycle counter"
 
-# Regression: CYCLE must advance only on an actual emission. Two consecutive
-# non-emitting threshold polls must not inflate the number a later, real
-# emission reports — a real loop holding CYCLE at 1 throughout (since neither
-# poll emitted) would call `--cycle 1` on every one of these, this one
-# included.
+# `--cycle` injects the number a real loop would hold; two sub-threshold
+# `--cycle 1` polls before this one are only here to build up the material
+# that finally crosses coachLines. The real claim CYCLE-only-advances-on-
+# emission is a loop-arithmetic property this per-process, --cycle-injected
+# harness cannot exercise — that was verified live (cycle 1, then cycle 2 at
+# ~180s) — so this assertion checks a narrower, adjacent thing instead:
+# coach_cycle's own formatting does not add spurious inflation on top of
+# whatever CYCLE value it is handed.
 echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0,"coachIdleCycles":99}' > "$GCFG"
 SID_TI=watch9
 rm -rf "$(basedir "$SID_TI")"
@@ -2797,9 +2822,56 @@ out=$(cycle_out "$SID_TI" 1)
 lines 5 >> "$CREPO/src/J.kt"                          # 12 lines total: now over coachLines:10
 out=$(cycle_out "$SID_TI" 1)
 printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
-  && ok "cycle number is not inflated by preceding non-emitting threshold polls" \
-  || ko "cycle number is not inflated by preceding non-emitting threshold polls"
+  && ok "coach_cycle introduces no formatting-side inflation of the injected cycle number" \
+  || ko "coach_cycle introduces no formatting-side inflation of the injected cycle number"
 rm -f "$CREPO/src/J.kt"
+
+# Regression (Finding 1): coachIdleCycles is documented (spec §2.4) as idle
+# periods of one work-block-equivalent (coachWorkMinutes), in EITHER cadence.
+# The unfixed watcher compared the empty-poll counter against coachIdleCycles
+# directly in the threshold branch, so with defaults (coachWorkMinutes=25,
+# coachPollSeconds=45) a dev thinking for 90 seconds — two polls — ended the
+# session, 33x sooner than the pomodoro-equivalent cadence intends.
+# coachWorkMinutes=1 (60s) and coachPollSeconds=10 makes one period 6 polls,
+# so coachIdleCycles=2 must tolerate 12 empty polls, not 2, before stopping.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":10,"coachIdleCycles":2}' > "$GCFG"
+SID_TS=watch10
+rm -rf "$(basedir "$SID_TS")"
+out1=$(cycle_out "$SID_TS" 1)
+out2=$(cycle_out "$SID_TS" 1)
+{ [ -z "$out1" ] && [ -z "$out2" ]; } \
+  && ok "threshold cadence survives two empty polls (coachIdleCycles is not raw polls)" \
+  || ko "threshold cadence survives two empty polls (got '$out1' / '$out2')"
+
+i=3
+while [ "$i" -le 12 ]; do
+  out=$(cycle_out "$SID_TS" 1)
+  if [ "$i" -lt 12 ]; then
+    [ -z "$out" ] || { ko "threshold cadence stopped early, at poll $i instead of 12"; break; }
+  else
+    printf '%s' "$out" | grep -q 'the watcher has stopped' \
+      && ok "threshold cadence stops after a full work-block-equivalent period (12 polls = 2 x 6)" \
+      || ko "threshold cadence stops after a full work-block-equivalent period (got '$out' at poll 12)"
+  fi
+  i=$((i + 1))
+done
+
+# Guard: coachPollSeconds larger than the work block must clamp the
+# polls-per-period ratio to 1, never floor to 0 — an IDLE_LIMIT of 0 would
+# stop the watcher on the very first empty poll, ignoring coachIdleCycles
+# altogether, and is also the shape of bug that can leave a 0 in later
+# arithmetic if this guard is ever removed.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":120,"coachIdleCycles":2}' > "$GCFG"
+SID_TG=watch11
+rm -rf "$(basedir "$SID_TG")"
+out1=$(cycle_out "$SID_TG" 1)
+[ -z "$out1" ] && ok "polls-per-period guard: first empty poll is not an immediate cut-off" \
+  || ko "polls-per-period guard: first empty poll is not an immediate cut-off (got '$out1')"
+out2=$(cycle_out "$SID_TG" 1)
+printf '%s' "$out2" | grep -q 'the watcher has stopped' \
+  && ok "polls-per-period guard clamps to 1, so coachIdleCycles=2 still stops after 2 polls" \
+  || ko "polls-per-period guard clamps to 1 (got '$out2')"
+echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
 # --- coach arming and cleanup ----------------------------------------------
 onboard() { printf '{"session_id":"%s"}' "$1" | sh "$ONB"; }
@@ -2866,6 +2938,32 @@ grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
 grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
+
+# --- coach off stops a running watcher (Finding 3) --------------------------
+# The real loop used to read CFG and check learner_coach_active exactly once,
+# before `while :`, and never again — `learner coach off` unblocked writes
+# immediately (the gate re-reads per invocation) but the watcher itself kept
+# polling and emitting for the rest of the session. This needs an actual
+# backgrounded loop, not --once: --once is a fresh process per call and
+# already re-reads config at the top of the script regardless of this bug, so
+# it cannot exercise the loop's own (previously missing) re-check.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachPollSeconds":5,"coachCooldownMinutes":0,"coachLines":999999,"coachFiles":999999}' > "$GCFG"
+SID_LOOP=watch-loop-off
+rm -rf "$(basedir "$SID_LOOP")"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_LOOP" > "$WORK/loop-off.out" 2>&1 &
+LOOP_PID=$!
+sleep 1
+echo '{"level":"C","coach":false}' > "$GCFG"
+sleep 7
+if kill -0 "$LOOP_PID" 2>/dev/null; then
+  ko "learner coach off stops a running watcher within one poll"
+  kill -9 "$LOOP_PID" 2>/dev/null
+  wait "$LOOP_PID" 2>/dev/null
+else
+  wait "$LOOP_PID" 2>/dev/null
+  ok "learner coach off stops a running watcher within one poll"
+fi
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
 # --- coach documentation ----------------------------------------------------
 SK="$ROOT/skills/learner/SKILL.md"
