@@ -14,6 +14,7 @@
 #   learner_repo_root               git toplevel of the project dir, empty if none
 #   learner_path_disabled ROOT CFG  true when ROOT sits under a disabledPaths entry
 #   learner_active CFG ROOT         true when the automatic quiz should run here
+#   learner_int RAW FALLBACK FLOOR  positive integer from config, or FALLBACK
 #   learner_coach_active CFG ROOT   true when the coach regime is on here
 #   learner_coach_work_minutes N CFG  length in minutes of work block N (1-based)
 

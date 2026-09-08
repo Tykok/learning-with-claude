@@ -666,12 +666,16 @@ n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
   && ok "install lays down 6 learner-*.sh hook files" \
   || ko "install lays down 6 learner-*.sh hook files (got $n)"
 
-# Only 5 are wired: learner-config.sh is sourced, never invoked by Claude Code.
+# hookcount() greps commands for "learner-", so it counts 5, not the 6 that
+# are actually wired: learner-config.sh is sourced, never invoked, so it was
+# never one of the 5 either way, and coach-gate.sh is a real wired hook that
+# this filter simply doesn't name-match. 5 is the right number for what this
+# helper counts; it is not a count of every wired hook.
 n1=$(hookcount "$I")
 inst "$I" --level S >/dev/null 2>&1
 n2=$(hookcount "$I")
 { [ "$n1" = 5 ] && [ "$n2" = 5 ]; } \
-  && ok "hook merge is idempotent (5 wired hooks)" \
+  && ok "hook merge is idempotent (5 name-matched hooks)" \
   || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
 
 # install.sh's own dedup — exercised end to end, not a re-typed copy of its
