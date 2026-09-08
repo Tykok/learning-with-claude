@@ -2463,12 +2463,18 @@ lines 25 > "$CREPO/src/D.kt"
 out=$(cycle_out "$SID_T" 1)
 printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
   && ok "threshold cadence fires on coachLines" || ko "threshold cadence fires on coachLines"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "threshold cadence emits exactly once on coachLines" \
+  || ko "threshold cadence emits exactly once on coachLines"
 
 echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":1,"coachCooldownMinutes":0}' > "$GCFG"
 rm -rf "$(basedir "$SID_T")"
 out=$(cycle_out "$SID_T" 1)
 printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
   && ok "threshold cadence fires on coachFiles" || ko "threshold cadence fires on coachFiles"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "threshold cadence emits exactly once on coachFiles" \
+  || ko "threshold cadence emits exactly once on coachFiles"
 
 # Under both thresholds and inside the cooldown: silence.
 echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
@@ -2477,6 +2483,80 @@ out=$(cycle_out "$SID_T" 1)
 [ -z "$out" ] && ok "threshold cadence is silent below every trigger" \
   || ko "threshold cadence is silent below every trigger"
 rm -f "$CREPO/src/D.kt"
+
+# Regression: coach_cycle must return a real three-way result (emitted / stop
+# / keep-going) rather than the caller inferring "emitted" from EMPTYF's
+# presence. Under the old inference, a threshold cycle that found material but
+# did not fire (sub-threshold, or cooldown-blocked) touched neither branch of
+# the presence check, so it neither reset nor advanced the empty counter —
+# leaving a *previous* empty cycle's count still standing. A dev writing
+# steady, sub-threshold edits would then get cut off as "idle" while actively
+# working, on a factually false message.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":9999,"coachCooldownMinutes":0,"coachIdleCycles":2}' > "$GCFG"
+SID_TR=watch6
+rm -rf "$(basedir "$SID_TR")"
+out=$(cycle_out "$SID_TR" 1)                          # poll 1: genuinely empty -> counter 1
+[ -z "$out" ] && ok "threshold: first empty poll is silent" \
+  || ko "threshold: first empty poll is silent"
+lines 5 > "$CREPO/src/E.kt"
+out=$(cycle_out "$SID_TR" 1)                          # poll 2: material, sub-threshold
+[ -z "$out" ] && ok "threshold: sub-threshold material is silent" \
+  || ko "threshold: sub-threshold material is silent"
+rm -f "$CREPO/src/E.kt"
+out=$(cycle_out "$SID_TR" 1)                          # poll 3: empty again — must be the FIRST
+                                                       # empty since poll 2's material reset the
+                                                       # counter, not the second -> no idle line
+[ -z "$out" ] && ok "threshold: sub-threshold material resets the empty-cycle counter" \
+  || ko "threshold: sub-threshold material resets the empty-cycle counter"
+
+# Same defect, cooldown-gated path: a cooldown-blocked poll with material must
+# reset the counter too — cooldown only paces notifications, it says nothing
+# about whether the dev is still working.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":1,"coachFiles":1,"coachCooldownMinutes":5,"coachIdleCycles":2}' > "$GCFG"
+SID_TC=watch7
+rm -rf "$(basedir "$SID_TC")"
+lines 10 > "$CREPO/src/F.kt"
+out=$(cycle_out "$SID_TC" 1)                          # first-ever cycle bypasses cooldown -> fires
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold: first material cycle bypasses cooldown and fires" \
+  || ko "threshold: first material cycle bypasses cooldown and fires"
+rm -f "$CREPO/src/F.kt"
+out=$(cycle_out "$SID_TC" 1)                          # genuinely empty -> counter 1
+[ -z "$out" ] && ok "threshold: empty poll after an emission is silent" \
+  || ko "threshold: empty poll after an emission is silent"
+lines 4 > "$CREPO/src/G.kt"
+out=$(cycle_out "$SID_TC" 1)                          # material, but inside the cooldown window
+[ -z "$out" ] && ok "threshold: cooldown-blocked poll with material is silent" \
+  || ko "threshold: cooldown-blocked poll with material is silent"
+rm -f "$CREPO/src/G.kt"
+out=$(cycle_out "$SID_TC" 1)                          # empty again — must be the FIRST empty since
+                                                       # the cooldown-blocked poll reset the counter,
+                                                       # not the second -> no idle line
+[ -z "$out" ] && ok "threshold: cooldown-blocked material resets the empty-cycle counter" \
+  || ko "threshold: cooldown-blocked material resets the empty-cycle counter"
+
+# Regression: CYCLE must advance only on an actual emission. Two consecutive
+# non-emitting threshold polls must not inflate the number a later, real
+# emission reports — a real loop holding CYCLE at 1 throughout (since neither
+# poll emitted) would call `--cycle 1` on every one of these, this one
+# included.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0,"coachIdleCycles":99}' > "$GCFG"
+SID_TI=watch9
+rm -rf "$(basedir "$SID_TI")"
+lines 3 > "$CREPO/src/J.kt"                           # 3 lines, 1 file: under both thresholds
+out=$(cycle_out "$SID_TI" 1)
+[ -z "$out" ] && ok "threshold: a sub-threshold poll does not emit" \
+  || ko "threshold: a sub-threshold poll does not emit"
+lines 4 >> "$CREPO/src/J.kt"                          # 7 lines total: still under coachLines:10
+out=$(cycle_out "$SID_TI" 1)
+[ -z "$out" ] && ok "threshold: a second sub-threshold poll still does not emit" \
+  || ko "threshold: a second sub-threshold poll still does not emit"
+lines 5 >> "$CREPO/src/J.kt"                          # 12 lines total: now over coachLines:10
+out=$(cycle_out "$SID_TI" 1)
+printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
+  && ok "cycle number is not inflated by preceding non-emitting threshold polls" \
+  || ko "cycle number is not inflated by preceding non-emitting threshold polls"
+rm -f "$CREPO/src/J.kt"
 
 # --- summary ----------------------------------------------------------------
 echo
