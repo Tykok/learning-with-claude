@@ -2102,10 +2102,10 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "4" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "4" ]; } \
-  && ok "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "5" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "5" ]; } \
+  && ok "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -2557,6 +2557,72 @@ printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
   && ok "cycle number is not inflated by preceding non-emitting threshold polls" \
   || ko "cycle number is not inflated by preceding non-emitting threshold polls"
 rm -f "$CREPO/src/J.kt"
+
+# --- coach arming and cleanup ----------------------------------------------
+onboard() { printf '{"session_id":"%s"}' "$1" | sh "$ONB"; }
+
+echo '{"level":"C","coach":true}' > "$GCFG"
+rm -f "$PCFG"
+out=$(onboard arm1)
+{ printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1 \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'Monitor' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'coach-watch.sh' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'arm1'; } \
+  && ok "onboard arms the watcher when coach is on" || ko "onboard arms the watcher when coach is on"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+[ -z "$(onboard arm2)" ] && ok "onboard says nothing when coach is off" \
+  || ko "onboard says nothing when coach is off"
+
+# A context compaction must not arm a second watcher on the same session: the dev
+# would get every review twice, on two drifting cadences.
+echo '{"level":"C","coach":true}' > "$GCFG"
+onboard_src() { printf '{"session_id":"%s","source":"%s"}' "$1" "$2" | sh "$ONB"; }
+[ -n "$(onboard_src arm4 startup)" ] && ok "startup arms the watcher" || ko "startup arms the watcher"
+[ -n "$(onboard_src arm4 resume)" ] && ok "resume arms the watcher" || ko "resume arms the watcher"
+[ -z "$(onboard_src arm4 compact)" ] && ok "compact does not re-arm the watcher" \
+  || ko "compact does not re-arm the watcher"
+[ -z "$(onboard_src arm4 clear)" ] && ok "clear does not re-arm the watcher" \
+  || ko "clear does not re-arm the watcher"
+
+# A missing level already produces the existing "no valid level" nudge; coach
+# must not replace or duplicate it.
+echo '{"coach":true}' > "$GCFG"
+out=$(onboard arm3)
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'learner config level=' \
+  && ok "a missing level still wins over the coach nudge" \
+  || ko "a missing level still wins over the coach nudge"
+
+# Cleanup must take the coach scratch files with the rest.
+SID_X=clean-coach
+mkdir -p "$TMPDIR/claude-learner-${SID_X}.coach-base"
+touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-last" \
+      "$TMPDIR/claude-learner-${SID_X}.edits"
+printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
+{ [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ]; } \
+  && ok "cleanup removes the coach scratch files" || ko "cleanup removes the coach scratch files"
+
+# Both install paths must be wired, or half the users get half the feature.
+{ jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
+         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/hooks.json" >/dev/null 2>&1; } \
+  && ok "hooks.json wires coach-gate.sh" || ko "hooks.json wires coach-gate.sh"
+{ jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
+         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/settings.snippet.json" >/dev/null 2>&1; } \
+  && ok "settings.snippet.json wires coach-gate.sh" || ko "settings.snippet.json wires coach-gate.sh"
+
+# coach-watch.sh is not a hook and must never be wired as one.
+grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
+  && ko "coach-watch.sh is not wired as a hook" || ok "coach-watch.sh is not wired as a hook"
+grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
+  && ko "coach-watch.sh is not wired in the snippet either" \
+  || ok "coach-watch.sh is not wired in the snippet either"
 
 # --- summary ----------------------------------------------------------------
 echo
