@@ -882,15 +882,63 @@ printf '{"session_id":"cln"}' | TMPDIR="$G/tmp" sh "$CLEAN"
 echo '{"level":"S"}' > "$GCFG"
 
 # --- uninstall reverses install ---------------------------------------------
+
+# strip_wiring's own predicate — not a re-typed copy of it — must remove
+# every hook the shipped snippet wires, coach's PreToolUse entry included.
+# A command matching only "coach-" once survived a "learner-"-only match;
+# this is the assertion that would have caught it.
+eval "$(sed -n '/^strip_wiring()/,/^}/p' "$ROOT/uninstall.sh")"
+SWJ="$WORK/strip-wiring-snippet.json"
+cp "$ROOT/hooks/settings.snippet.json" "$SWJ"
+strip_wiring "$SWJ"
+left=$(jq '[.. | .command? // empty] | length' "$SWJ")
+[ "$left" = 0 ] \
+  && ok "strip_wiring removes every hook wired by the shipped snippet" \
+  || ko "strip_wiring removes every hook wired by the shipped snippet (left=$left)"
+
+# The other side of the same coin: an unrelated third-party hook must survive
+# stripping. Without this, "just delete all hooks" would pass the assertion
+# above while destroying a user's own configuration.
+SWO="$WORK/strip-wiring-other.json"
+cat > "$SWO" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "sh /opt/otherteam/hooks/pretty-linter.sh" }
+        ]
+      }
+    ]
+  }
+}
+JSON
+strip_wiring "$SWO"
+jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/pretty-linter.sh"' "$SWO" >/dev/null 2>&1 \
+  && ok "strip_wiring leaves an unrelated third-party hook intact" \
+  || ko "strip_wiring leaves an unrelated third-party hook intact (got $(cat "$SWO"))"
+
+# Both script-removal lists in uninstall.sh must name the coach scripts, or
+# the files survive on disk even once the wiring above is stripped clean.
+[ "$(grep -c 'hooks/coach-gate\.sh' "$ROOT/uninstall.sh")" = 2 ] \
+  && ok "uninstall.sh's two removal lists both name coach-gate.sh" \
+  || ko "uninstall.sh's two removal lists both name coach-gate.sh"
+[ "$(grep -c 'hooks/coach-watch\.sh' "$ROOT/uninstall.sh")" = 2 ] \
+  && ok "uninstall.sh's two removal lists both name coach-watch.sh" \
+  || ko "uninstall.sh's two removal lists both name coach-watch.sh"
+
 U="$WORK/uninst"; mkdir -p "$U"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
 printf '# notes\n' > "$U/learner/memory.md"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
-left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
+left=$(jq '[.. | .command? // empty | select(contains("learner-") or contains("coach-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
 { [ "$left" = 0 ] \
   && [ ! -e "$U/hooks/learner-quiz.sh" ] \
   && [ ! -e "$U/hooks/learner-config.sh" ] \
   && [ ! -e "$U/hooks/learner-update-check.sh" ] \
+  && [ ! -e "$U/hooks/coach-gate.sh" ] \
+  && [ ! -e "$U/hooks/coach-watch.sh" ] \
   && [ ! -e "$U/skills/learner/INSTALL_ORIGIN" ] \
   && [ ! -d "$U/skills/learner" ]; } \
   && ok "uninstall removes hooks, skill and wiring" \
