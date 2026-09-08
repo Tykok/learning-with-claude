@@ -200,8 +200,15 @@ LASTF="$TMPD/claude-learner-${SID}.coach-last"
 
 coach_read_int() { _cri=$(cat "$1" 2>/dev/null); case "$_cri" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$_cri" ;; esac; }
 
-# One measurement + decision + emission. Returns 0 to keep going, 1 to stop
-# (idle cut-off). CYCLE is read from the environment so --once can inject it.
+# One measurement + decision + emission. Three-way result, deliberately not
+# inferred by the caller from any file's presence:
+#   0 = emitted            1 = stop (idle cut-off)      2 = no emission, keep going
+# The threshold branch has two paths — cooldown-blocked, and material present
+# but under every trigger — that are neither "emitted" nor "genuinely empty".
+# Folding those into 0 (as file-presence inference used to) inflates CYCLE with
+# no notification sent; folding them into "empty" tells a dev who is actively
+# writing, just below the threshold, that the session went idle. Both are
+# real 2s. CYCLE is read from the environment so --once can inject it.
 coach_cycle() {
   _ccm=$(coach_material)
 
@@ -218,8 +225,14 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
       rm -f "$EMPTYF"
       return 1
     fi
-    return 0
+    return 2
   fi
+
+  # Material existed this cycle. The dev has not gone idle, whether or not
+  # this cycle actually fires — a cooldown gate and an under-threshold cycle
+  # both mean "keep pacing", not "abandoned". Reset now, before either check
+  # can short-circuit the reset away.
+  rm -f "$EMPTYF"
 
   _ccn=$(printf '%s\n' "$_ccm" | grep -c '')
   _ccl=$(printf '%s\n' "$_ccm" | awk -F'\t' '{s += $1} END {print s + 0}')
@@ -229,12 +242,12 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
   [ "$_cclast" = 0 ] && _ccelapsed=$((COOLDOWN + THR_EVERY + 1))
 
   if [ "$CADENCE" = threshold ]; then
-    [ "$_ccelapsed" -lt "$COOLDOWN" ] && return 0
+    [ "$_ccelapsed" -lt "$COOLDOWN" ] && return 2
     _ccfire=0
     [ "$_ccl" -ge "$THR_LINES" ] && _ccfire=1
     [ "$_ccn" -ge "$THR_FILES" ] && _ccfire=1
     [ "$THR_EVERY" -gt 0 ] && [ "$_ccelapsed" -ge "$THR_EVERY" ] && _ccfire=1
-    [ "$_ccfire" = 1 ] || return 0
+    [ "$_ccfire" = 1 ] || return 2
   fi
 
   _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
@@ -246,7 +259,6 @@ Invoke the \`learner\` skill and follow references/coach.md. One challenge, then
 
   coach_candidates | coach_advance
   printf '%s' "$_ccnow" > "$LASTF"
-  rm -f "$EMPTYF"
   return 0
 }
 
@@ -268,16 +280,21 @@ while :; do
     sleep $(( $(learner_coach_work_minutes "$CYCLE" "$CFG") * 60 ))
   fi
 
-  coach_cycle || exit 0
-
-  # coach_cycle removes the counter file when it emits and writes it when the
-  # cycle was empty, so "did this cycle emit" is exactly "is the counter gone".
-  # On an emission: sleep the challenge window and grow the work block. The
-  # script stays silent at the end of that window — the challenge ends when the
-  # dev answers and goes back to coding, and a "back to work" line would cost a
-  # full turn per cycle for no information.
-  if [ ! -f "$EMPTYF" ]; then
-    [ "$CADENCE" = pomodoro ] && [ "$CHALLENGE" -gt 0 ] && sleep $((CHALLENGE * 60))
-    CYCLE=$((CYCLE + 1))
-  fi
+  coach_cycle
+  # Dispatch on coach_cycle's own return code, never on a file's presence —
+  # that inference is exactly what let a cooldown-blocked or under-threshold
+  # cycle (return 2) get mistaken for an emission (0) or folded into "empty".
+  case $? in
+    1) exit 0 ;;
+    0)
+      # Only an actual emission sleeps the challenge window and grows the work
+      # block. The script stays silent at the end of that window — the
+      # challenge ends when the dev answers and goes back to coding, and a
+      # "back to work" line would cost a full turn per cycle for no
+      # information.
+      [ "$CADENCE" = pomodoro ] && [ "$CHALLENGE" -gt 0 ] && sleep $((CHALLENGE * 60))
+      CYCLE=$((CYCLE + 1))
+      ;;
+    *) ;; # 2: no emission, keep going at the same CYCLE
+  esac
 done
