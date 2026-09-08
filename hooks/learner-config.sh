@@ -14,10 +14,12 @@
 #   learner_repo_root               git toplevel of the project dir, empty if none
 #   learner_path_disabled ROOT CFG  true when ROOT sits under a disabledPaths entry
 #   learner_active CFG ROOT         true when the automatic quiz should run here
+#   learner_coach_active CFG ROOT   true when the coach regime is on here
+#   learner_coach_work_minutes N CFG  length in minutes of work block N (1-based)
 
 LEARNER_CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[]}'
+LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachCadence":"pomodoro","coachWorkMinutes":25,"coachWorkGrowthMinutes":5,"coachWorkMaxMinutes":45,"coachChallengeMinutes":8,"coachIdleCycles":2,"coachPollSeconds":45,"coachLines":40,"coachFiles":3,"coachEveryMinutes":0,"coachCooldownMinutes":5}'
 
 # A JSON object from a file, or {} when the file is missing, unreadable or not an object.
 _learner_read_json() {
@@ -170,4 +172,44 @@ learner_active() {
   [ "$(printf '%s' "$_lacfg" | jq -r '.enabled')" = "false" ] && return 1
   learner_path_disabled "$_laroot" "$_lacfg" && return 1
   return 0
+}
+
+# learner_int RAW FALLBACK FLOOR — a positive integer from config, or FALLBACK
+# when RAW is absent, empty, non-numeric or below FLOOR. Every cadence value goes
+# through this: a malformed config must never yield an empty or zero sleep
+# interval, which would spin the watcher at 100% CPU instead of waiting.
+learner_int() {
+  _lir="${1:-}"; _lif="$2"; _lil="${3:-1}"
+  case "$_lir" in ''|null|*[!0-9]*) printf '%s' "$_lif"; return 0 ;; esac
+  [ "$_lir" -lt "$_lil" ] && { printf '%s' "$_lif"; return 0; }
+  printf '%s' "$_lir"
+}
+
+# The coach regime is the learner regime plus one switch: everything that
+# silences the quiz (no level, enabled:false, disabledPaths) silences the coach
+# too, so a dev who switched learner off in a repo does not get coached in it.
+learner_coach_active() {
+  _lcacfg="$1"
+  _lcaroot="$2"
+  learner_active "$_lcacfg" "$_lcaroot" || return 1
+  [ "$(printf '%s' "$_lcacfg" | jq -r '.coach')" = "true" ] || return 1
+  return 0
+}
+
+# learner_coach_work_minutes N CFG — the work block grows by
+# coachWorkGrowthMinutes per completed cycle, capped at coachWorkMaxMinutes.
+# A cap below the base is unambiguous in intent, so it clamps to the base rather
+# than being rejected.
+learner_coach_work_minutes() {
+  _lcwn="${1:-1}"
+  _lcwcfg="$2"
+  case "$_lcwn" in ''|*[!0-9]*) _lcwn=1 ;; esac
+  [ "$_lcwn" -lt 1 ] && _lcwn=1
+  _lcwbase=$(learner_int "$(printf '%s' "$_lcwcfg" | jq -r '.coachWorkMinutes // empty')" 25 1)
+  _lcwgrow=$(learner_int "$(printf '%s' "$_lcwcfg" | jq -r '.coachWorkGrowthMinutes // empty')" 5 0)
+  _lcwmax=$(learner_int "$(printf '%s' "$_lcwcfg" | jq -r '.coachWorkMaxMinutes // empty')" 45 1)
+  _lcwv=$((_lcwbase + _lcwgrow * (_lcwn - 1)))
+  [ "$_lcwv" -gt "$_lcwmax" ] && _lcwv=$_lcwmax
+  [ "$_lcwv" -lt "$_lcwbase" ] && _lcwv=$_lcwbase
+  printf '%s' "$_lcwv"
 }
