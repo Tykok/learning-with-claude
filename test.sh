@@ -2761,6 +2761,37 @@ grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
 
+# --- coach documentation ----------------------------------------------------
+SK="$ROOT/skills/learner/SKILL.md"
+CO="$ROOT/skills/learner/references/coach.md"
+
+[ -f "$CO" ] && ok "references/coach.md exists" || ko "references/coach.md exists"
+
+# Every config key the code reads must be documented, or a dev cannot discover it.
+for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
+         coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
+         coachEveryMinutes coachCooldownMinutes; do
+  grep -q "\`$k\`" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+done
+
+# The dispatch table must route every subcommand the skill claims to accept.
+for c in "coach on" "coach off" "coach delegate" "coach review"; do
+  grep -q "$c" "$SK" && ok "SKILL.md dispatches \`$c\`" || ko "SKILL.md dispatches \`$c\`"
+done
+
+# The protocol reference must be reachable from the trigger line's pointer.
+grep -q 'references/coach.md' "$SK" && ok "SKILL.md points at references/coach.md" \
+  || ko "SKILL.md points at references/coach.md"
+
+# The protocol must state its own ceiling and its own prohibition, since those
+# are the two things that keep the dev in the driver's seat.
+grep -qi 'one challenge' "$CO" && ok "coach.md states the one-challenge ceiling" \
+  || ko "coach.md states the one-challenge ceiling"
+grep -qi 'never write' "$CO" && ok "coach.md forbids writing to source" \
+  || ko "coach.md forbids writing to source"
+grep -q 'references/data.md' "$CO" && ok "coach.md defers to data.md for the data rules" \
+  || ko "coach.md defers to data.md for the data rules"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
