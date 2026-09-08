@@ -677,22 +677,28 @@ n2=$(hookcount "$I")
 # install.sh's own dedup — exercised end to end, not a re-typed copy of its
 # jq — must catch every hook this project wires, coach's PreToolUse entry
 # included. Installing twice (what `learner update` does on every version
-# bump) must leave exactly one coach-gate.sh entry, not one per install:
-# otherwise every Write/Edit/NotebookEdit spawns one more subprocess per
-# reinstall, forever.
+# bump) must leave exactly one copy of every command the shipped snippet
+# wires, not one per install: otherwise every Write/Edit/NotebookEdit spawns
+# one more subprocess per reinstall, forever. Checked against every command
+# in the real snippet file, not a sample, so a too-narrow anchor can't pass
+# by only recognising some of them.
 IC="$WORK/inst-coach-dedup"; mkdir -p "$IC"
 inst "$IC" --level S >/dev/null 2>&1
 inst "$IC" --level S >/dev/null 2>&1
-n=$(jq '[.. | .command? // empty | select(contains("coach-gate.sh"))] | length' "$IC/settings.json")
-[ "$n" = 1 ] \
-  && ok "install's dedup keeps exactly one coach-gate.sh entry across two installs" \
-  || ko "install's dedup keeps exactly one coach-gate.sh entry across two installs (got $n)"
+n=$(jq -n --argjson got "$(jq '[.. | .command? // empty]' "$IC/settings.json")" \
+          --argjson want "$(jq '[.. | .command? // empty]' "$ROOT/hooks/settings.snippet.json")" '
+  [ $want[] as $w | ($got | map(select(. == $w)) | length) | select(. != 1) ] | length
+')
+[ "$n" = 0 ] \
+  && ok "install's dedup keeps exactly one copy of every wired command across two installs" \
+  || ko "install's dedup keeps exactly one copy of every wired command across two installs (got $n mismatched)"
 
 # The opposite guard, same as strip_wiring's: an unrelated third-party hook
 # already present in settings.json must survive a re-install intact. A fresh
 # directory, not $IC: reusing it would let $IC's own corrupted-command debris
 # (if the predicate were ever wrong) silently abort a later jq call and leave
-# this assertion passing for the wrong reason.
+# this assertion passing for the wrong reason — every fixture below gets its
+# own directory for the same reason.
 IC2="$WORK/inst-coach-survival"; mkdir -p "$IC2"
 inst "$IC2" --level S >/dev/null 2>&1
 jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"sh /opt/otherteam/hooks/pretty-linter.sh"}]}]' \
@@ -701,6 +707,20 @@ inst "$IC2" --level S >/dev/null 2>&1
 jq -e '[.. | .command? // empty] | any(. == "sh /opt/otherteam/hooks/pretty-linter.sh")' "$IC2/settings.json" >/dev/null 2>&1 \
   && ok "install's dedup leaves an unrelated third-party hook intact" \
   || ko "install's dedup leaves an unrelated third-party hook intact (got $(jq -c '.hooks.PreToolUse' "$IC2/settings.json"))"
+
+# The case that actually matters: a third-party hook whose path matches
+# learner's naming convention ("coach-*.sh" under a "hooks/" directory) but
+# lives under a tree learner never installs into. A bare path-shape match
+# would dedup this away on every reinstall; the ".claude" anchor must leave
+# it alone.
+IC3="$WORK/inst-coach-collide"; mkdir -p "$IC3"
+inst "$IC3" --level S >/dev/null 2>&1
+jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"sh /opt/otherteam/hooks/coach-lint.sh"}]}]' \
+  "$IC3/settings.json" > "$IC3/settings.json.tmp" && mv "$IC3/settings.json.tmp" "$IC3/settings.json"
+inst "$IC3" --level S >/dev/null 2>&1
+jq -e '[.. | .command? // empty] | any(. == "sh /opt/otherteam/hooks/coach-lint.sh")' "$IC3/settings.json" >/dev/null 2>&1 \
+  && ok "install's dedup leaves a same-convention third-party hook outside .claude intact" \
+  || ko "install's dedup leaves a same-convention third-party hook outside .claude intact (got $(jq -c '.hooks.PreToolUse' "$IC3/settings.json"))"
 
 jq -e '[.. | .command? // empty | select(contains("learner-"))]
        | all(contains("CLAUDE_CONFIG_DIR"))' "$I/settings.json" >/dev/null 2>&1 \
@@ -914,9 +934,11 @@ echo '{"level":"S"}' > "$GCFG"
 # strip_wiring's own predicate — not a re-typed copy of it — must remove
 # every hook the shipped snippet wires, coach's PreToolUse entry included.
 # A command matching only "coach-" once survived a "learner-"-only match;
-# this is the assertion that would have caught it.
+# this checks every command in the real shipped file, not a sample, so a
+# too-narrow anchor can't pass by only recognising some of them.
 eval "$(sed -n '/^strip_wiring()/,/^}/p' "$ROOT/uninstall.sh")"
-SWJ="$WORK/strip-wiring-snippet.json"
+SWJD="$WORK/strip-wiring-snippet"; mkdir -p "$SWJD"
+SWJ="$SWJD/settings.json"
 cp "$ROOT/hooks/settings.snippet.json" "$SWJ"
 strip_wiring "$SWJ"
 left=$(jq '[.. | .command? // empty] | length' "$SWJ")
@@ -926,8 +948,11 @@ left=$(jq '[.. | .command? // empty] | length' "$SWJ")
 
 # The other side of the same coin: an unrelated third-party hook must survive
 # stripping. Without this, "just delete all hooks" would pass the assertion
-# above while destroying a user's own configuration.
-SWO="$WORK/strip-wiring-other.json"
+# above while destroying a user's own configuration. This one doesn't share
+# learner's naming convention at all — the harder case, a same-convention
+# name under a different tree, is the next one below.
+SWOD="$WORK/strip-wiring-other"; mkdir -p "$SWOD"
+SWO="$SWOD/settings.json"
 cat > "$SWO" <<'JSON'
 {
   "hooks": {
@@ -946,6 +971,32 @@ strip_wiring "$SWO"
 jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/pretty-linter.sh"' "$SWO" >/dev/null 2>&1 \
   && ok "strip_wiring leaves an unrelated third-party hook intact" \
   || ko "strip_wiring leaves an unrelated third-party hook intact (got $(cat "$SWO"))"
+
+# The case that actually matters: a third-party hook whose path *does* match
+# learner's naming convention (a "coach-*.sh" script under a "hooks/"
+# directory) but lives under a tree learner never installs into. A bare
+# path-shape match would strip this; the predicate must require the ".claude"
+# anchor too and leave it alone.
+SWCD="$WORK/strip-wiring-colliding"; mkdir -p "$SWCD"
+SWC="$SWCD/settings.json"
+cat > "$SWC" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "sh /opt/otherteam/hooks/coach-lint.sh" }
+        ]
+      }
+    ]
+  }
+}
+JSON
+strip_wiring "$SWC"
+jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/coach-lint.sh"' "$SWC" >/dev/null 2>&1 \
+  && ok "strip_wiring leaves a same-convention third-party hook outside .claude intact" \
+  || ko "strip_wiring leaves a same-convention third-party hook outside .claude intact (got $(cat "$SWC"))"
 
 # Both script-removal lists in uninstall.sh must name the coach scripts, or
 # the files survive on disk even once the wiring above is stripped clean.
