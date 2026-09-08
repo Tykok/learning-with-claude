@@ -2775,7 +2775,13 @@ for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMax
 done
 
 # The dispatch table must route every subcommand the skill claims to accept.
-for c in "coach on" "coach off" "coach delegate" "coach review"; do
+# "coach on" needs the backtick-wrapped dispatch-table form, matching the config-key
+# loop above: an unanchored match also hits the unrelated frontmatter phrase "coach
+# one weak spot to mastery" ("coach on" is a bare substring of "coach one"), so a
+# plain grep would stay green even if the coach on/off dispatch row were deleted.
+grep -q '`coach on`' "$SK" && ok "SKILL.md dispatches \`coach on\`" \
+  || ko "SKILL.md dispatches \`coach on\`"
+for c in "coach off" "coach delegate" "coach review"; do
   grep -q "$c" "$SK" && ok "SKILL.md dispatches \`$c\`" || ko "SKILL.md dispatches \`$c\`"
 done
 

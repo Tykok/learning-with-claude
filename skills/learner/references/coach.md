@@ -71,10 +71,11 @@ described. If they do not, say nothing further about it.
 ## `learner coach delegate <glob> …`
 
 Write one glob per line to `$TMPDIR/claude-learner-<session-id>.coach-scope`, appending to what
-is there, and end the file with a newline — a line left dangling without one risks being
-dropped on the next read. A line beginning with `#` is a comment: the gate skips it, so use it
-freely to annotate why a glob is delegated. `coach delegate none` removes the file. Report back
-which globs are now in force.
+is there, and end the file with a newline. The gate's reader tolerates a missing final newline
+only because it was hardened after that exact gap once silently dropped the most recently
+delegated glob — write the newline rather than leaning on that hardening. A line beginning with
+`#` is a comment: the gate skips it, so use it freely to annotate why a glob is delegated.
+`coach delegate none` removes the file. Report back which globs are now in force.
 
 Globs are matched with shell `case`, in which `*` crosses `/` — so `src/**/repository/**` and
 `src/*/repository/*` behave identically. Say so if the dev writes a glob whose precision they
