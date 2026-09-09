@@ -58,6 +58,22 @@ so a crashed exercise can't leave the tree broken. This is not optional.
 
 Prefer another style when the dev cannot edit locally.
 
+## Never hand the answer over
+
+The question is grounded in the diff; it does not carry the diff. A question that quotes
+both sides of a hunk and then asks what the change does has already answered itself — the
+dev reads the answer off the screen, agrees with it, and learns nothing. That failure is
+invisible from here: the answer comes back correct.
+
+- Quote the minimum that makes the question askable, and one side of the hunk only.
+  Asking what a construct is for means showing the code as it now stands, never the
+  before-and-after pair.
+- Ask about the code as it stands (*"why is this expression wrapped in parentheses?"*),
+  not about the transition (*"this became that — what do the parentheses do?"*).
+- Never name the concept you are asking the dev to produce, in the question or in a label
+  next to it. A question headed `(Python syntax: line continuation)` is already over.
+- The feedback carries the answer. The question carries the code and the question.
+
 ## Running the question
 
 Ask ONE question, then wait for the answer. `skip` moves on without insisting. Give

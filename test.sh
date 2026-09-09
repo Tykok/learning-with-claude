@@ -165,6 +165,147 @@ cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
   && ko "learner_active fails under a disabled path" \
   || ok "learner_active fails under a disabled path"
 
+# --- learner_excluded -------------------------------------------------------
+echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
+rm -f "$PCFG"
+XCFG=$(cfgsh 'learner_config')
+
+excl() { cfgsh "learner_excluded '$1' '$XCFG'"; }
+
+excl "$WORK/proj/src/Main.kt"            && ko "plain source is material"            || ok "plain source is material"
+excl "$WORK/proj/node_modules/x/i.js"    && ok "node_modules is excluded"             || ko "node_modules is excluded"
+excl "$WORK/proj/build/gen/A.kt"         && ok "build/ is excluded"                   || ko "build/ is excluded"
+excl "$WORK/proj/target/out.jar"         && ok "target/ is excluded"                  || ko "target/ is excluded"
+excl "$WORK/proj/.git/COMMIT_EDITMSG"    && ok ".git/ is excluded"                    || ko ".git/ is excluded"
+excl "$WORK/proj/pnpm-lock.yaml"         && ok "*-lock.* is excluded"                 || ko "*-lock.* is excluded"
+excl "$WORK/proj/yarn.lock"              && ok "*.lock is excluded"                   || ko "*.lock is excluded"
+excl "$WORK/proj/app.min.js"             && ok "*.min.* is excluded"                  || ko "*.min.* is excluded"
+excl "$WORK/proj/api.generated.ts"       && ok "*.generated.* is excluded"            || ko "*.generated.* is excluded"
+excl "$WORK/proj/README.md"              && ok "untrackGlobs *.md is excluded"        || ko "untrackGlobs *.md is excluded"
+excl "$WORK/proj/pkg.json"               && ok "untrackGlobs *.json is excluded"      || ko "untrackGlobs *.json is excluded"
+
+# An empty untrackGlobs must not accidentally exclude everything.
+echo '{"level":"C"}' > "$GCFG"
+XCFG=$(cfgsh 'learner_config')
+excl "$WORK/proj/src/Main.kt" && ko "no globs: source still material" || ok "no globs: source still material"
+
+# The helper must not leave `set -f` on in the caller's shell, or every later
+# glob expansion in that shell silently stops working.
+out=$(cfgsh "learner_excluded '$WORK/proj/src/Main.kt' '$XCFG'; case \"\$-\" in *f*) echo LEAKED ;; *) echo CLEAN ;; esac")
+[ "$out" = "CLEAN" ] && ok "learner_excluded restores globbing" || ko "learner_excluded restores globbing"
+
+# --- coach config -----------------------------------------------------------
+echo '{"level":"C"}' > "$GCFG"
+rm -f "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "false" ] \
+  && [ "$(echo "$out" | jq -r .coachCadence)" = "pomodoro" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "25" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkGrowthMinutes)" = "5" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMaxMinutes)" = "45" ] \
+  && [ "$(echo "$out" | jq -r .coachChallengeMinutes)" = "8" ] \
+  && [ "$(echo "$out" | jq -r .coachIdleCycles)" = "2" ]; } \
+  && ok "coach defaults are present" || ko "coach defaults are present"
+
+# `coach` is a boolean, so it must survive the `*` merge (which `//` would break).
+echo '{"level":"C","coach":true}' > "$GCFG"
+echo '{"coach":false}' > "$PCFG"
+out=$(cfgsh 'learner_config')
+[ "$(echo "$out" | jq -r .coach)" = "false" ] \
+  && ok "project layer can turn coach off" || ko "project layer can turn coach off"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+echo '{"coach":true,"coachWorkMinutes":10}' > "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "true" ] \
+  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "10" ]; } \
+  && ok "project layer can turn coach on and retune it" \
+  || ko "project layer can turn coach on and retune it"
+
+# --- learner_coach_active ---------------------------------------------------
+echo '{"level":"C","coach":true}' > "$GCFG"
+rm -f "$PCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ok "coach active with level + coach:true" || ko "coach active with level + coach:true"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive when coach:false" || ok "coach inactive when coach:false"
+
+echo '{"coach":true}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive without a level" || ok "coach inactive without a level"
+
+echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
+cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
+  && ko "coach inactive when learner is disabled" || ok "coach inactive when learner is disabled"
+
+# --- learner_coach_work_minutes --------------------------------------------
+echo '{"level":"C","coach":true}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+wm() { cfgsh "learner_coach_work_minutes $1 '$WCFG'"; }
+[ "$(wm 1)" = "25" ] && ok "work block cycle 1 = 25" || ko "work block cycle 1 = 25"
+[ "$(wm 2)" = "30" ] && ok "work block cycle 2 = 30" || ko "work block cycle 2 = 30"
+[ "$(wm 5)" = "45" ] && ok "work block cycle 5 = 45 (capped)" || ko "work block cycle 5 = 45 (capped)"
+[ "$(wm 99)" = "45" ] && ok "work block stays at the cap" || ko "work block stays at the cap"
+
+echo '{"level":"C","coach":true,"coachWorkGrowthMinutes":0}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 7)" = "25" ] && ok "growth 0 keeps a fixed work block" || ko "growth 0 keeps a fixed work block"
+
+# max below min is unambiguous in intent: clamp, do not reject.
+echo '{"level":"C","coach":true,"coachWorkMinutes":30,"coachWorkMaxMinutes":10}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "30" ] && ok "coachWorkMaxMinutes below min clamps to min" \
+  || ko "coachWorkMaxMinutes below min clamps to min"
+
+# A garbage value must fall back to the default rather than produce an empty
+# sleep interval, which would spin the watcher at 100% CPU.
+echo '{"level":"C","coach":true,"coachWorkMinutes":"soon"}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "25" ] && ok "non-numeric coachWorkMinutes falls back to 25" \
+  || ko "non-numeric coachWorkMinutes falls back to 25"
+
+# --- learner_int leading-zero safety (regression) ---------------------------
+# /bin/sh's POSIX-mode arithmetic parses a leading-zero digit string as octal
+# and aborts on an invalid digit (e.g. "008"); learner_int's digit-only guard
+# lets such a string through, so it must normalise before ever reaching a
+# caller's $(( )). Driven through cfgsh (sh -c), the interpreter every hook
+# actually runs under: this does NOT reproduce under an interactive zsh, where
+# $((008)) silently evaluates to 8, so asserting on the numeric result (not
+# just "no error") is what keeps this test meaningful.
+li() { cfgsh "learner_int '$1' '$2' '$3'"; }
+[ "$(li 008 25 1)" = "8" ]  && ok "learner_int strips leading zeros (008 -> 8)" \
+  || ko "learner_int strips leading zeros (008 -> 8)"
+[ "$(li 0 5 0)" = "0" ]    && ok "learner_int keeps a legitimate 0 at floor 0" \
+  || ko "learner_int keeps a legitimate 0 at floor 0"
+[ "$(li 00 5 0)" = "0" ]   && ok "learner_int normalises 00 to 0 at floor 0" \
+  || ko "learner_int normalises 00 to 0 at floor 0"
+[ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
+  || ko "learner_int leaves a plain 25 unchanged"
+
+# End-to-end: the exact crash reported against learner_coach_work_minutes — a
+# leading-zero coachWorkMinutes must not abort the caller's arithmetic (which
+# would print nothing and hand a cadence sleep an empty operand).
+echo '{"level":"C","coach":true,"coachWorkMinutes":"008"}' > "$GCFG"
+WCFG=$(cfgsh 'learner_config')
+[ "$(wm 1)" = "8" ] && ok "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)" \
+  || ko "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)"
+
+# --- docs/config.html: threshold-only prose count matches its table --------
+# Counted dynamically rather than hard-coded, so a table row added or removed
+# later turns this red instead of leaving stale prose silently wrong again.
+tcount=$(grep -c -- '— <code>threshold</code>' "$ROOT/docs/config.html")
+case "$tcount" in
+  4) tword=four ;;
+  5) tword=five ;;
+  6) tword=six ;;
+  *) tword='__no-word-mapped__' ;;
+esac
+grep -qF "last $tword keys" "$ROOT/docs/config.html" \
+  && ok "config.html's threshold-only prose count matches its table ($tcount)" \
+  || ko "config.html's threshold-only prose count matches its table ($tcount)"
+
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
 out=$(printf '{}' | sh "$ONB")
@@ -522,16 +663,68 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
 [ "$n" = 6 ] \
-  && ok "install lays down 6 hook files" \
-  || ko "install lays down 6 hook files (got $n)"
+  && ok "install lays down 6 learner-*.sh hook files" \
+  || ko "install lays down 6 learner-*.sh hook files (got $n)"
 
-# Only 5 are wired: learner-config.sh is sourced, never invoked by Claude Code.
+# hookcount() greps commands for "learner-", so it counts 5, not the 6 that
+# are actually wired: learner-config.sh is sourced, never invoked, so it was
+# never one of the 5 either way, and coach-gate.sh is a real wired hook that
+# this filter simply doesn't name-match. 5 is the right number for what this
+# helper counts; it is not a count of every wired hook.
 n1=$(hookcount "$I")
 inst "$I" --level S >/dev/null 2>&1
 n2=$(hookcount "$I")
 { [ "$n1" = 5 ] && [ "$n2" = 5 ]; } \
-  && ok "hook merge is idempotent (5 wired hooks)" \
+  && ok "hook merge is idempotent (5 name-matched hooks)" \
   || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
+
+# install.sh's own dedup — exercised end to end, not a re-typed copy of its
+# jq — must catch every hook this project wires, coach's PreToolUse entry
+# included. Installing twice (what `learner update` does on every version
+# bump) must leave exactly one copy of every command the shipped snippet
+# wires, not one per install: otherwise every Write/Edit/NotebookEdit spawns
+# one more subprocess per reinstall, forever. Checked against every command
+# in the real snippet file, not a sample, so a too-narrow anchor can't pass
+# by only recognising some of them.
+IC="$WORK/inst-coach-dedup"; mkdir -p "$IC"
+inst "$IC" --level S >/dev/null 2>&1
+inst "$IC" --level S >/dev/null 2>&1
+n=$(jq -n --argjson got "$(jq '[.. | .command? // empty]' "$IC/settings.json")" \
+          --argjson want "$(jq '[.. | .command? // empty]' "$ROOT/hooks/settings.snippet.json")" '
+  [ $want[] as $w | ($got | map(select(. == $w)) | length) | select(. != 1) ] | length
+')
+[ "$n" = 0 ] \
+  && ok "install's dedup keeps exactly one copy of every wired command across two installs" \
+  || ko "install's dedup keeps exactly one copy of every wired command across two installs (got $n mismatched)"
+
+# The opposite guard, same as strip_wiring's: an unrelated third-party hook
+# already present in settings.json must survive a re-install intact. A fresh
+# directory, not $IC: reusing it would let $IC's own corrupted-command debris
+# (if the predicate were ever wrong) silently abort a later jq call and leave
+# this assertion passing for the wrong reason — every fixture below gets its
+# own directory for the same reason.
+IC2="$WORK/inst-coach-survival"; mkdir -p "$IC2"
+inst "$IC2" --level S >/dev/null 2>&1
+jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"sh /opt/otherteam/hooks/pretty-linter.sh"}]}]' \
+  "$IC2/settings.json" > "$IC2/settings.json.tmp" && mv "$IC2/settings.json.tmp" "$IC2/settings.json"
+inst "$IC2" --level S >/dev/null 2>&1
+jq -e '[.. | .command? // empty] | any(. == "sh /opt/otherteam/hooks/pretty-linter.sh")' "$IC2/settings.json" >/dev/null 2>&1 \
+  && ok "install's dedup leaves an unrelated third-party hook intact" \
+  || ko "install's dedup leaves an unrelated third-party hook intact (got $(jq -c '.hooks.PreToolUse' "$IC2/settings.json"))"
+
+# The case that actually matters: a third-party hook whose path matches
+# learner's naming convention ("coach-*.sh" under a "hooks/" directory) but
+# lives under a tree learner never installs into. A bare path-shape match
+# would dedup this away on every reinstall; the ".claude" anchor must leave
+# it alone.
+IC3="$WORK/inst-coach-collide"; mkdir -p "$IC3"
+inst "$IC3" --level S >/dev/null 2>&1
+jq '.hooks.PreToolUse += [{"matcher":"Bash","hooks":[{"type":"command","command":"sh /opt/otherteam/hooks/coach-lint.sh"}]}]' \
+  "$IC3/settings.json" > "$IC3/settings.json.tmp" && mv "$IC3/settings.json.tmp" "$IC3/settings.json"
+inst "$IC3" --level S >/dev/null 2>&1
+jq -e '[.. | .command? // empty] | any(. == "sh /opt/otherteam/hooks/coach-lint.sh")' "$IC3/settings.json" >/dev/null 2>&1 \
+  && ok "install's dedup leaves a same-convention third-party hook outside .claude intact" \
+  || ko "install's dedup leaves a same-convention third-party hook outside .claude intact (got $(jq -c '.hooks.PreToolUse' "$IC3/settings.json"))"
 
 jq -e '[.. | .command? // empty | select(contains("learner-"))]
        | all(contains("CLAUDE_CONFIG_DIR"))' "$I/settings.json" >/dev/null 2>&1 \
@@ -600,7 +793,7 @@ jq -e '.level == "S"' "$I8/learner.json" >/dev/null 2>&1 \
   && ok "re-install keeps an existing config" \
   || ko "re-install keeps an existing config"
 
-jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths"] | length == 0' \
+jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachCadence","coachWorkMinutes","coachWorkGrowthMinutes","coachWorkMaxMinutes","coachChallengeMinutes","coachIdleCycles","coachPollSeconds","coachLines","coachFiles","coachEveryMinutes","coachCooldownMinutes"] | length == 0' \
   "$ROOT/learner.json.example" >/dev/null 2>&1 \
   && ok "learner.json.example carries only supported keys" \
   || ko "learner.json.example carries only supported keys"
@@ -741,15 +934,94 @@ printf '{"session_id":"cln"}' | TMPDIR="$G/tmp" sh "$CLEAN"
 echo '{"level":"S"}' > "$GCFG"
 
 # --- uninstall reverses install ---------------------------------------------
+
+# strip_wiring's own predicate — not a re-typed copy of it — must remove
+# every hook the shipped snippet wires, coach's PreToolUse entry included.
+# A command matching only "coach-" once survived a "learner-"-only match;
+# this checks every command in the real shipped file, not a sample, so a
+# too-narrow anchor can't pass by only recognising some of them.
+eval "$(sed -n '/^strip_wiring()/,/^}/p' "$ROOT/uninstall.sh")"
+SWJD="$WORK/strip-wiring-snippet"; mkdir -p "$SWJD"
+SWJ="$SWJD/settings.json"
+cp "$ROOT/hooks/settings.snippet.json" "$SWJ"
+strip_wiring "$SWJ"
+left=$(jq '[.. | .command? // empty] | length' "$SWJ")
+[ "$left" = 0 ] \
+  && ok "strip_wiring removes every hook wired by the shipped snippet" \
+  || ko "strip_wiring removes every hook wired by the shipped snippet (left=$left)"
+
+# The other side of the same coin: an unrelated third-party hook must survive
+# stripping. Without this, "just delete all hooks" would pass the assertion
+# above while destroying a user's own configuration. This one doesn't share
+# learner's naming convention at all — the harder case, a same-convention
+# name under a different tree, is the next one below.
+SWOD="$WORK/strip-wiring-other"; mkdir -p "$SWOD"
+SWO="$SWOD/settings.json"
+cat > "$SWO" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "sh /opt/otherteam/hooks/pretty-linter.sh" }
+        ]
+      }
+    ]
+  }
+}
+JSON
+strip_wiring "$SWO"
+jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/pretty-linter.sh"' "$SWO" >/dev/null 2>&1 \
+  && ok "strip_wiring leaves an unrelated third-party hook intact" \
+  || ko "strip_wiring leaves an unrelated third-party hook intact (got $(cat "$SWO"))"
+
+# The case that actually matters: a third-party hook whose path *does* match
+# learner's naming convention (a "coach-*.sh" script under a "hooks/"
+# directory) but lives under a tree learner never installs into. A bare
+# path-shape match would strip this; the predicate must require the ".claude"
+# anchor too and leave it alone.
+SWCD="$WORK/strip-wiring-colliding"; mkdir -p "$SWCD"
+SWC="$SWCD/settings.json"
+cat > "$SWC" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "sh /opt/otherteam/hooks/coach-lint.sh" }
+        ]
+      }
+    ]
+  }
+}
+JSON
+strip_wiring "$SWC"
+jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/coach-lint.sh"' "$SWC" >/dev/null 2>&1 \
+  && ok "strip_wiring leaves a same-convention third-party hook outside .claude intact" \
+  || ko "strip_wiring leaves a same-convention third-party hook outside .claude intact (got $(cat "$SWC"))"
+
+# Both script-removal lists in uninstall.sh must name the coach scripts, or
+# the files survive on disk even once the wiring above is stripped clean.
+[ "$(grep -c 'hooks/coach-gate\.sh' "$ROOT/uninstall.sh")" = 2 ] \
+  && ok "uninstall.sh's two removal lists both name coach-gate.sh" \
+  || ko "uninstall.sh's two removal lists both name coach-gate.sh"
+[ "$(grep -c 'hooks/coach-watch\.sh' "$ROOT/uninstall.sh")" = 2 ] \
+  && ok "uninstall.sh's two removal lists both name coach-watch.sh" \
+  || ko "uninstall.sh's two removal lists both name coach-watch.sh"
+
 U="$WORK/uninst"; mkdir -p "$U"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
 printf '# notes\n' > "$U/learner/memory.md"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
-left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
+left=$(jq '[.. | .command? // empty | select(contains("learner-") or contains("coach-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
 { [ "$left" = 0 ] \
   && [ ! -e "$U/hooks/learner-quiz.sh" ] \
   && [ ! -e "$U/hooks/learner-config.sh" ] \
   && [ ! -e "$U/hooks/learner-update-check.sh" ] \
+  && [ ! -e "$U/hooks/coach-gate.sh" ] \
+  && [ ! -e "$U/hooks/coach-watch.sh" ] \
   && [ ! -e "$U/skills/learner/INSTALL_ORIGIN" ] \
   && [ ! -d "$U/skills/learner" ]; } \
   && ok "uninstall removes hooks, skill and wiring" \
@@ -993,6 +1265,17 @@ printf '%s' "$fill" | grep -qi 'restore' \
 { grep -qi 'multiple-choice' "$REFS/quiz.md" && grep -qi 'multiple-choice' "$REFS/hook-quiz.md"; } \
   && ok "both quiz protocols prefer plain chat over multiple choice" \
   || ko "both quiz protocols prefer plain chat over multiple choice"
+
+# A question that quotes both sides of a hunk and then asks what the change does has
+# already been answered. The rule that forbids it has to live in both protocols: the
+# Stop hook reads one, `learner quiz` reads the other, and neither reads the other one.
+for f in quiz.md hook-quiz.md; do
+  leak=$(awk '/^## Never hand the answer over/{f=1;next} /^## /{f=0} f' "$REFS/$f")
+  { printf '%s' "$leak" | grep -qi 'both sides' \
+    && printf '%s' "$leak" | grep -qi 'feedback'; } \
+    && ok "$f forbids a question that carries its own answer" \
+    || ko "$f forbids a question that carries its own answer"
+done
 
 # --- docs -------------------------------------------------------------------
 RM="$ROOT/README.md"
@@ -1397,13 +1680,12 @@ fi
   && ok "docs/.nojekyll stops GitHub running the page through Jekyll" \
   || ko "docs/.nojekyll stops GitHub running the page through Jekyll"
 
-# The published root must hold the site, not internal design records.
+# The published root must hold the site, and nothing else. The design records it
+# once had to be kept apart from now live in the wiki, so there is no in-tree
+# counterpart left to assert.
 [ ! -d "$ROOT/docs/superpowers" ] \
   && ok "the published root carries no internal design records" \
   || ko "the published root carries no internal design records"
-[ -d "$ROOT/design/superpowers" ] \
-  && ok "the design records moved to design/" \
-  || ko "the design records moved to design/"
 
 # No external request at load. <a href> navigation is fine; fetching tags/properties are
 # not. The original three (script/link-href/@import) missed a whole class of fetch: an
@@ -1606,6 +1888,95 @@ for sub in $SUBCOMMANDS; do
     && ok "usage.html documents the 'learner $sub' subcommand" \
     || ko "usage.html documents the 'learner $sub' subcommand"
 done
+
+# --- coach docs -------------------------------------------------------------
+grep -qi 'coach' "$RM" && ok "README covers coach mode" || ko "README covers coach mode"
+grep -q 'learner coach on' "$RM" \
+  && ok "README shows how to turn coach on" || ko "README shows how to turn coach on"
+grep -q 'coach delegate' "$RM" \
+  && ok "README shows delegation" || ko "README shows delegation"
+# Anchored to the section heading itself, not a bare 'coach' grep: merge-base
+# usage.html already said "Coaches one weak spot… to mastery" under `learner
+# improve`, so a loose grep passed before this feature existed and would stay
+# green with the entire coach section deleted. id="coach" only exists once the
+# section itself does.
+grep -qF 'id="coach"' "$SITE_USAGE" && ok "usage.html covers coach mode" \
+  || ko "usage.html covers coach mode"
+for k in coachCadence coachWorkMinutes coachIdleCycles; do
+  grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
+    || ko "config.html documents $k"
+done
+# The interactive-session-only limitation must be stated where a dev will hit it,
+# not only in the design doc they will never read. Anchored to 'claude -p' rather
+# than the bare word "interactive": line 38's "The interactive exercise above…"
+# (about the fill question style) has satisfied a looser grep since long before
+# this branch, and would stay green even with the whole limitation paragraph
+# deleted — this is the third instance of that non-discriminating-grep defect
+# in this plan.
+grep -qF 'claude -p' "$SITE_USAGE" \
+  && ok "usage.html states the interactive-session limitation" \
+  || ko "usage.html states the interactive-session limitation"
+
+# --- hook count drift guard ---------------------------------------------------
+# Five prose spots (README twice, index.html, safety.html, install.html) each
+# state how many hook files ship, and none of them turned red when coach-gate.sh
+# and coach-watch.sh joined the original six — "six" quietly went stale in all
+# five at once. Ground truth is read from the filesystem and from
+# hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
+# above (test.sh:1837-1854) and the threshold-only prose-count check further up
+# (search "docs/config.html: threshold-only prose count"), so a ninth hook (or
+# a wiring change) turns every stale copy red automatically instead of leaving
+# a plausible-sounding number wrong forever.
+hook_files=$(find "$ROOT/hooks" -maxdepth 1 -name '*.sh' | sort)
+hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
+case "$hook_n" in
+  6) hook_word=six ;;
+  7) hook_word=seven ;;
+  8) hook_word=eight ;;
+  9) hook_word=nine ;;
+  10) hook_word=ten ;;
+  *) hook_word='__no-word-mapped__' ;;
+esac
+
+wired_n=$(jq '[.. | .command? // empty] | length' "$ROOT/hooks/settings.snippet.json")
+case "$wired_n" in
+  5) wired_word=five ;;
+  6) wired_word=six ;;
+  7) wired_word=seven ;;
+  8) wired_word=eight ;;
+  *) wired_word='__no-word-mapped__' ;;
+esac
+
+# The strongest guard: every shipped hook file must be named in install.html's
+# "what gets installed" table, the one place that lists them individually
+# rather than as a bare count — this is what would have caught coach-watch.sh
+# missing from that table entirely, which no count-matching check below can.
+for hf in $hook_files; do
+  base=$(basename "$hf")
+  grep -qF "hooks/$base" "$SITE_INSTALL" \
+    && ok "install.html's table lists $base" \
+    || ko "install.html's table lists $base"
+done
+
+grep -qiF "$hook_word POSIX \`sh\` hooks plus a \`learner\` skill" "$RM" \
+  && ok "README's hook-count intro matches the $hook_n files on disk" \
+  || ko "README's hook-count intro matches the $hook_n files on disk"
+
+grep -qiF "covers all $hook_word shipped hook files" "$RM" \
+  && ok "README's hooks/*.sh gloss matches the $hook_n files on disk" \
+  || ko "README's hooks/*.sh gloss matches the $hook_n files on disk"
+
+grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
+  && ok "index.html's hook count matches the $hook_n files on disk" \
+  || ko "index.html's hook count matches the $hook_n files on disk"
+
+grep -qiF "the $hook_word hook files, the skill" "$SITE_SAFETY" \
+  && ok "safety.html's hook count matches the $hook_n files on disk" \
+  || ko "safety.html's hook count matches the $hook_n files on disk"
+
+grep -qiF "$hook_word hook files ship and $wired_word are wired" "$SITE_INSTALL" \
+  && ok "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)" \
+  || ko "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)"
 
 grep -qF -- '--project' "$SITE_SAFETY" \
   && ok "safety.html documents the legacy cleanup flag" \
@@ -1961,10 +2332,10 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "4" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "4" ]; } \
-  && ok "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 4 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "5" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "5" ]; } \
+  && ok "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -1973,6 +2344,674 @@ grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
 [ "$(jq -r '.version' "$PLUGIN_JSON")" = "$(cat "$ROOT/VERSION")" ] \
   && ok "plugin.json's version matches the VERSION file" \
   || ko "plugin.json's version matches the VERSION file"
+
+# --- coach gate -------------------------------------------------------------
+GATE="$ROOT/hooks/coach-gate.sh"
+scope() { echo "$TMPDIR/claude-learner-$1.coach-scope"; }
+
+# $1 = session id, $2 = file path, $3 = tool name (default Edit)
+gate() {
+  printf '{"session_id":"%s","tool_name":"%s","tool_input":{"file_path":"%s"}}' \
+    "$1" "${3:-Edit}" "$2" | sh "$GATE"
+}
+denied() { printf '%s' "$1" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1; }
+
+SID_G=gate1
+rm -f "$(scope "$SID_G")"
+
+# Coach off: the gate must be completely silent, whatever the path.
+echo '{"level":"C","coach":false}' > "$GCFG"
+rm -f "$PCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent when coach is off" || ko "gate silent when coach is off"
+
+# Learner inactive beats coach:true — same five conditions as the quiz.
+echo '{"coach":true}' > "$GCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent without a level" || ko "gate silent without a level"
+echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/Service.kt")" ] \
+  && ok "gate silent when learner is disabled" || ko "gate silent when learner is disabled"
+
+# Coach on, nothing delegated: repo source is denied.
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+mkdir -p "$WORK/proj/src/main/repository" "$WORK/proj/src/main/service"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+denied "$out" && ok "undelegated repo source is denied" || ko "undelegated repo source is denied"
+
+# The deny payload must be valid JSON and must name the file and the escape hatch,
+# or Claude gets a refusal it cannot act on and the dev never learns how to delegate.
+{ printf '%s' "$out" | jq -e . >/dev/null 2>&1 \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'Service.kt' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'coach delegate'; } \
+  && ok "deny payload is valid JSON naming the file and the escape hatch" \
+  || ko "deny payload is valid JSON naming the file and the escape hatch"
+
+# All three write tools are gated.
+for tool in Write Edit NotebookEdit; do
+  out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt" "$tool")
+  denied "$out" && ok "$tool is gated" || ko "$tool is gated"
+done
+
+# The suggested glob must never be a bare `**` — that would invite the dev to
+# delegate the entire repo, which is the opposite of what coach mode is for.
+out=$(gate "$SID_G" "$WORK/proj/TopLevel.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "TopLevel.kt" ] && ok "a top-level file suggests itself, not a bare **" \
+  || ko "a top-level file suggests itself, not a bare ** (got '$sug')"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+sug=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason' \
+        | sed -n "s/.*coach delegate '\([^']*\)'.*/\1/p")
+[ "$sug" = "src/main/service/**" ] && ok "a nested file suggests its directory glob" \
+  || ko "a nested file suggests its directory glob (got '$sug')"
+
+# Delegation: the matching path is allowed, its sibling is still denied.
+printf 'src/**/repository/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/repository/UserRepo.kt")" ] \
+  && ok "delegated glob is allowed" || ko "delegated glob is allowed"
+out=$(gate "$SID_G" "$WORK/proj/src/main/service/Service.kt")
+denied "$out" && ok "sibling of a delegated glob is still denied" \
+  || ko "sibling of a delegated glob is still denied"
+
+# Several globs, one per line.
+printf 'src/**/repository/**\nsrc/**/mapper/**\n' > "$(scope "$SID_G")"
+mkdir -p "$WORK/proj/src/main/mapper"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/mapper/UserMapper.kt")" ] \
+  && ok "second delegated glob is allowed" || ko "second delegated glob is allowed"
+
+# Regression (fix round 1, Finding 2): `read` delivers a final line with no
+# trailing newline but returns non-zero, so a bare `while read` loop drops it
+# silently. The scope file below ends without a trailing newline on its last
+# glob, which must still match.
+printf 'src/**/repository/**\nsrc/**/mapper/**' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj/src/main/mapper/UserMapper2.kt")" ] \
+  && ok "delegated glob with no trailing newline on the last line still matches" \
+  || ko "delegated glob with no trailing newline on the last line still matches"
+rm -f "$(scope "$SID_G")"
+
+# Outside the repo: Claude's own config and the scratchpad are never coach material.
+[ -z "$(gate "$SID_G" "$WORK/cfg/learner.json")" ] \
+  && ok "path outside the repo is allowed" || ko "path outside the repo is allowed"
+
+# Regression (fix round 1, Finding 1): a PreToolUse hook fires before the write,
+# so the immediate parent of a brand-new file in a not-yet-created subdirectory
+# legitimately does not exist yet. Reached through a symlinked repo path, the
+# slow outside-the-repo resolution must walk up to the deepest EXISTING
+# ancestor rather than giving up at the first missing directory and silently
+# allowing an in-repo, undelegated write.
+ln -sf "$WORK/proj" "$WORK/proj-link"
+out=$(gate "$SID_G" "$WORK/proj-link/src/coachbrandnew/NewFile.kt")
+denied "$out" && ok "symlinked path into a not-yet-created directory is still denied" \
+  || ko "symlinked path into a not-yet-created directory is still denied"
+# Companion: a genuinely outside path through a not-yet-created directory chain
+# must still be allowed, so the walk-up fix cannot pass by denying everything.
+[ -z "$(gate "$SID_G" "$WORK/cfg/brandnew/sub/F.kt")" ] \
+  && ok "genuinely outside path into a not-yet-created directory is still allowed" \
+  || ko "genuinely outside path into a not-yet-created directory is still allowed"
+
+# Regression (task-3b / fix round 2): REL was derived from the RAW file_path,
+# not the resolved one, so on a repo reached through a symlink no delegated
+# glob could ever match — ROOT is physical but the stripped prefix wasn't, so
+# REL stayed an absolute path that no relative glob could match. Reproduces
+# through the same $WORK/proj-link symlink used above, this time with a glob
+# actually delegated.
+printf 'src/**/repository/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj-link/src/main/repository/UserRepo.kt")" ] \
+  && ok "delegated glob matches through a symlinked repo path" \
+  || ko "delegated glob matches through a symlinked repo path"
+out=$(gate "$SID_G" "$WORK/proj-link/src/main/service/Service.kt")
+denied "$out" && ok "undelegated sibling through a symlinked repo path is still denied" \
+  || ko "undelegated sibling through a symlinked repo path is still denied"
+
+# The sharpest case: PreToolUse fires before the write, so the target
+# directory reached through the symlink may not exist on disk yet either.
+printf 'src/newmodule/**\n' > "$(scope "$SID_G")"
+[ -z "$(gate "$SID_G" "$WORK/proj-link/src/newmodule/NewRepo.kt")" ] \
+  && ok "delegated glob matches a not-yet-created directory through a symlink" \
+  || ko "delegated glob matches a not-yet-created directory through a symlink"
+rm -f "$(scope "$SID_G")"
+
+# untrackGlobs material is allowed: blocking a README write is friction with no
+# pedagogical payoff.
+[ -z "$(gate "$SID_G" "$WORK/proj/README.md")" ] \
+  && ok "untrackGlobs path is allowed" || ko "untrackGlobs path is allowed"
+[ -z "$(gate "$SID_G" "$WORK/proj/node_modules/x/i.js")" ] \
+  && ok "floor path is allowed" || ko "floor path is allowed"
+
+# Degenerate payloads must never block a tool call.
+[ -z "$(printf '{}' | sh "$GATE")" ] && ok "empty payload is a no-op" || ko "empty payload is a no-op"
+[ -z "$(gate "$SID_G" "")" ] && ok "missing file_path is a no-op" || ko "missing file_path is a no-op"
+[ -z "$(printf 'not json' | sh "$GATE")" ] && ok "non-JSON payload is a no-op" || ko "non-JSON payload is a no-op"
+
+# --- coach watcher: candidates and metric -----------------------------------
+WATCH="$ROOT/hooks/coach-watch.sh"
+basedir() { echo "$TMPDIR/claude-learner-$1.coach-base"; }
+sess() { echo "$TMPDIR/claude-learner-$1.session"; }
+
+# A dedicated repo so the watcher tests cannot disturb the record-edit ones.
+CREPO="$WORK/crepo"
+mkdir -p "$CREPO/.claude"
+git -C "$CREPO" init -q
+git -C "$CREPO" config user.email t@t.t
+git -C "$CREPO" config user.name t
+CREPO="$(cd "$CREPO" && pwd -P)"
+
+lines() { i=1; while [ "$i" -le "$1" ]; do echo "line $i"; i=$((i + 1)); done; }
+
+# $1 = session id — one measurement cycle, material on stdout as "<delta>\t<rel>"
+material() { CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$1" --once --print-material; }
+
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+rm -f "$PCFG"
+SID_W=watch1
+rm -rf "$(basedir "$SID_W")"; rm -f "$(sess "$SID_W")"
+
+# No baseline yet: a new untracked file counts every one of its lines.
+mkdir -p "$CREPO/src"
+lines 10 > "$CREPO/src/Service.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "10" ] \
+  && ok "new untracked file counts all its lines" || ko "new untracked file counts all its lines"
+
+# Advance the baseline, change nothing: an empty cycle.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+out=$(material "$SID_W")
+[ -z "$out" ] && ok "unchanged file after baseline is an empty cycle" \
+  || ko "unchanged file after baseline is an empty cycle"
+
+# Three lines appended must count as 3, not as the file's full 13. This is the
+# assertion that catches a regression to measuring against HEAD.
+lines 3 | sed 's/^/extra /' >> "$CREPO/src/Service.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "3" ] \
+  && ok "delta is measured since the last review, not since HEAD" \
+  || ko "delta is measured since the last review, not since HEAD"
+
+# Work the dev committed since the baseline still counts. Without the
+# <baseline-HEAD>..HEAD term the candidate set would be empty here and the dev
+# would be cut off for idleness right after their most productive block.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 4 | sed 's/^/committed /' >> "$CREPO/src/Service.kt"
+git -C "$CREPO" add -A >/dev/null 2>&1
+git -C "$CREPO" commit -q -m "dev commits mid-block"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Service.kt"{print $1}')" = "4" ] \
+  && ok "work committed since the baseline still counts" \
+  || ko "work committed since the baseline still counts"
+
+# Claude's own writes are the quiz's material, not the coach's.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+mkdir -p "$CREPO/src/repository"
+lines 20 > "$CREPO/src/repository/UserRepo.kt"
+echo "$CREPO/src/repository/UserRepo.kt" > "$(sess "$SID_W")"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/repository/UserRepo.kt"{print $1}')" ] \
+  && ok "a path Claude wrote this session is excluded" \
+  || ko "a path Claude wrote this session is excluded"
+rm -f "$(sess "$SID_W")"
+
+# Regression (Finding 2): learner-record-edit.sh wrote the RAW file_path into
+# .session, but coach-watch.sh compares candidates (built from the always-
+# physical ROOT) against .session with a plain string match. On a repo
+# reached through a symlink the two representations never agreed, so a file
+# Claude wrote sailed past the "already in .session" check and was reviewed
+# as if the dev had written it — the one direction the coach spec rules out.
+ln -sfn "$CREPO" "$WORK/crepo-link"
+CLINK="$WORK/crepo-link"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 15 > "$CREPO/src/ClaudeWrote.kt"
+printf '{"session_id":"%s","tool_input":{"file_path":"%s"}}' "$SID_W" "$CLINK/src/ClaudeWrote.kt" \
+  | CLAUDE_PROJECT_DIR="$CLINK" sh "$REC"
+lines 10 > "$CREPO/src/DevWrote.kt"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/ClaudeWrote.kt"{print $1}')" ] \
+  && ok "a path Claude wrote through a symlinked repo is still excluded from coach material" \
+  || ko "a path Claude wrote through a symlinked repo is still excluded from coach material"
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/DevWrote.kt"{print $1}')" = "10" ] \
+  && ok "control: a path only the dev touched still appears as coach material" \
+  || ko "control: a path only the dev touched still appears as coach material"
+rm -f "$(sess "$SID_W")" "$CREPO/src/ClaudeWrote.kt" "$CREPO/src/DevWrote.kt"
+
+# Exclusions come from the shared helper, so both layers must apply.
+mkdir -p "$CREPO/node_modules/x"
+lines 50 > "$CREPO/node_modules/x/index.js"
+lines 30 > "$CREPO/NOTES.md"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2 ~ /node_modules/{print $1}')" ] \
+  && ok "node_modules is excluded from the metric" || ko "node_modules is excluded from the metric"
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="NOTES.md"{print $1}')" ] \
+  && ok "untrackGlobs is excluded from the metric" || ko "untrackGlobs is excluded from the metric"
+rm -rf "$CREPO/node_modules" "$CREPO/NOTES.md"
+
+# A line count over a PNG is noise.
+printf 'PNG\000\001\002binary\000data' > "$CREPO/src/logo.png"
+out=$(material "$SID_W")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/logo.png"{print $1}')" ] \
+  && ok "binary file is excluded from the metric" || ko "binary file is excluded from the metric"
+rm -f "$CREPO/src/logo.png"
+
+# An emptied file is a real 10-line change, not a binary and not nothing.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 10 > "$CREPO/src/Empty.kt"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+: > "$CREPO/src/Empty.kt"
+out=$(material "$SID_W")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Empty.kt"{print $1}')" = "10" ] \
+  && ok "emptying a file counts its deleted lines" || ko "emptying a file counts its deleted lines"
+rm -f "$CREPO/src/Empty.kt"
+
+# coach_delta must print exactly one number. `grep -c` prints "0" and exits 1 on
+# no matches, so a naive `|| printf '0'` would yield "00" here.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+lines 6 > "$CREPO/src/Single.kt"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W" --once --advance >/dev/null
+printf 'x' >> "$CREPO/src/Single.kt"
+out=$(material "$SID_W")
+d=$(printf '%s' "$out" | awk -F'\t' '$2=="src/Single.kt"{print $1}')
+case "$d" in
+  [0-9]) ok "delta is a single normalised integer" ;;
+  *) ko "delta is a single normalised integer (got '$d')" ;;
+esac
+rm -f "$CREPO/src/Single.kt"
+
+# The watcher must be as silent as the gate when the regime is off.
+echo '{"level":"C","coach":false}' > "$GCFG"
+out=$(material "$SID_W")
+[ -z "$out" ] && ok "watcher silent when coach is off" || ko "watcher silent when coach is off"
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
+# A repo with no commits at all: the untracked term alone must still work.
+NREPO="$WORK/nrepo"; mkdir -p "$NREPO"; git -C "$NREPO" init -q
+NREPO="$(cd "$NREPO" && pwd -P)"
+lines 7 > "$NREPO/fresh.kt"
+out=$(CLAUDE_PROJECT_DIR="$NREPO" sh "$WATCH" watch-fresh --once --print-material)
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="fresh.kt"{print $1}')" = "7" ] \
+  && ok "repo with no commits still measures untracked files" \
+  || ko "repo with no commits still measures untracked files"
+rm -rf "$(basedir watch-fresh)"
+
+# Regression: the empty-tree fallback in coach_advance (for a baseline taken
+# before any commit exists) must resolve under either of git's object
+# formats. A hardcoded SHA-1 empty-tree id silently fails to resolve in a
+# SHA-256 repo, reproducing the exact "work committed since the baseline
+# still counts" bug for that format. `--object-format=sha256` needs a git
+# recent enough to support it, so probe first and skip cleanly rather than
+# fail the suite on an older git.
+if git init --object-format=sha256 -q "$WORK/sha256-probe" >/dev/null 2>&1; then
+  rm -rf "$WORK/sha256-probe"
+  SREPO="$WORK/srepo"
+  mkdir -p "$SREPO/.claude"
+  git -C "$SREPO" init --object-format=sha256 -q
+  git -C "$SREPO" config user.email t@t.t
+  git -C "$SREPO" config user.name t
+  SREPO="$(cd "$SREPO" && pwd -P)"
+  SID_S=watch-sha256
+
+  # Baseline taken while the repo has zero commits.
+  lines 5 > "$SREPO/Sha.kt"
+  CLAUDE_PROJECT_DIR="$SREPO" sh "$WATCH" "$SID_S" --once --advance >/dev/null
+  # The dev appends 6 lines and commits them.
+  lines 6 | sed 's/^/committed /' >> "$SREPO/Sha.kt"
+  git -C "$SREPO" add -A >/dev/null 2>&1
+  git -C "$SREPO" commit -q -m "dev commits mid-block in a sha256 repo"
+  out=$(CLAUDE_PROJECT_DIR="$SREPO" sh "$WATCH" "$SID_S" --once --print-material)
+  [ "$(printf '%s' "$out" | awk -F'\t' '$2=="Sha.kt"{print $1}')" = "6" ] \
+    && ok "work committed since the baseline still counts in a sha256 repo" \
+    || ko "work committed since the baseline still counts in a sha256 repo"
+  rm -rf "$(basedir "$SID_S")"
+else
+  skip "sha256-repo regression test (git lacks --object-format=sha256 support)"
+fi
+
+# --- coach watcher: cadence and emission ------------------------------------
+# --once runs one cycle with no sleep, so the whole cadence is testable in
+# milliseconds. `--cycle N` injects the cycle number a real loop would hold.
+cycle_out() { CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$1" --once --cycle "$2"; }
+
+echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+rm -f "$PCFG"
+SID_C=watch2
+rm -rf "$(basedir "$SID_C")"; rm -f "$(sess "$SID_C")"
+rm -f "$CREPO/src/Service.kt"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean 2>/dev/null
+
+mkdir -p "$CREPO/src"
+lines 12 > "$CREPO/src/A.kt"
+lines 8  > "$CREPO/src/B.kt"
+out=$(cycle_out "$SID_C" 3)
+
+printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 20)' \
+  && ok "trigger line carries level, cycle, files and lines" \
+  || ko "trigger line carries level, cycle, files and lines"
+printf '%s' "$out" | grep -q 'src/A.kt' && printf '%s' "$out" | grep -q 'src/B.kt' \
+  && ok "trigger line names the changed files" || ko "trigger line names the changed files"
+printf '%s' "$out" | grep -q 'references/coach.md' \
+  && ok "trigger line points at the protocol, not at the protocol's content" \
+  || ko "trigger line points at the protocol, not at the protocol's content"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "one emission per cycle, never two" || ko "one emission per cycle, never two"
+
+# Emitting advances the baseline, so the very next cycle is empty. Otherwise the
+# dev gets challenged twice on one diff.
+out=$(cycle_out "$SID_C" 4)
+[ -z "$out" ] && ok "emission advances the baseline" || ko "emission advances the baseline"
+
+# Baseline advance only copies content per-SID; it never touches git, so
+# A.kt/B.kt are still untracked. Commit them so a brand-new SID below starts
+# from a clean tree instead of seeing this test's own leftovers as material.
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean2 2>/dev/null
+
+# Idle: coachIdleCycles empty cycles in a row, then one line and exit 0.
+echo '{"level":"S","coach":true,"coachIdleCycles":2}' > "$GCFG"
+SID_I=watch3
+rm -rf "$(basedir "$SID_I")"
+out1=$(cycle_out "$SID_I" 1)   # empty 1 of 2
+[ -z "$out1" ] && ok "first empty cycle says nothing" || ko "first empty cycle says nothing"
+out2=$(cycle_out "$SID_I" 1)   # empty 2 of 2 -> idle
+printf '%s' "$out2" | grep -q 'the watcher has stopped' \
+  && ok "idle line is emitted after coachIdleCycles empty cycles" \
+  || ko "idle line is emitted after coachIdleCycles empty cycles"
+printf '%s' "$out2" | grep -qi 'continue' \
+  && ok "idle line asks about continuing the session" || ko "idle line asks about continuing the session"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_I" --once --cycle 1 >/dev/null 2>&1
+[ "$?" = "0" ] && ok "watcher exits 0 on idle" || ko "watcher exits 0 on idle"
+
+# A cycle with material resets the empty counter: two empty blocks must be
+# *consecutive* to stop the watcher.
+SID_R=watch4
+rm -rf "$(basedir "$SID_R")"
+cycle_out "$SID_R" 1 >/dev/null                       # empty 1
+lines 5 > "$CREPO/src/C.kt"
+cycle_out "$SID_R" 1 >/dev/null                       # material -> reset
+out=$(cycle_out "$SID_R" 1)                           # empty 1 again, not 2
+[ -z "$out" ] && ok "material resets the empty-cycle counter" \
+  || ko "material resets the empty-cycle counter"
+rm -f "$CREPO/src/C.kt"
+
+# The threshold cadence fires on the OR of its three triggers.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
+SID_T=watch5
+rm -rf "$(basedir "$SID_T")"
+lines 25 > "$CREPO/src/D.kt"
+out=$(cycle_out "$SID_T" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold cadence fires on coachLines" || ko "threshold cadence fires on coachLines"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "threshold cadence emits exactly once on coachLines" \
+  || ko "threshold cadence emits exactly once on coachLines"
+
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":1,"coachCooldownMinutes":0}' > "$GCFG"
+rm -rf "$(basedir "$SID_T")"
+out=$(cycle_out "$SID_T" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold cadence fires on coachFiles" || ko "threshold cadence fires on coachFiles"
+[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
+  && ok "threshold cadence emits exactly once on coachFiles" \
+  || ko "threshold cadence emits exactly once on coachFiles"
+
+# Under both thresholds and inside the cooldown: silence.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
+rm -rf "$(basedir "$SID_T")"
+out=$(cycle_out "$SID_T" 1)
+[ -z "$out" ] && ok "threshold cadence is silent below every trigger" \
+  || ko "threshold cadence is silent below every trigger"
+rm -f "$CREPO/src/D.kt"
+
+# Regression: coach_cycle must return a real three-way result (emitted / stop
+# / keep-going) rather than the caller inferring "emitted" from EMPTYF's
+# presence. Under the old inference, a threshold cycle that found material but
+# did not fire (sub-threshold, or cooldown-blocked) touched neither branch of
+# the presence check, so it neither reset nor advanced the empty counter —
+# leaving a *previous* empty cycle's count still standing. A dev writing
+# steady, sub-threshold edits would then get cut off as "idle" while actively
+# working, on a factually false message.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":9999,"coachCooldownMinutes":0,"coachIdleCycles":2}' > "$GCFG"
+SID_TR=watch6
+rm -rf "$(basedir "$SID_TR")"
+out=$(cycle_out "$SID_TR" 1)                          # poll 1: genuinely empty -> counter 1
+[ -z "$out" ] && ok "threshold: first empty poll is silent" \
+  || ko "threshold: first empty poll is silent"
+lines 5 > "$CREPO/src/E.kt"
+out=$(cycle_out "$SID_TR" 1)                          # poll 2: material, sub-threshold
+[ -z "$out" ] && ok "threshold: sub-threshold material is silent" \
+  || ko "threshold: sub-threshold material is silent"
+rm -f "$CREPO/src/E.kt"
+out=$(cycle_out "$SID_TR" 1)                          # poll 3: empty again — must be the FIRST
+                                                       # empty since poll 2's material reset the
+                                                       # counter, not the second -> no idle line
+[ -z "$out" ] && ok "threshold: sub-threshold material resets the empty-cycle counter" \
+  || ko "threshold: sub-threshold material resets the empty-cycle counter"
+
+# Same defect, cooldown-gated path: a cooldown-blocked poll with material must
+# reset the counter too — cooldown only paces notifications, it says nothing
+# about whether the dev is still working.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":1,"coachFiles":1,"coachCooldownMinutes":5,"coachIdleCycles":2}' > "$GCFG"
+SID_TC=watch7
+rm -rf "$(basedir "$SID_TC")"
+lines 10 > "$CREPO/src/F.kt"
+out=$(cycle_out "$SID_TC" 1)                          # first-ever cycle bypasses cooldown -> fires
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "threshold: first material cycle bypasses cooldown and fires" \
+  || ko "threshold: first material cycle bypasses cooldown and fires"
+rm -f "$CREPO/src/F.kt"
+out=$(cycle_out "$SID_TC" 1)                          # genuinely empty -> counter 1
+[ -z "$out" ] && ok "threshold: empty poll after an emission is silent" \
+  || ko "threshold: empty poll after an emission is silent"
+lines 4 > "$CREPO/src/G.kt"
+out=$(cycle_out "$SID_TC" 1)                          # material, but inside the cooldown window
+[ -z "$out" ] && ok "threshold: cooldown-blocked poll with material is silent" \
+  || ko "threshold: cooldown-blocked poll with material is silent"
+rm -f "$CREPO/src/G.kt"
+out=$(cycle_out "$SID_TC" 1)                          # empty again — must be the FIRST empty since
+                                                       # the cooldown-blocked poll reset the counter,
+                                                       # not the second -> no idle line
+[ -z "$out" ] && ok "threshold: cooldown-blocked material resets the empty-cycle counter" \
+  || ko "threshold: cooldown-blocked material resets the empty-cycle counter"
+
+# `--cycle` injects the number a real loop would hold; two sub-threshold
+# `--cycle 1` polls before this one are only here to build up the material
+# that finally crosses coachLines. The real claim CYCLE-only-advances-on-
+# emission is a loop-arithmetic property this per-process, --cycle-injected
+# harness cannot exercise — that was verified live (cycle 1, then cycle 2 at
+# ~180s) — so this assertion checks a narrower, adjacent thing instead:
+# coach_cycle's own formatting does not add spurious inflation on top of
+# whatever CYCLE value it is handed.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0,"coachIdleCycles":99}' > "$GCFG"
+SID_TI=watch9
+rm -rf "$(basedir "$SID_TI")"
+lines 3 > "$CREPO/src/J.kt"                           # 3 lines, 1 file: under both thresholds
+out=$(cycle_out "$SID_TI" 1)
+[ -z "$out" ] && ok "threshold: a sub-threshold poll does not emit" \
+  || ko "threshold: a sub-threshold poll does not emit"
+lines 4 >> "$CREPO/src/J.kt"                          # 7 lines total: still under coachLines:10
+out=$(cycle_out "$SID_TI" 1)
+[ -z "$out" ] && ok "threshold: a second sub-threshold poll still does not emit" \
+  || ko "threshold: a second sub-threshold poll still does not emit"
+lines 5 >> "$CREPO/src/J.kt"                          # 12 lines total: now over coachLines:10
+out=$(cycle_out "$SID_TI" 1)
+printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
+  && ok "coach_cycle introduces no formatting-side inflation of the injected cycle number" \
+  || ko "coach_cycle introduces no formatting-side inflation of the injected cycle number"
+rm -f "$CREPO/src/J.kt"
+
+# Regression (Finding 1): coachIdleCycles is documented (spec §2.4) as idle
+# periods of one work-block-equivalent (coachWorkMinutes), in EITHER cadence.
+# The unfixed watcher compared the empty-poll counter against coachIdleCycles
+# directly in the threshold branch, so with defaults (coachWorkMinutes=25,
+# coachPollSeconds=45) a dev thinking for 90 seconds — two polls — ended the
+# session, 33x sooner than the pomodoro-equivalent cadence intends.
+# coachWorkMinutes=1 (60s) and coachPollSeconds=10 makes one period 6 polls,
+# so coachIdleCycles=2 must tolerate 12 empty polls, not 2, before stopping.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":10,"coachIdleCycles":2}' > "$GCFG"
+SID_TS=watch10
+rm -rf "$(basedir "$SID_TS")"
+out1=$(cycle_out "$SID_TS" 1)
+out2=$(cycle_out "$SID_TS" 1)
+{ [ -z "$out1" ] && [ -z "$out2" ]; } \
+  && ok "threshold cadence survives two empty polls (coachIdleCycles is not raw polls)" \
+  || ko "threshold cadence survives two empty polls (got '$out1' / '$out2')"
+
+i=3
+while [ "$i" -le 12 ]; do
+  out=$(cycle_out "$SID_TS" 1)
+  if [ "$i" -lt 12 ]; then
+    [ -z "$out" ] || { ko "threshold cadence stopped early, at poll $i instead of 12"; break; }
+  else
+    printf '%s' "$out" | grep -q 'the watcher has stopped' \
+      && ok "threshold cadence stops after a full work-block-equivalent period (12 polls = 2 x 6)" \
+      || ko "threshold cadence stops after a full work-block-equivalent period (got '$out' at poll 12)"
+  fi
+  i=$((i + 1))
+done
+
+# Guard: coachPollSeconds larger than the work block must clamp the
+# polls-per-period ratio to 1, never floor to 0 — an IDLE_LIMIT of 0 would
+# stop the watcher on the very first empty poll, ignoring coachIdleCycles
+# altogether, and is also the shape of bug that can leave a 0 in later
+# arithmetic if this guard is ever removed.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":120,"coachIdleCycles":2}' > "$GCFG"
+SID_TG=watch11
+rm -rf "$(basedir "$SID_TG")"
+out1=$(cycle_out "$SID_TG" 1)
+[ -z "$out1" ] && ok "polls-per-period guard: first empty poll is not an immediate cut-off" \
+  || ko "polls-per-period guard: first empty poll is not an immediate cut-off (got '$out1')"
+out2=$(cycle_out "$SID_TG" 1)
+printf '%s' "$out2" | grep -q 'the watcher has stopped' \
+  && ok "polls-per-period guard clamps to 1, so coachIdleCycles=2 still stops after 2 polls" \
+  || ko "polls-per-period guard clamps to 1 (got '$out2')"
+echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
+# --- coach arming and cleanup ----------------------------------------------
+onboard() { printf '{"session_id":"%s"}' "$1" | sh "$ONB"; }
+
+echo '{"level":"C","coach":true}' > "$GCFG"
+rm -f "$PCFG"
+out=$(onboard arm1)
+{ printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1 \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'Monitor' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'coach-watch.sh' \
+  && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'arm1'; } \
+  && ok "onboard arms the watcher when coach is on" || ko "onboard arms the watcher when coach is on"
+
+echo '{"level":"C","coach":false}' > "$GCFG"
+[ -z "$(onboard arm2)" ] && ok "onboard says nothing when coach is off" \
+  || ko "onboard says nothing when coach is off"
+
+# A context compaction must not arm a second watcher on the same session: the dev
+# would get every review twice, on two drifting cadences.
+echo '{"level":"C","coach":true}' > "$GCFG"
+onboard_src() { printf '{"session_id":"%s","source":"%s"}' "$1" "$2" | sh "$ONB"; }
+[ -n "$(onboard_src arm4 startup)" ] && ok "startup arms the watcher" || ko "startup arms the watcher"
+[ -n "$(onboard_src arm4 resume)" ] && ok "resume arms the watcher" || ko "resume arms the watcher"
+[ -z "$(onboard_src arm4 compact)" ] && ok "compact does not re-arm the watcher" \
+  || ko "compact does not re-arm the watcher"
+[ -z "$(onboard_src arm4 clear)" ] && ok "clear does not re-arm the watcher" \
+  || ko "clear does not re-arm the watcher"
+
+# A missing level already produces the existing "no valid level" nudge; coach
+# must not replace or duplicate it.
+echo '{"coach":true}' > "$GCFG"
+out=$(onboard arm3)
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'learner config level=' \
+  && ok "a missing level still wins over the coach nudge" \
+  || ko "a missing level still wins over the coach nudge"
+
+# Cleanup must take the coach scratch files with the rest.
+SID_X="clean-coach"   # quoted: shellcheck reads clean-coach as arithmetic (SC2100)
+mkdir -p "$TMPDIR/claude-learner-${SID_X}.coach-base"
+touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-last" \
+      "$TMPDIR/claude-learner-${SID_X}.edits"
+printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
+{ [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ]; } \
+  && ok "cleanup removes the coach scratch files" || ko "cleanup removes the coach scratch files"
+
+# Both install paths must be wired, or half the users get half the feature.
+{ jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
+         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/hooks.json" >/dev/null 2>&1; } \
+  && ok "hooks.json wires coach-gate.sh" || ko "hooks.json wires coach-gate.sh"
+{ jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
+         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/settings.snippet.json" >/dev/null 2>&1; } \
+  && ok "settings.snippet.json wires coach-gate.sh" || ko "settings.snippet.json wires coach-gate.sh"
+
+# coach-watch.sh is not a hook and must never be wired as one.
+grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
+  && ko "coach-watch.sh is not wired as a hook" || ok "coach-watch.sh is not wired as a hook"
+grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
+  && ko "coach-watch.sh is not wired in the snippet either" \
+  || ok "coach-watch.sh is not wired in the snippet either"
+
+# --- coach off stops a running watcher (Finding 3) --------------------------
+# The real loop used to read CFG and check learner_coach_active exactly once,
+# before `while :`, and never again — `learner coach off` unblocked writes
+# immediately (the gate re-reads per invocation) but the watcher itself kept
+# polling and emitting for the rest of the session. This needs an actual
+# backgrounded loop, not --once: --once is a fresh process per call and
+# already re-reads config at the top of the script regardless of this bug, so
+# it cannot exercise the loop's own (previously missing) re-check.
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachPollSeconds":5,"coachCooldownMinutes":0,"coachLines":999999,"coachFiles":999999}' > "$GCFG"
+SID_LOOP=watch-loop-off
+rm -rf "$(basedir "$SID_LOOP")"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_LOOP" > "$WORK/loop-off.out" 2>&1 &
+LOOP_PID=$!
+sleep 1
+echo '{"level":"C","coach":false}' > "$GCFG"
+sleep 7
+if kill -0 "$LOOP_PID" 2>/dev/null; then
+  ko "learner coach off stops a running watcher within one poll"
+  kill -9 "$LOOP_PID" 2>/dev/null
+  wait "$LOOP_PID" 2>/dev/null
+else
+  wait "$LOOP_PID" 2>/dev/null
+  ok "learner coach off stops a running watcher within one poll"
+fi
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
+# --- coach documentation ----------------------------------------------------
+SK="$ROOT/skills/learner/SKILL.md"
+CO="$ROOT/skills/learner/references/coach.md"
+
+[ -f "$CO" ] && ok "references/coach.md exists" || ko "references/coach.md exists"
+
+# Every config key the code reads must be documented, or a dev cannot discover it.
+for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
+         coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
+         coachEveryMinutes coachCooldownMinutes; do
+  grep -q "\`$k\`" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+done
+
+# The dispatch table must route every subcommand the skill claims to accept.
+# A leading backtick with no closing one: `coach delegate <glob> …` and
+# `coach review [base-ref]` carry arguments inside the code span, so an
+# exactly-wrapped pattern would miss them. This also needs to be more than a bare
+# substring match — the frontmatter description mentions all four strings in prose
+# too ("coach on"/"off", "coach delegate", "coach review"), and separately "coach
+# on" is a bare substring of the unrelated frontmatter phrase "coach one weak spot
+# to mastery" — so an unanchored grep would stay green even with the entire
+# dispatch table deleted.
+for c in "coach on" "coach off" "coach delegate" "coach review"; do
+  grep -q "\`$c" "$SK" && ok "SKILL.md dispatches \`$c\`" || ko "SKILL.md dispatches \`$c\`"
+done
+
+# The protocol reference must be reachable from the trigger line's pointer.
+grep -q 'references/coach.md' "$SK" && ok "SKILL.md points at references/coach.md" \
+  || ko "SKILL.md points at references/coach.md"
+
+# The protocol must state its own ceiling and its own prohibition, since those
+# are the two things that keep the dev in the driver's seat.
+grep -qi 'one challenge' "$CO" && ok "coach.md states the one-challenge ceiling" \
+  || ko "coach.md states the one-challenge ceiling"
+grep -qi 'never write' "$CO" && ok "coach.md forbids writing to source" \
+  || ko "coach.md forbids writing to source"
+grep -q 'references/data.md' "$CO" && ok "coach.md defers to data.md for the data rules" \
+  || ko "coach.md defers to data.md for the data rules"
 
 # --- summary ----------------------------------------------------------------
 echo

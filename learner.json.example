@@ -5,5 +5,19 @@
   "synthesisFrequency": "normal",
   "blanksPerExercise": 2,
   "untrackGlobs": ["*.md", "*.json"],
-  "disabledPaths": []
+  "disabledPaths": [],
+
+  "coach": false,
+  "coachCadence": "pomodoro",
+  "coachWorkMinutes": 25,
+  "coachWorkGrowthMinutes": 5,
+  "coachWorkMaxMinutes": 45,
+  "coachChallengeMinutes": 8,
+  "coachIdleCycles": 2,
+
+  "coachPollSeconds": 45,
+  "coachLines": 40,
+  "coachFiles": 3,
+  "coachEveryMinutes": 0,
+  "coachCooldownMinutes": 5
 }

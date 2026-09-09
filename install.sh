@@ -115,9 +115,9 @@ fi
 echo "→ Installing learner into: $CFG_DIR"
 if [ "$DRY" = 1 ]; then
   echo "  (dry run — nothing will be written)"
-  echo "  would copy 5 hooks    → $CFG_DIR/hooks/"
+  echo "  would copy 8 hooks    → $CFG_DIR/hooks/"
   echo "  would copy the skill  → $CFG_DIR/skills/learner/"
-  echo "  would merge 4 hooks   → $SETTINGS"
+  echo "  would merge 5 hooks   → $SETTINGS"
   if [ "$CONFIG_EXISTS" = 1 ]; then
     echo "  would keep existing   → $CONFIG"
   else
@@ -129,7 +129,8 @@ fi
 mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills/learner/references" "$CFG_DIR/learner"
 
 for h in learner-config.sh learner-onboard.sh learner-record-edit.sh \
-         learner-quiz.sh learner-cleanup.sh learner-update-check.sh; do
+         learner-quiz.sh learner-cleanup.sh learner-update-check.sh \
+         coach-gate.sh coach-watch.sh; do
   cp "$SRC_DIR/hooks/$h" "$CFG_DIR/hooks/$h"
   chmod +x "$CFG_DIR/hooks/$h"
 done
@@ -150,13 +151,47 @@ TMP="$(mktemp)"
 jq -n \
   --argjson base "$(cat "$SETTINGS")" \
   --argjson add "$(cat "$SRC_DIR/hooks/settings.snippet.json")" '
-  # For each event the snippet defines, drop existing "learner-" entries then
-  # append the fresh ones, so re-running never duplicates.
+  # For each event the snippet defines, drop existing entries this project
+  # installed, then append the fresh ones, so re-running never duplicates.
+  #
+  # Matched by naming convention, not by an exhaustive per-script list: every
+  # hook script this project ships is named "learner-*.sh" or "coach-*.sh"
+  # (see install.sh'"'"'s copy loop and hooks/settings.snippet.json). A
+  # convention-based match keeps pace with new scripts on its own — no list
+  # to remember to update here — which is exactly what a literal-name or
+  # single-prefix match cannot do (a coach-*.sh hook once slipped past a
+  # "learner-"-only match this same way).
+  #
+  # The name match alone is not enough: a bare "/hooks/(learner|coach)-*.sh"
+  # matches that path shape anywhere on disk, so a sibling tool that also
+  # ships a "hooks/" directory with a same-prefixed script (plausible —
+  # "coach" is a generic word, and $CLAUDE_CONFIG_DIR/hooks is a directory
+  # other tools can also write into) would get silently swept up. Anchoring
+  # on a literal ".claude" segment (with an optional trailing "}", closing
+  # the "${VAR:-default}" this project'"'"'s own commands are always wrapped
+  # in) immediately before "/hooks/" requires the match to run through a
+  # Claude Code config tree specifically — every shape this project has ever
+  # wired does: today'"'"'s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/", the
+  # old per-project "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/", and the legacy
+  # bare ".claude/hooks/" — while a path with no ".claude" segment at all,
+  # like /opt/otherteam/hooks/coach-lint.sh, is rejected outright. Anchoring
+  # tighter, to today'"'"'s exact "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/"
+  # literal, was considered and rejected: it would stop recognising the older
+  # forms above, leaving that wiring behind forever on an uninstall — the
+  # same kind of leak this predicate exists to prevent. Residual risk
+  # accepted: another tool that specifically nests its own hook under a
+  # ".claude/hooks/" tree with a learner-/coach-prefixed name would still
+  # collide; that requires deliberately mimicking this project'"'"'s install
+  # location and naming convention together, which is a much narrower target
+  # than the bare path-shape match this predicate replaces.
+  #
+  # This is intentionally the same predicate as strip_wiring() in
+  # uninstall.sh — keep the two in sync if either changes.
   reduce ($add.hooks | keys[]) as $ev (
     $base;
     .hooks[$ev] = (
       ((.hooks[$ev] // [])
-        | map(select(any(.hooks[]; .command | contains("learner-")) | not)))
+        | map(select(any(.hooks[]; .command | test("\\.claude\\}?/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not)))
       + $add.hooks[$ev]
     )
   )
