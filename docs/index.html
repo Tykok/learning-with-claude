@@ -5,118 +5,164 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude Learner — quiz yourself on the code Claude just wrote</title>
 <meta name="description" content="Claude Code hooks and a skill that quiz you on the code they just wrote with you, at your level, and track what to work on.">
+<link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
-<nav class="site" aria-label="Sections">
-  <a class="brand" href="index.html">Claude Learner</a>
-  <ul>
-    <li><a href="index.html" aria-current="page">Home</a></li>
-    <li><a href="install.html">Install</a></li>
-    <li><a href="usage.html">Usage</a></li>
-    <li><a href="config.html">Configuration</a></li>
-    <li><a href="safety.html">Safety</a></li>
-  </ul>
-</nav>
+<a class="skip" href="#main">Skip to content</a>
 
-<main>
+<header class="site">
+  <div class="site-inner">
+    <a class="brand" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 8.5 12 3.5l10 5-10 5z"/>
+        <path d="M6 11v4.6c0 0 2.4 1.9 6 1.9s6-1.9 6-1.9V11"/>
+        <path d="M22 8.5v5"/>
+      </svg>
+      Claude Learner
+    </a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="index.html" aria-current="page">Home</a></li>
+        <li><a href="install.html">Install</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="config.html">Configuration</a></li>
+        <li><a href="safety.html">Safety</a></li>
+      </ul>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Tykok/learning-with-claude">GitHub</a>
+    </nav>
+  </div>
+</header>
 
-  <h1>Claude Learner</h1>
-  <p class="lede">Claude Learner pairs Claude Code hooks with a skill to quiz you on the
-  code Claude just wrote with you, at the level you set, and keep a record of what you
-  should work on (<a href="usage.html#commands">read it back</a> any time with
-  <code>learner status</code>). It installs once at Claude Code user level and is then
-  active in every git repository you open, with no per-repo setup.</p>
-  <p class="sub">One skill, six POSIX <code>sh</code> hooks, no build step, and no
-  dependency beyond <code>jq</code> — except a once-a-day, best-effort version check
-  that needs <code>curl</code> and reaches out to GitHub. The source is on
-  <a href="https://github.com/Tykok/learning-with-claude">GitHub</a>.</p>
+<main id="main">
 
-  <h2 id="problem">The problem</h2>
+  <section class="hero">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <p class="pill"><b>Claude Code plugin</b> GPL-3.0 · no build step</p>
+        <h1>Quiz yourself on the code Claude just wrote.</h1>
+        <p class="lede">Claude Learner pairs Claude Code hooks with a skill that asks you one
+        question at the end of a turn — about the code you just shipped together, pitched at
+        the level you set — and keeps a record of what you should work on.</p>
+        <div class="btn-row">
+          <a class="btn btn-primary" href="install.html">Install it</a>
+          <a class="btn btn-ghost" href="#looks-like">See a real question</a>
+        </div>
+        <p class="sub">Installs once at Claude Code user level, then
+        active in every git repository you open. No per-repo setup.</p>
+      </div>
 
-  <p>Code now arrives faster than understanding does. Reviewing what an agent wrote is
-  easy to skip and hard to do well — the diff is plausible, the tests are green, and the
-  next task is already queued — so the honest answer to “do you know how this works?”
-  drifts quietly from yes to nearly. A question you have to answer before the turn ends
-  is not skippable in the same way. Learner spends one question of your attention at the
-  end of a turn, while the code is still fresh, and writes down whatever you did not
-  know so it can come back to it later.</p>
-
-  <h2 id="looks-like">What it actually looks like</h2>
-
-  <p>Nothing below is a mock-up. The trigger lines are the text
-  <code>hooks/learner-quiz.sh</code> emits, and the <code>fill</code> exercise cuts up a
-  function from this project's own source.</p>
-
-  <h3>A granular question</h3>
-
-  <p>When a turn ends and the session has edited at least one file inside the repository,
-  the <code>Stop</code> hook blocks once. What lands in the console is the hook's own
-  reason:</p>
-
-  <figure>
-    <figcaption>the <code>Stop</code> hook's block reason</figcaption>
-<pre><code>🎓 Learner (level: C, mode: granular, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts
-Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
-  </figure>
-
-  <p>That line is parameters, not the question — the protocol lives in the skill, so the
-  hook never has an opinion about what a good question is. Claude reads the files, reads
-  your open weak spots, and asks one question pitched at the level named:</p>
-
-  <figure>
-    <figcaption>what Claude then asks you</figcaption>
+      <div class="hero-visual">
+        <figure>
+          <figcaption>the <code>Stop</code> hook's block reason</figcaption>
+<pre><code>🎓 Learner (level: C, mode: granular, styles: auto, blanks: 2)
+   — files: src/auth/session.ts
+Invoke the `learner` skill, follow references/hook-quiz.md
+for this mode. Ask ONE question, then wait for the answer.</code></pre>
+        </figure>
+        <figure>
+          <figcaption>what Claude then asks you</figcaption>
 <pre><code>🎓 Learner — src/auth/session.ts
 
-You changed refreshSession() to delete the old session row before inserting
-the replacement. Why that order rather than insert-then-delete, and what
-does a caller see if the insert fails after the delete has committed?</code></pre>
-  </figure>
+You changed refreshSession() to delete the old session row
+before inserting the replacement. Why that order rather than
+insert-then-delete, and what does a caller see if the insert
+fails after the delete has committed?</code></pre>
+        </figure>
+      </div>
+    </div>
+  </section>
 
-  <p>Answer it and the turn continues. Say <code>skip</code> and it moves on without
-  insisting. Either way what you did not know is recorded, and the next question prefers
-  a weak spot that is still open — spaced repetition over the code you actually
-  write.</p>
+  <section class="band band-tight band-alt">
+    <ul class="stats">
+      <li><b>1</b><span>skill, invoked by the hooks</span></li>
+      <li><b>6</b><span>POSIX <code>sh</code> hooks</span></li>
+      <li><b>0</b><span>build steps</span></li>
+      <li><b>jq</b><span>the only dependency</span></li>
+    </ul>
+  </section>
 
-  <h3>A synthesis question</h3>
+  <section class="band" id="problem">
+    <div class="shell split">
+      <div>
+        <span class="eyebrow">The problem</span>
+        <h2>Code now arrives faster than understanding does.</h2>
+        <p>Reviewing what an agent wrote is easy to skip and hard to do well — the diff is
+        plausible, the tests are green, and the next task is already queued — so the honest
+        answer to “do you know how this works?” drifts quietly from yes to nearly.</p>
+      </div>
+      <div class="card card-accent">
+        <h3>A question you have to answer before the turn ends is not skippable in the same way.</h3>
+        <p>Learner spends one question of your attention at the end of a turn, while the code
+        is still fresh, and writes down whatever you did not know so it can come back to it
+        later — spaced repetition over the code you actually write.</p>
+        <p><a href="usage.html#commands">Read it back</a> any time with
+        <code>learner status</code>.</p>
+      </div>
+    </div>
+  </section>
 
-  <p>Every fourth question by default, one question is about the shape of the work rather
-  than a detail. The hook switches mode and widens the file list: a granular question
-  sees the edits since the last question, a synthesis question sees every file the
-  session has touched — each list capped, at 20 files and 40 files respectively, so the
-  trigger line itself never grows unbounded on a very large session.</p>
+  <section class="band band-alt" id="looks-like">
+    <div class="shell">
+      <div class="section-head">
+        <span class="eyebrow">What it actually looks like</span>
+        <h2>Nothing below is a mock-up.</h2>
+        <p>The trigger lines are the text <code>hooks/learner-quiz.sh</code> emits, and the
+        <code>fill</code> exercise cuts up a function from this project's own source.</p>
+      </div>
 
-  <figure>
-    <figcaption>the same hook, in synthesis mode</figcaption>
-<pre><code>🎓 Learner (level: C, mode: synthesis, styles: auto, blanks: 2) — files: /Users/you/code/api/src/auth/session.ts /Users/you/code/api/src/auth/tokens.ts /Users/you/code/api/src/db/queries.ts
-Invoke the `learner` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer.</code></pre>
-  </figure>
+      <div class="grid grid-2">
+        <div class="card">
+          <span class="eyebrow">Granular</span>
+          <h3>One question about one detail</h3>
+          <p>When a turn ends and the session has edited at least one file inside the
+          repository, the <code>Stop</code> hook blocks once. The trigger line is parameters,
+          not the question — the protocol lives in the skill, so the hook never has an opinion
+          about what a good question is. Claude reads the files, reads your open weak spots,
+          and asks one question pitched at the level named.</p>
+          <p>Answer it and the turn continues. Say <code>skip</code> and it moves on without
+          insisting. Either way what you did not know is recorded, and the next question
+          prefers a weak spot that is still open.</p>
+        </div>
 
-  <figure>
-    <figcaption>what Claude then asks you</figcaption>
+        <div class="card">
+          <span class="eyebrow">Synthesis</span>
+          <h3>One question about the shape of the work</h3>
+          <p>Every fourth question by default, the hook switches mode and widens the file list:
+          a granular question sees the edits since the last question, a synthesis question sees
+          every file the session has touched — each list capped, at 20 files and 40 files
+          respectively, so the trigger line itself never grows unbounded on a very large
+          session.</p>
+          <figure>
+            <figcaption>the same hook, in synthesis mode</figcaption>
 <pre><code>🎓 Learner — this session
 
-Trace what happens between a request arriving with an expired access token
-and its caller getting a fresh one. Which of the three files you touched
-owns each step, and why does the rotation live in tokens.ts rather than in
-session.ts?</code></pre>
-  </figure>
+Trace what happens between a request arriving with an expired
+access token and its caller getting a fresh one. Which of the
+three files you touched owns each step, and why does the
+rotation live in tokens.ts rather than in session.ts?</code></pre>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
 
-  <h3>A fill exercise</h3>
+  <section class="band" id="fill">
+    <div class="shell">
+      <div class="section-head">
+        <span class="eyebrow">Fill exercise</span>
+        <h2>The style that tells you whether you understood the code.</h2>
+        <p>Claude picks one short function among the files you just edited, memorises the
+        correct version from git, then cuts holes in the real file on disk and asks you to fill
+        them in. Here is <code>learner_synthesis_n</code> from this project's own
+        <code>hooks/learner-config.sh</code> — it turns the <code>synthesisFrequency</code>
+        word into the number of questions between synthesis questions.</p>
+      </div>
 
-  <p>This is the style that is hardest to picture from a description and the one that
-  most reliably tells you whether you understood the code. Claude picks one short
-  function among the files you just edited, memorises the correct version from git, then
-  cuts holes in the real file on disk and asks you to fill them in.</p>
-
-  <p>Here is <code>learner_synthesis_n</code> from this project's own
-  <code>hooks/learner-config.sh</code>, whole — it turns the
-  <code>synthesisFrequency</code> word into the number of questions between synthesis
-  questions:</p>
-
-  <figure>
-    <figcaption>before — <code>hooks/learner-config.sh</code></figcaption>
+      <div class="grid grid-2">
+        <figure>
+          <figcaption>before — <code>hooks/learner-config.sh</code></figcaption>
 <pre><code>learner_synthesis_n() {
   case "${1:-}" in
     off)   printf '0' ;;
@@ -125,51 +171,99 @@ session.ts?</code></pre>
     *)     printf '4' ;;
   esac
 }</code></pre>
-  </figure>
-
-  <p>And the same function after a <code>fill</code> exercise with
-  <code>blanksPerExercise</code> at its default of 2. This is not a preview pane: it is
-  your file, saved to disk, and your editor will show it changed.</p>
-
-  <figure>
-    <figcaption>after — the same file, two holes cut</figcaption>
+        </figure>
+        <figure>
+          <figcaption>after — the same file, two holes cut</figcaption>
 <pre><code>learner_synthesis_n() {
   case "${1:-}" in
     off)   printf '0' ;;
-<span class="hl">    // LEARNER-TODO: the two named cadences, and which one is rarer</span>
-<span class="hl">    // LEARNER-TODO: the fallback arm — what an unrecognised word gives</span>
+<span class="hl">    // LEARNER-TODO: the two named cadences, and which is rarer</span>
+<span class="hl">    // LEARNER-TODO: the fallback arm — what an unknown word gives</span>
   esac
 }</code></pre>
-  </figure>
+        </figure>
+      </div>
 
-  <p>Claude names the file and the function, asks you to write the missing code
-  <strong>in the file</strong>, and then waits. It will not fill them in for you. When
-  you are done — or you say <code>skip</code> — it compares what you wrote against the
-  version it memorised, gives you a couple of lines of feedback, restores a correct
-  implementation, and runs a focused check that the file is valid again.</p>
+      <div class="prose">
+        <p>This is not a preview pane: it is your file, saved to disk, and your editor will show
+        it changed. Claude names the file and the function, asks you to write the missing code
+        <strong>in the file</strong>, and then waits. It will not fill them in for you. When you
+        are done — or you say <code>skip</code> — it compares what you wrote against the version
+        it memorised, gives you a couple of lines of feedback, restores a correct
+        implementation, and runs a focused check that the file is valid again.</p>
 
-  <div class="note">
-    <p>Two things worth knowing before you let it do that. The marker is the same
-    literal string in every language, <code>// LEARNER-TODO</code>, so in a language
-    where <code>//</code> does not start a comment — shell, as above — the file does not
-    merely have a gap in it: it does not run until the exercise is finished. And the
-    exercise edits your real source, not a copy. Both of those are why
-    <a href="safety.html#guardrail">the guardrail</a> exists — read it before you install.</p>
-  </div>
+        <div class="note">
+          <p>Two things worth knowing before you let it do that. The marker is the same literal
+          string in every language, <code>// LEARNER-TODO</code>, so in a language where
+          <code>//</code> does not start a comment — shell, as above — the file does not merely
+          have a gap in it: it does not run until the exercise is finished. And the exercise
+          edits your real source, not a copy. Both of those are why
+          <a href="safety.html#guardrail">the guardrail</a> exists — read it before you
+          install.</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
-  <p class="next">Next: <a href="install.html">Install</a> — what Learner needs, and
-  the ways in.</p>
+  <section class="band band-alt">
+    <div class="cta">
+      <span class="eyebrow">Get started</span>
+      <h2>Two commands, then it is on everywhere.</h2>
+      <p>Claude Code manages updates itself. Prefer apt, Homebrew, a clone, or a curl
+      one-liner? They are all on the install page.</p>
+      <p class="copy-line"><code>claude plugin marketplace add Tykok/learning-with-claude &amp;&amp; claude plugin install learner</code></p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="install.html">All install routes</a>
+        <a class="btn btn-ghost" href="safety.html">Read the safety page first</a>
+      </div>
+    </div>
+  </section>
 
 </main>
 
-<footer>
-  <p><a href="https://github.com/Tykok/learning-with-claude">github.com/Tykok/learning-with-claude</a>
-  — issues and pull requests welcome.</p>
-  <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
-  — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
-  licence; only redistributing a modified Learner does. This site is five hand-written files
-  and one stylesheet: no build step, no tracking, and no request to anywhere when you open
-  it.</p>
+<footer class="site-footer">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 8.5 12 3.5l10 5-10 5z"/>
+          <path d="M6 11v4.6c0 0 2.4 1.9 6 1.9s6-1.9 6-1.9V11"/>
+          <path d="M22 8.5v5"/>
+        </svg>
+        Claude Learner
+      </a>
+      <p>One skill and six POSIX <code>sh</code> hooks that quiz you on the code you just
+      wrote with Claude Code.</p>
+    </div>
+    <div>
+      <h2>Documentation</h2>
+      <ul>
+        <li><a href="install.html">Install</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="config.html">Configuration</a></li>
+        <li><a href="safety.html">Safety</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="https://github.com/Tykok/learning-with-claude">Source on GitHub</a></li>
+        <li><a href="https://github.com/Tykok/learning-with-claude/issues">Issues</a></li>
+        <li><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-note">
+    <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
+    — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
+    licence; only redistributing a modified Learner does.</p>
+    <p>This site is five hand-written pages, one stylesheet, one self-hosted font
+    (<a href="https://github.com/rsms/inter">Inter</a>, SIL OFL) and a short optional script
+    behind the copy button: no build step, no tracking, and no request to anywhere but
+    this origin when you open it.</p>
+  </div>
 </footer>
+
+<script src="assets/site.js" defer></script>
 </body>
 </html>

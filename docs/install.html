@@ -5,22 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install — Claude Learner</title>
 <meta name="description" content="What Claude Learner needs, the ways to install it, what lands where, and which platforms can run it.">
+<link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
-<nav class="site" aria-label="Sections">
-  <a class="brand" href="index.html">Claude Learner</a>
-  <ul>
-    <li><a href="index.html">Home</a></li>
-    <li><a href="install.html" aria-current="page">Install</a></li>
-    <li><a href="usage.html">Usage</a></li>
-    <li><a href="config.html">Configuration</a></li>
-    <li><a href="safety.html">Safety</a></li>
-  </ul>
-</nav>
+<a class="skip" href="#main">Skip to content</a>
 
-<main>
+<header class="site">
+  <div class="site-inner">
+    <a class="brand" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 8.5 12 3.5l10 5-10 5z"/>
+        <path d="M6 11v4.6c0 0 2.4 1.9 6 1.9s6-1.9 6-1.9V11"/>
+        <path d="M22 8.5v5"/>
+      </svg>
+      Claude Learner
+    </a>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="install.html" aria-current="page">Install</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="config.html">Configuration</a></li>
+        <li><a href="safety.html">Safety</a></li>
+      </ul>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Tykok/learning-with-claude">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="doc" id="main">
 
   <h1 id="install">Install</h1>
   <p class="lede">What Learner needs, the ways in, what lands where, and which
@@ -256,14 +271,48 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
 
 </main>
 
-<footer>
-  <p><a href="https://github.com/Tykok/learning-with-claude">github.com/Tykok/learning-with-claude</a>
-  — issues and pull requests welcome.</p>
-  <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
-  — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
-  licence; only redistributing a modified Learner does. This site is five hand-written files
-  and one stylesheet: no build step, no tracking, and no request to anywhere when you open
-  it.</p>
+<footer class="site-footer">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 8.5 12 3.5l10 5-10 5z"/>
+          <path d="M6 11v4.6c0 0 2.4 1.9 6 1.9s6-1.9 6-1.9V11"/>
+          <path d="M22 8.5v5"/>
+        </svg>
+        Claude Learner
+      </a>
+      <p>One skill and six POSIX <code>sh</code> hooks that quiz you on the code you just
+      wrote with Claude Code.</p>
+    </div>
+    <div>
+      <h2>Documentation</h2>
+      <ul>
+        <li><a href="install.html">Install</a></li>
+        <li><a href="usage.html">Usage</a></li>
+        <li><a href="config.html">Configuration</a></li>
+        <li><a href="safety.html">Safety</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="https://github.com/Tykok/learning-with-claude">Source on GitHub</a></li>
+        <li><a href="https://github.com/Tykok/learning-with-claude/issues">Issues</a></li>
+        <li><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-note">
+    <p><a href="https://github.com/Tykok/learning-with-claude/blob/main/LICENSE">GPL-3.0-or-later</a>
+    — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
+    licence; only redistributing a modified Learner does.</p>
+    <p>This site is five hand-written pages, one stylesheet, one self-hosted font
+    (<a href="https://github.com/rsms/inter">Inter</a>, SIL OFL) and a short optional script
+    behind the copy button: no build step, no tracking, and no request to anywhere but this
+    origin when you open it.</p>
+  </div>
 </footer>
+<script src="assets/site.js" defer></script>
 </body>
 </html>
