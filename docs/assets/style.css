@@ -326,7 +326,7 @@ figure pre { background: transparent; }
 
 /* --- header ----------------------------------------------------------------- */
 
-.site {
+.site-bar {
   position: sticky;
   top: 0;
   z-index: 50;
@@ -344,7 +344,7 @@ figure pre { background: transparent; }
   align-items: center;
   gap: 1.5rem;
 }
-.site .brand {
+.brand {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -354,8 +354,8 @@ figure pre { background: transparent; }
   letter-spacing: -0.02em;
   text-decoration: none;
 }
-.site .brand svg { width: 1.35rem; height: 1.35rem; color: var(--accent-line); }
-.site nav { display: flex; align-items: center; gap: 1.5rem; margin-left: auto; min-width: 0; }
+.brand svg { width: 1.35rem; height: 1.35rem; color: var(--accent-line); }
+.site { display: flex; align-items: center; gap: 1.5rem; margin-left: auto; min-width: 0; }
 .site ul {
   display: flex;
   gap: 1.35rem;
@@ -368,21 +368,21 @@ figure pre { background: transparent; }
 }
 .site ul::-webkit-scrollbar { display: none; }
 .site li { margin: 0; flex: none; }
-.site nav a {
+.site a {
   color: var(--muted);
   font-size: 0.9375rem;
   text-decoration: none;
   white-space: nowrap;
 }
-.site nav a:hover { color: var(--fg); }
+.site a:hover { color: var(--fg); }
 .site [aria-current="page"] { color: var(--fg); font-weight: 600; }
-.site .btn { flex: none; }
+.site .btn { flex: none; color: var(--fg); }
 
 @media (max-width: 46rem) {
   .site-inner { flex-wrap: wrap; gap: 0.5rem 1rem; padding-bottom: 0.5rem; }
-  .site nav { width: 100%; margin-left: 0; gap: 0.75rem; }
+  .site { width: 100%; margin-left: 0; gap: 0.75rem; }
   .site ul { padding-bottom: 0.15rem; }
-  .site nav > .btn { display: none; }
+  .site > .btn { display: none; }
 }
 
 /* --- bands & shells ---------------------------------------------------------- */
@@ -542,30 +542,16 @@ figure pre { background: transparent; }
 .cta h2 { margin-bottom: 0.6rem; }
 .cta p { color: var(--muted); max-width: 34rem; margin-inline: auto; }
 .cta .btn-row { justify-content: center; }
+/* The band centres its text; a command block inside it must not inherit that. */
+.cta figure { max-width: 34rem; margin: 1.75rem auto 0; text-align: left; }
 
-.copy-line {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: 34rem;
+.cta + .next {
+  max-width: 52rem;
   margin: 1.75rem auto 0;
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: var(--code-bg);
-  text-align: left;
+  padding-top: 0;
+  border-top: 0;
+  text-align: center;
 }
-.copy-line code {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  background: none;
-  border: 0;
-  padding: 0;
-  font-size: 0.8125rem;
-}
-.copy-btn { flex: none; }
 
 /* --- documentation pages ------------------------------------------------------------ */
 

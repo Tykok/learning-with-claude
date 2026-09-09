@@ -12,7 +12,7 @@
 
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="site">
+<header class="site-bar">
   <div class="site-inner">
     <a class="brand" href="index.html">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -22,7 +22,7 @@
       </svg>
       Claude Learner
     </a>
-    <nav aria-label="Sections">
+    <nav class="site" aria-label="Sections">
       <ul>
         <li><a href="index.html" aria-current="page">Home</a></li>
         <li><a href="install.html">Install</a></li>
@@ -242,11 +242,17 @@ learner coach review</code></pre>
       <h2>Two commands, then it is on everywhere.</h2>
       <p>Claude Code manages updates itself. Prefer apt, Homebrew, a clone, or a curl
       one-liner? They are all on the install page.</p>
-      <p class="copy-line"><code>claude plugin marketplace add Tykok/learning-with-claude &amp;&amp; claude plugin install learner</code></p>
+      <figure>
+        <figcaption>install</figcaption>
+<pre><code>claude plugin marketplace add Tykok/learning-with-claude
+claude plugin install learner</code></pre>
+      </figure>
       <div class="btn-row">
         <a class="btn btn-primary" href="install.html">All install routes</a>
         <a class="btn btn-ghost" href="safety.html">Read the safety page first</a>
       </div>
+      <p class="next">Next: <a href="install.html">Install</a> — what Learner needs, and
+      the ways in.</p>
     </div>
   </section>
 
@@ -289,12 +295,10 @@ learner coach review</code></pre>
     — copyleft, so a fork stays free. Using Learner on your own code does not affect your code's
     licence; only redistributing a modified Learner does.</p>
     <p>This site is five hand-written pages, one stylesheet, one self-hosted font
-    (<a href="https://github.com/rsms/inter">Inter</a>, SIL OFL) and a short optional script
-    behind the copy button: no build step, no tracking, and no request to anywhere but
+    (<a href="https://github.com/rsms/inter">Inter</a>, SIL OFL): no build step, no script, no tracking, and no request to anywhere but
     this origin when you open it.</p>
   </div>
 </footer>
 
-<script src="assets/site.js" defer></script>
 </body>
 </html>
