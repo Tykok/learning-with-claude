@@ -2908,7 +2908,7 @@ printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'le
   || ko "a missing level still wins over the coach nudge"
 
 # Cleanup must take the coach scratch files with the rest.
-SID_X=clean-coach
+SID_X="clean-coach"   # quoted: shellcheck reads clean-coach as arithmetic (SC2100)
 mkdir -p "$TMPDIR/claude-learner-${SID_X}.coach-base"
 touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
       "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
