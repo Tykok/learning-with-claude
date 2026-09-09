@@ -49,8 +49,10 @@
           <a class="btn btn-primary" href="install.html">Install it</a>
           <a class="btn btn-ghost" href="#looks-like">See a real question</a>
         </div>
-        <p class="sub">Installs once at Claude Code user level, then
-        active in every git repository you open. No per-repo setup.</p>
+        <p class="sub">Installs once at Claude Code user level, then active in every git
+        repository you open, with no per-repo setup. The one thing it sends anywhere is a
+        once-a-day, best-effort version check that reaches out to GitHub — it needs
+        <code>curl</code>, and its absence is silent rather than an error.</p>
       </div>
 
       <div class="hero-visual">
@@ -83,7 +85,7 @@ delete has committed?</code></pre>
       <li><b>1</b><span>skill, invoked by the hooks</span></li>
       <li><b>8</b><span>POSIX <code>sh</code> hook files</span></li>
       <li><b>0</b><span>build steps</span></li>
-      <li><b>jq</b><span>the only dependency</span></li>
+      <li><b>jq</b><span>the only hard dependency</span></li>
     </ul>
   </section>
 
