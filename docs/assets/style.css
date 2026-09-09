@@ -47,8 +47,12 @@
   --sans: "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 
-  --shell: 76rem;      /* full-width band content */
-  --measure: 44rem;    /* prose column */
+  --shell: 108rem;     /* full-width band content */
+  --measure: 48rem;    /* prose column, ~72 characters at the base size */
+  /* One gutter for the whole site: 1.25rem on a phone, growing with the
+     viewport, capped so a very wide screen keeps a margin rather than
+     running the content into the bezel. */
+  --gutter: clamp(1.25rem, 4vw, 5rem);
   --header-h: 3.75rem;
 }
 
@@ -101,6 +105,7 @@ body {
   font-feature-settings: "cv05" 1, "ss03" 1;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
 }
 
 ::selection { background: color-mix(in srgb, var(--accent-line) 35%, transparent); }
@@ -318,10 +323,10 @@ figure pre { background: transparent; }
   border-bottom: 1px solid var(--rule-soft);
 }
 .site-inner {
-  max-width: var(--shell);
+  max-width: calc(var(--shell) + 2 * var(--gutter));
   margin: 0 auto;
   min-height: var(--header-h);
-  padding: 0 1.25rem;
+  padding: 0 var(--gutter);
   display: flex;
   align-items: center;
   gap: 1.5rem;
@@ -369,53 +374,51 @@ figure pre { background: transparent; }
 
 /* --- bands & shells ---------------------------------------------------------- */
 
-.band { padding: clamp(3.5rem, 2rem + 6vw, 6.5rem) 1.25rem; }
+.band { padding: clamp(3.5rem, 2rem + 6vw, 6.5rem) var(--gutter); }
 .band-alt { background: var(--surface); border-block: 1px solid var(--rule-soft); }
 .band-tight { padding-block: clamp(2.5rem, 1.5rem + 3vw, 4rem); }
 .shell { max-width: var(--shell); margin: 0 auto; }
 .prose { max-width: var(--measure); }
-.section-head { max-width: 40rem; margin: 0 0 2.5rem; }
+/* The shell is allowed to be very wide; a line of prose is not. Anything that
+   is read rather than scanned keeps its own measure inside it. */
+.card p, .card li, .split > div > p, .cta p, .foot-brand p { max-width: 42rem; }
+.section-head { max-width: 46rem; margin: 0 0 2.5rem; }
 .section-head > :last-child { margin-bottom: 0; }
 .section-head p { color: var(--muted); }
 
 /* --- hero -------------------------------------------------------------------- */
 
+/* Two soft colour fields behind the hero, painted straight onto its
+   background. An earlier version used blurred pseudo-elements, which WebKit
+   clips to the element box and leaves a hard rectangular edge; a radial
+   gradient has no filter to clip and costs nothing to paint. */
 .hero {
-  position: relative;
-  isolation: isolate;
-  overflow: clip;
-  padding: clamp(3.5rem, 2rem + 7vw, 7rem) 1.25rem clamp(3rem, 2rem + 5vw, 5.5rem);
-}
-/* Two soft colour fields behind the hero, painted with the accent hue and a
-   cooler cyan. Pure CSS gradients — no image, so nothing to download. */
-.hero::before,
-.hero::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.55;
-  pointer-events: none;
-}
-.hero::before {
-  width: min(46rem, 90vw);
-  height: 30rem;
-  top: -14rem;
-  left: -8rem;
-  background: radial-gradient(circle, var(--accent-line), transparent 62%);
-}
-.hero::after {
-  width: min(38rem, 80vw);
-  height: 26rem;
-  top: -6rem;
-  right: -10rem;
-  background: radial-gradient(circle, #35c8d8, transparent 62%);
-  opacity: 0.28;
+  padding: clamp(3.5rem, 2rem + 7vw, 7rem) var(--gutter) clamp(3rem, 2rem + 5vw, 5.5rem);
+  /* Offsets in rem, not per cent: a percentage is read against the hero's own
+     height, so the wash slid up and cut off hard once the hero stacked on a
+     phone. Three stops rather than two keep the falloff soft. */
+  background:
+    radial-gradient(62rem 30rem at 12% -9rem,
+      color-mix(in srgb, var(--accent-line) 55%, transparent),
+      color-mix(in srgb, var(--accent-line) 16%, transparent) 48%,
+      transparent 78%),
+    radial-gradient(48rem 26rem at 92% -7rem,
+      color-mix(in srgb, #35c8d8 32%, transparent),
+      color-mix(in srgb, #35c8d8 10%, transparent) 48%,
+      transparent 78%);
 }
 @media (prefers-color-scheme: light) {
-  .hero::before { opacity: 0.22; }
-  .hero::after { opacity: 0.16; }
+  .hero {
+    background:
+      radial-gradient(62rem 30rem at 12% -9rem,
+        color-mix(in srgb, var(--accent-line) 20%, transparent),
+        color-mix(in srgb, var(--accent-line) 7%, transparent) 48%,
+        transparent 78%),
+      radial-gradient(48rem 26rem at 92% -7rem,
+        color-mix(in srgb, #35c8d8 15%, transparent),
+        color-mix(in srgb, #35c8d8 5%, transparent) 48%,
+        transparent 78%);
+  }
 }
 .hero-grid {
   max-width: var(--shell);
@@ -428,7 +431,10 @@ figure pre { background: transparent; }
 @media (min-width: 62rem) {
   .hero-grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
 }
-.hero-copy { max-width: 36rem; }
+@media (min-width: 100rem) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+}
+.hero-copy { max-width: 40rem; }
 .hero-copy .lede { color: var(--fg); }
 .hero-copy .sub { font-size: 0.9375rem; margin: 1.5rem 0 0; }
 .hero-visual figure { margin: 0; }
@@ -520,10 +526,12 @@ figure pre { background: transparent; }
 
 /* --- documentation pages ------------------------------------------------------------ */
 
-main {
-  max-width: var(--measure);
+/* Scoped to .doc on purpose: the landing page's <main> holds full-width bands
+   and must not inherit a reading measure. */
+main.doc {
+  max-width: calc(var(--measure) + 2 * var(--gutter));
   margin: 0 auto;
-  padding: 3rem 1.25rem 4rem;
+  padding: 3rem var(--gutter) 4rem;
 }
 main.doc h2 {
   margin: 3.25rem 0 1rem;
@@ -537,9 +545,12 @@ main.doc h1 { font-size: clamp(1.9rem, 1.5rem + 2.2vw, 2.6rem); }
 
 /* A page that ships a table of contents becomes two columns on a wide screen:
    the list parks itself in the margin and follows you down the page. */
-main.doc:has(nav.toc) { max-width: calc(var(--measure) + 17rem); }
-@media (min-width: 68rem) {
+@media (min-width: 72rem) {
+  /* The extra width is granted only once the sidebar actually forms. Below the
+     breakpoint the page keeps the plain reading measure rather than stretching
+     its lines across the space the sidebar would have used. */
   main.doc:has(nav.toc) {
+    max-width: calc(var(--measure) + 17rem + 2 * var(--gutter));
     display: grid;
     grid-template-columns: minmax(0, var(--measure)) 13rem;
     column-gap: 4rem;
@@ -591,6 +602,16 @@ main.doc:has(nav.toc) { max-width: calc(var(--measure) + 17rem); }
 /* --- tables ---------------------------------------------------------------------- */
 
 .scroll { overflow-x: auto; margin: 1.5rem 0; }
+@media (min-width: 76rem) {
+  main.doc > .scroll,
+  main.doc > figure {
+    --bleed: 3rem;
+    width: calc(100% + 2 * var(--bleed));
+    margin-inline: calc(-1 * var(--bleed));
+  }
+  main.doc:has(nav.toc) > .scroll,
+  main.doc:has(nav.toc) > figure { --bleed: 0rem; }
+}
 table {
   border-collapse: collapse;
   width: 100%;
@@ -624,7 +645,7 @@ dd { margin: 0.25rem 0 0; color: var(--muted); }
 .site-footer {
   border-top: 1px solid var(--rule);
   background: var(--surface);
-  padding: clamp(2.5rem, 2rem + 3vw, 4rem) 1.25rem 2.5rem;
+  padding: clamp(2.5rem, 2rem + 3vw, 4rem) var(--gutter) 2.5rem;
   font-size: 0.9375rem;
 }
 .foot-grid {

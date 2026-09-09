@@ -56,19 +56,23 @@
       <div class="hero-visual">
         <figure>
           <figcaption>the <code>Stop</code> hook's block reason</figcaption>
-<pre><code>🎓 Learner (level: C, mode: granular, styles: auto, blanks: 2)
+<pre><code>🎓 Learner (level: C, mode: granular,
+   styles: auto, blanks: 2)
    — files: src/auth/session.ts
-Invoke the `learner` skill, follow references/hook-quiz.md
-for this mode. Ask ONE question, then wait for the answer.</code></pre>
+Invoke the `learner` skill, follow
+references/hook-quiz.md for this mode.
+Ask ONE question, then wait.</code></pre>
         </figure>
         <figure>
           <figcaption>what Claude then asks you</figcaption>
 <pre><code>🎓 Learner — src/auth/session.ts
 
-You changed refreshSession() to delete the old session row
-before inserting the replacement. Why that order rather than
-insert-then-delete, and what does a caller see if the insert
-fails after the delete has committed?</code></pre>
+You changed refreshSession() to delete
+the old session row before inserting the
+replacement. Why that order rather than
+insert-then-delete, and what does a
+caller see if the insert fails after the
+delete has committed?</code></pre>
         </figure>
       </div>
     </div>
@@ -138,10 +142,12 @@ fails after the delete has committed?</code></pre>
             <figcaption>the same hook, in synthesis mode</figcaption>
 <pre><code>🎓 Learner — this session
 
-Trace what happens between a request arriving with an expired
-access token and its caller getting a fresh one. Which of the
-three files you touched owns each step, and why does the
-rotation live in tokens.ts rather than in session.ts?</code></pre>
+Trace what happens between a request
+arriving with an expired access token and
+its caller getting a fresh one. Which of
+the three files you touched owns each
+step, and why does the rotation live in
+tokens.ts rather than in session.ts?</code></pre>
           </figure>
         </div>
       </div>
@@ -177,8 +183,8 @@ rotation live in tokens.ts rather than in session.ts?</code></pre>
 <pre><code>learner_synthesis_n() {
   case "${1:-}" in
     off)   printf '0' ;;
-<span class="hl">    // LEARNER-TODO: the two named cadences, and which is rarer</span>
-<span class="hl">    // LEARNER-TODO: the fallback arm — what an unknown word gives</span>
+<span class="hl">    // LEARNER-TODO: the two named cadences</span>
+<span class="hl">    // LEARNER-TODO: the fallback arm</span>
   esac
 }</code></pre>
         </figure>
