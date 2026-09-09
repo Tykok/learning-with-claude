@@ -1669,13 +1669,12 @@ fi
   && ok "docs/.nojekyll stops GitHub running the page through Jekyll" \
   || ko "docs/.nojekyll stops GitHub running the page through Jekyll"
 
-# The published root must hold the site, not internal design records.
+# The published root must hold the site, and nothing else. The design records it
+# once had to be kept apart from now live in the wiki, so there is no in-tree
+# counterpart left to assert.
 [ ! -d "$ROOT/docs/superpowers" ] \
   && ok "the published root carries no internal design records" \
   || ko "the published root carries no internal design records"
-[ -d "$ROOT/design/superpowers" ] \
-  && ok "the design records moved to design/" \
-  || ko "the design records moved to design/"
 
 # No external request at load. <a href> navigation is fine; fetching tags/properties are
 # not. The original three (script/link-href/@import) missed a whole class of fetch: an
