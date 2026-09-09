@@ -304,6 +304,19 @@ figure pre { background: transparent; }
   font-size: 0.8125rem;
   margin: 0 0 1.5rem;
 }
+.tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-size: 0.65rem;
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  vertical-align: 0.08em;
+}
 .pill b {
   color: var(--accent-text);
   font-weight: 640;
@@ -472,6 +485,21 @@ figure pre { background: transparent; }
 .grid { display: grid; gap: 1.25rem; }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
 .grid + .prose { margin-top: 2rem; }
+/* A third dense card would squeeze the row to three cramped columns, so the
+   newest mode takes a full-width row of its own and splits internally. */
+.card-wide { grid-column: 1 / -1; }
+.card-wide .inner {
+  display: grid;
+  gap: clamp(1.25rem, 1rem + 2vw, 2.5rem);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+@media (min-width: 58rem) {
+  .card-wide .inner { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+}
+.card-wide .inner > div > :last-child { margin-bottom: 0; }
+.card-wide figure { margin: 0; }
+
 .split {
   display: grid;
   gap: clamp(2rem, 1rem + 4vw, 4rem);
@@ -480,6 +508,21 @@ figure pre { background: transparent; }
 }
 @media (min-width: 58rem) {
   .grid + .prose { margin-top: 2rem; }
+/* A third dense card would squeeze the row to three cramped columns, so the
+   newest mode takes a full-width row of its own and splits internally. */
+.card-wide { grid-column: 1 / -1; }
+.card-wide .inner {
+  display: grid;
+  gap: clamp(1.25rem, 1rem + 2vw, 2.5rem);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+@media (min-width: 58rem) {
+  .card-wide .inner { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+}
+.card-wide .inner > div > :last-child { margin-bottom: 0; }
+.card-wide figure { margin: 0; }
+
 .split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 

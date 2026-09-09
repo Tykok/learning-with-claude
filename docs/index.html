@@ -112,8 +112,10 @@ delete has committed?</code></pre>
       <div class="section-head">
         <span class="eyebrow">What it actually looks like</span>
         <h2>Nothing below is a mock-up.</h2>
-        <p>The trigger lines are the text <code>hooks/learner-quiz.sh</code> emits, and the
-        <code>fill</code> exercise cuts up a function from this project's own source.</p>
+        <p>The trigger lines are the text <code>hooks/learner-quiz.sh</code> emits, the
+        <code>fill</code> exercise cuts up a function from this project's own source, and the
+        coach commands are the ones <a href="usage.html#coach">the usage page</a>
+        documents.</p>
       </div>
 
       <div class="grid grid-2">
@@ -149,6 +151,29 @@ the three files you touched owns each
 step, and why does the rotation live in
 tokens.ts rather than in session.ts?</code></pre>
           </figure>
+        </div>
+
+        <div class="card card-wide">
+          <div class="inner">
+          <div>
+          <span class="eyebrow">Coach mode <span class="tag">BETA</span></span>
+          <h3>You write, Claude challenges</h3>
+          <p>The other two invert: Claude writes and quizzes you afterwards. Coach mode has
+          <em>you</em> write, while Claude watches your working tree and comes back at
+          intervals with one socratic question, up to three findings anchored
+          <code>file:line</code>, and up to two leads — never a patch.</p>
+          <p>While it is on, Claude is denied write access to your source outside the globs you
+          hand it, and reviews arrive on a pomodoro by default. It needs an interactive
+          session: the watcher is a <code>Monitor</code>, which does not exist in
+          <code>claude -p</code>. <a href="usage.html#coach">Read the whole regime.</a></p>
+          </div>
+          <figure>
+            <figcaption>the three commands</figcaption>
+<pre><code>learner coach on
+learner coach delegate 'src/**/repository/**'
+learner coach review</code></pre>
+          </figure>
+          </div>
         </div>
       </div>
     </div>
