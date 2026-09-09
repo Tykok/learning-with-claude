@@ -994,6 +994,17 @@ printf '%s' "$fill" | grep -qi 'restore' \
   && ok "both quiz protocols prefer plain chat over multiple choice" \
   || ko "both quiz protocols prefer plain chat over multiple choice"
 
+# A question that quotes both sides of a hunk and then asks what the change does has
+# already been answered. The rule that forbids it has to live in both protocols: the
+# Stop hook reads one, `learner quiz` reads the other, and neither reads the other one.
+for f in quiz.md hook-quiz.md; do
+  leak=$(awk '/^## Never hand the answer over/{f=1;next} /^## /{f=0} f' "$REFS/$f")
+  { printf '%s' "$leak" | grep -qi 'both sides' \
+    && printf '%s' "$leak" | grep -qi 'feedback'; } \
+    && ok "$f forbids a question that carries its own answer" \
+    || ko "$f forbids a question that carries its own answer"
+done
+
 # --- docs -------------------------------------------------------------------
 RM="$ROOT/README.md"
 SITE="$ROOT/docs/index.html"
