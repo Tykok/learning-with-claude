@@ -2465,6 +2465,8 @@ case "$wired_n" in
   6) wired_word=six ;;
   7) wired_word=seven ;;
   8) wired_word=eight ;;
+  9) wired_word=nine ;;
+  10) wired_word=ten ;;
   *) wired_word='__no-word-mapped__' ;;
 esac
 
@@ -2638,9 +2640,17 @@ grep -qiF 'copyleft' "$RM" \
 # messages, so scanning itself could never pass, and it is neither shipped nor
 # documentation. design/ is excluded too: those plans record what was decided at
 # the time, and rewriting them would falsify the record.
-LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
-hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
-hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
+#
+# HOOK_SH is derived from hooks/*.sh rather than named one by one: a
+# hand-maintained list here covered only the original six learner-*.sh hooks
+# and silently stopped scanning coach-gate.sh, coach-watch.sh and the three
+# pilot-*.sh hooks once those shipped — the licence and SPDX guards below
+# never actually looked at the files this branch added. A new hook needs no
+# edit to either list that follows.
+HOOK_SH=$(cd "$ROOT/hooks" && ls -- *.sh | sort)
+LIC_SCAN="README.md docs/"
+for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN hooks/$hf"; done
+LIC_SCAN="$LIC_SCAN install.sh uninstall.sh bootstrap.sh
 Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh
 packaging/apt-repo/assemble-site.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
@@ -2653,10 +2663,11 @@ fi
 # install.sh copies the hooks into the user's config directory, so they leave
 # this repository and land somewhere with no LICENSE beside them. A one-line
 # SPDX tag is what tells a reader over there what they are holding.
-for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
-         hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
-         install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
-         scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh; do
+SPDX_SCAN=""
+for hf in $HOOK_SH; do SPDX_SCAN="$SPDX_SCAN hooks/$hf"; done
+SPDX_SCAN="$SPDX_SCAN install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb
+scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh"
+for f in $SPDX_SCAN; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
@@ -2853,10 +2864,10 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "5" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "5" ]; } \
-  && ok "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "8" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "8" ]; } \
+  && ok "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -3490,6 +3501,60 @@ grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
 grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
+
+# --- pilot wiring -------------------------------------------------------------
+# Wiring drift is the failure mode that silently disables a whole feature, so
+# assert both manifests hold the same three, and the timeout that the
+# SessionEnd budget depends on.
+for H in pilot-record pilot-brief pilot-nudge; do
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+    && ok "hooks.json wires $H" || ko "hooks.json wires $H"
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/settings.snippet.json" >/dev/null \
+    && ok "settings.snippet.json wires $H" || ko "settings.snippet.json wires $H"
+done
+
+# SessionEnd hooks share 1.5s unless the wired timeout raises the budget.
+# pilot-record.sh reads a whole transcript; at the default it would be killed.
+jq -e '.hooks.SessionEnd[].hooks[] | select(.command | test("pilot-record")) | .timeout >= 15' \
+  "$ROOT/hooks/hooks.json" >/dev/null \
+  && ok "pilot-record is wired with a raised SessionEnd budget" \
+  || ko "pilot-record is wired with a raised SessionEnd budget"
+
+# UserPromptSubmit is a new event for this repo; a typo in the key is silent.
+jq -e '.hooks.UserPromptSubmit | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+  && ok "hooks.json declares the UserPromptSubmit event" \
+  || ko "hooks.json declares the UserPromptSubmit event"
+
+# Both script-removal lists in uninstall.sh must name the pilot scripts, or the
+# files survive on disk even once the wiring above is stripped clean — the same
+# guard already in place for coach-gate.sh and coach-watch.sh above.
+for pf in pilot-record.sh pilot-brief.sh pilot-nudge.sh; do
+  [ "$(grep -c "hooks/${pf%.sh}\.sh" "$ROOT/uninstall.sh")" = 2 ] \
+    && ok "uninstall.sh's two removal lists both name $pf" \
+    || ko "uninstall.sh's two removal lists both name $pf"
+done
+
+# Reinstall must not double-wire, and uninstall must leave nothing behind.
+IW="$WORK/install-pilot"
+rm -rf "$IW"; mkdir -p "$IW"
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ "$(jq '[.. | strings] | map(select(test("pilot-record"))) | length' "$IW/settings.json")" = "1" ] \
+  && ok "reinstall does not double-wire pilot-record" \
+  || ko "reinstall does not double-wire pilot-record"
+[ -f "$IW/hooks/pilot-record.sh" ] && [ -f "$IW/hooks/pilot-brief.sh" ] && [ -f "$IW/hooks/pilot-nudge.sh" ] \
+  && ok "install copies all three pilot hook scripts" \
+  || ko "install copies all three pilot hook scripts"
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
+if [ -f "$IW/settings.json" ] \
+   && jq -e '[.. | strings] | map(select(test("pilot-"))) | length > 0' "$IW/settings.json" >/dev/null; then
+  ko "uninstall strips the pilot wiring"
+else
+  ok "uninstall strips the pilot wiring"
+fi
+[ ! -f "$IW/hooks/pilot-record.sh" ] && [ ! -f "$IW/hooks/pilot-brief.sh" ] && [ ! -f "$IW/hooks/pilot-nudge.sh" ] \
+  && ok "uninstall removes the pilot scripts" \
+  || ko "uninstall removes the pilot scripts"
 
 # --- coach off stops a running watcher (Finding 3) --------------------------
 # The real loop used to read CFG and check learner_coach_active exactly once,

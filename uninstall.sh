@@ -53,12 +53,13 @@ require_parsable() {
 # events left empty.
 #
 # Matched by naming convention, not by an exhaustive per-script list: every
-# hook script this project ships is named "learner-*.sh" or "coach-*.sh" (see
-# install.sh's copy loop and hooks/settings.snippet.json). A convention-based
-# match keeps pace with new scripts on its own — no list to remember to
-# update here — which is exactly what a literal-name or single-prefix match
-# cannot do (a coach-*.sh hook once slipped past a "learner-"-only match this
-# same way).
+# hook script this project ships is named "learner-*.sh", "coach-*.sh" or
+# "pilot-*.sh" (see install.sh's copy loop and hooks/settings.snippet.json). A
+# convention-based match keeps pace with new scripts on its own — no list to
+# remember to update here — which is exactly what a literal-name or
+# single-prefix match cannot do (a coach-*.sh hook once slipped past a
+# "learner-"-only match this same way, and the three pilot-*.sh hooks shipped
+# uncopied by install.sh's old per-script list for the same reason).
 #
 # The name match alone is not enough: a bare "/hooks/(learner|coach)-*.sh"
 # matches that path shape anywhere on disk, so a sibling tool that also ships
@@ -78,10 +79,10 @@ require_parsable() {
 # leaving that wiring behind forever on an uninstall — the same kind of leak
 # this predicate exists to prevent. Residual risk accepted: another tool that
 # specifically nests its own hook under a ".claude/hooks/" tree with a
-# learner-/coach-prefixed name would still collide; that requires deliberately
-# mimicking this project's install location and naming convention together,
-# which is a much narrower target than the bare path-shape match this
-# predicate replaces.
+# learner-/coach-/pilot-prefixed name would still collide; that requires
+# deliberately mimicking this project's install location and naming
+# convention together, which is a much narrower target than the bare
+# path-shape match this predicate replaces.
 #
 # This is intentionally the same predicate as the reinstall-dedup in
 # install.sh — keep the two in sync if either changes.
@@ -94,7 +95,7 @@ strip_wiring() {
     if .hooks then
       .hooks |= (
         (with_entries(.value |= map(select(
-          any(.hooks[]?; .command | test("\\.claude\\}?/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not
+          any(.hooks[]?; .command | test("\\.claude\\}?/hooks/(learner|coach|pilot)-[A-Za-z0-9_.-]+\\.sh")) | not
         ))))
         | with_entries(select(.value | length > 0))
       )
@@ -114,7 +115,10 @@ if [ -n "$PROJECT" ]; then
         "$TARGET/.claude/hooks/learner-cleanup.sh" \
         "$TARGET/.claude/hooks/learner-config.sh" \
         "$TARGET/.claude/hooks/coach-gate.sh" \
-        "$TARGET/.claude/hooks/coach-watch.sh"
+        "$TARGET/.claude/hooks/coach-watch.sh" \
+        "$TARGET/.claude/hooks/pilot-record.sh" \
+        "$TARGET/.claude/hooks/pilot-brief.sh" \
+        "$TARGET/.claude/hooks/pilot-nudge.sh"
   rm -rf "$TARGET/.claude/skills/learner"
   strip_wiring "$TARGET/.claude/settings.json"
   GI="$TARGET/.gitignore"
@@ -141,7 +145,10 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/learner-cleanup.sh" \
       "$CFG_DIR/hooks/learner-update-check.sh" \
       "$CFG_DIR/hooks/coach-gate.sh" \
-      "$CFG_DIR/hooks/coach-watch.sh"
+      "$CFG_DIR/hooks/coach-watch.sh" \
+      "$CFG_DIR/hooks/pilot-record.sh" \
+      "$CFG_DIR/hooks/pilot-brief.sh" \
+      "$CFG_DIR/hooks/pilot-nudge.sh"
 rm -rf "$CFG_DIR/skills/learner"
 echo "  ✓ hooks + skill removed"
 

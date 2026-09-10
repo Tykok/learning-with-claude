@@ -228,9 +228,9 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/learner-quiz.sh</code></td><td><code>Stop</code> — the quiz trigger, and the <code>LEARNER-TODO</code> guardrail</td></tr>
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/hooks/coach-watch.sh</code></td><td>No static entry — armed as a <code>Monitor</code> by <code>learner-onboard.sh</code> at session start, when coach mode is on; runs the review cadence</td></tr>
-      <tr><td><code>$CFG/hooks/pilot-record.sh</code></td><td><code>SessionEnd</code> — turns one finished transcript into one line of delegation counters, when Pilot is enabled; not yet wired into <code>settings.json</code>, a later task adds the entry</td></tr>
-      <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> — decides whether a scoring pass, a weekly brief, or neither is due; not yet wired into <code>settings.json</code>, a later task adds the entry</td></tr>
-      <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt; not yet wired into <code>settings.json</code>, a later task adds the entry</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-record.sh</code></td><td><code>SessionEnd</code> (second entry, <code>timeout</code> 15) — turns one finished transcript into one line of delegation counters, when Pilot is enabled</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> (third entry) — decides whether a scoring pass, a weekly brief, or neither is due</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
@@ -241,18 +241,18 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Eleven hook files ship and six are wired, into <code>SessionStart</code> (twice —
-  <code>learner-onboard.sh</code> and <code>learner-update-check.sh</code> both fire
-  there), <code>PreToolUse</code> (<code>coach-gate.sh</code>),
-  <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>
-  (<code>learner-cleanup.sh</code>). Five ship unwired:
-  <code>learner-config.sh</code> is sourced-only, and Claude Code never invokes it
-  directly; <code>coach-watch.sh</code> is never a static entry either —
+  <p>Eleven hook files ship and nine are wired, into <code>SessionStart</code>
+  (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
+  and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
+  (<code>coach-gate.sh</code>), <code>PostToolUse</code>, <code>Stop</code>,
+  <code>SessionEnd</code> (twice — <code>learner-cleanup.sh</code> and
+  <code>pilot-record.sh</code>, the latter at a raised <code>timeout</code> of 15
+  since it reads a whole transcript) and <code>UserPromptSubmit</code>
+  (<code>pilot-nudge.sh</code>). Two ship unwired: <code>learner-config.sh</code> is
+  sourced-only, and Claude Code never invokes it directly; and
+  <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
-  only once coach mode is on; and <code>pilot-record.sh</code>,
-  <code>pilot-brief.sh</code> and <code>pilot-nudge.sh</code> are not yet wired at
-  all — a later task adds their <code>SessionEnd</code>, <code>SessionStart</code>
-  and <code>UserPromptSubmit</code> entries. Nine of the other ten source
+  only once coach mode is on. Nine of the other ten source
   <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
   which needs none of it.</p>
 
