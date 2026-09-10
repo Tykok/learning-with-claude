@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Nine POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
+Ten POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
 files, and `Stop` blocks once per turn to ask one question —
 `code`, `architecture`, or `fill` (Claude cuts `// LEARNER-TODO` holes in a real function for
@@ -223,7 +223,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `hooks/*.sh` glob covers all nine shipped hook files, including `learner-config.sh`. CI
+The `hooks/*.sh` glob covers all ten shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step.
