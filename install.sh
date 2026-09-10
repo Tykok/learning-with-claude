@@ -117,9 +117,10 @@ if [ "$DRY" = 1 ]; then
   # Counted from disk, not hardcoded — see the copy loop and the snippet below.
   N_HOOKS=$(find "$SRC_DIR/hooks" -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
   N_WIRED=$(jq '[.. | .command? // empty] | length' "$SRC_DIR/hooks/settings.snippet.json")
+  N_SKILLS=$(find "$SRC_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   echo "  (dry run — nothing will be written)"
   echo "  would copy $N_HOOKS hooks   → $CFG_DIR/hooks/"
-  echo "  would copy the skill  → $CFG_DIR/skills/learner/"
+  echo "  would copy $N_SKILLS skills  → $CFG_DIR/skills/"
   echo "  would merge $N_WIRED hooks   → $SETTINGS"
   if [ "$CONFIG_EXISTS" = 1 ]; then
     echo "  would keep existing   → $CONFIG"
@@ -129,7 +130,7 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
-mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills/learner/references" "$CFG_DIR/learner"
+mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills" "$CFG_DIR/learner"
 
 # Copy every hook script this repo ships, derived from what is actually in
 # hooks/ rather than named one by one — a hand-maintained list here is exactly
@@ -142,12 +143,31 @@ for h in "$SRC_DIR"/hooks/*.sh; do
 done
 echo "  ✓ hooks → $CFG_DIR/hooks/"
 
-cp "$SRC_DIR/skills/learner/SKILL.md" "$CFG_DIR/skills/learner/SKILL.md"
-cp "$SRC_DIR"/skills/learner/references/*.md "$CFG_DIR/skills/learner/references/"
-# Always refresh — unlike learner.json below, this must match what's on disk.
+# Copy every skill this repo ships, derived from what is actually in skills/
+# rather than named one by one — the same fix as the hook loop above, for the
+# same reason: a hand-maintained list here is exactly what let the `pilot`
+# skill ship missing from one install path while its SKILL.md already existed
+# on disk (this task). A new skill needs no edit to this loop, only a
+# directory under skills/. A skill directory need not have a references/ of
+# its own yet (pilot's arrives in a later task) — skip copying it rather than
+# fail when it is absent.
+for d in "$SRC_DIR"/skills/*/; do
+  name="$(basename "$d")"
+  mkdir -p "$CFG_DIR/skills/$name"
+  cp "$d/SKILL.md" "$CFG_DIR/skills/$name/SKILL.md"
+  if [ -d "$d/references" ]; then
+    mkdir -p "$CFG_DIR/skills/$name/references"
+    find "$d/references" -maxdepth 1 -name '*.md' -exec cp {} "$CFG_DIR/skills/$name/references/" \;
+  fi
+done
+# VERSION and INSTALL_ORIGIN are stamped only into skills/learner/, not into
+# every skill directory: the update-check hook reads them from that exact
+# path today, and a second copy under skills/pilot/ would only invite the two
+# to drift. Always refresh — unlike learner.json below, this must match
+# what's on disk.
 cp "$SRC_DIR/VERSION" "$CFG_DIR/skills/learner/VERSION"
 printf '%s' "$ORIGIN" > "$CFG_DIR/skills/learner/INSTALL_ORIGIN"
-echo "  ✓ skill → $CFG_DIR/skills/learner/"
+echo "  ✓ skills → $CFG_DIR/skills/"
 
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 # Keep the pristine, pre-learner backup: a second install must not overwrite it

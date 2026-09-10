@@ -10,6 +10,10 @@ class Learner < Formula
   depends_on "jq"
 
   def install
+    # "skills" ships the whole directory, every skill under it included —
+    # skills/learner and skills/pilot today, and any later addition — without
+    # naming one here. Do not narrow this to a per-skill path: that is the
+    # exact hand-maintained list install.sh's copy loop exists to avoid.
     pkgshare.install "hooks", "skills", "install.sh", "uninstall.sh", "VERSION", "LICENSE"
 
     (bin/"learner-install").write <<~SH
