@@ -515,15 +515,21 @@ PN_TMP="$WORK/pilot-nudge"
 pn_reset() {
   rm -rf "$PN_TMP"; mkdir -p "$PN_TMP/cfg/learner" "$PN_TMP/wd"
   printf '{"pilotEnabled":true}' > "$PN_TMP/cfg/learner.json"
+  rm -f "${TMPDIR:-/tmp}/claude-learner-N1.pilot-nudged"
 }
 pn_live() {  # pn_live <axis> <until>
   printf '# Manoeuvres\n\n- live: %s | name the result you want and one constraint | until %s\n' \
     "$1" "$2" > "$PN_TMP/cfg/learner/pilot.md"
 }
-pn_run() {
-  printf '{"session_id":"N1","prompt":"%s","cwd":"%s"}' "$1" "$PN_TMP/wd" \
+pn_run() {  # pn_run <prompt> [session_id]
+  pn_sid="${2:-N1}"
+  printf '{"session_id":"%s","prompt":"%s","cwd":"%s"}' "$pn_sid" "$1" "$PN_TMP/wd" \
     | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh")
 }
+# Every pn_ helper below defaults to session "N1"; pn_reset also clears that
+# session's once-per-session nudge marker so each fresh config starts unnudged,
+# same as a fresh `pn_reset` already gives a fresh pilot.md.
+pn_clear_marker() { rm -f "${TMPDIR:-/tmp}/claude-learner-${1:-N1}.pilot-nudged"; }
 
 # 1. THE constraint of this file. Exit 2 on UserPromptSubmit blocks the prompt
 #    AND ERASES IT. Destroying what the dev typed to remind them to type it
@@ -574,6 +580,89 @@ printf '{"pilotEnabled":true,"pilotNudge":false}' > "$PN_TMP/cfg/learner.json"
 [ -z "$(pn_run 'fix it')" ] \
   && ok "pilot-nudge honours pilotNudge:false" \
   || ko "pilot-nudge honours pilotNudge:false"
+
+# 7. The path/backtick branch of the vagueness heuristic, exercised UNDER the
+#    word floor so only that branch (not the word-count guard) can be keeping
+#    these quiet — the review found this branch had no discriminating test.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'check src/http/client.py')" ] \
+  && ok "pilot-nudge stays quiet on a short prompt naming a path" \
+  || ko "pilot-nudge stays quiet on a short prompt naming a path"
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'run `pytest -k foo`')" ] \
+  && ok "pilot-nudge stays quiet on a short prompt with a code span" \
+  || ko "pilot-nudge stays quiet on a short prompt with a code span"
+
+# 8. The realistic "no live manoeuvre" case: pilot.md exists, holding a settled
+#    manoeuvre's history, but the Manoeuvres block has no `- live:` line — the
+#    normal state after an expiry (spec §8). Different from "no pilot.md at
+#    all", which the earlier `[ -f ]` gate already catches.
+pn_reset
+printf '# Manoeuvres\n\n- 2026-01-01..2026-02-14: direction | name the result you want | until 2026-02-14 — kept\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge is silent when pilot.md holds only settled manoeuvre history" \
+  || ko "pilot-nudge is silent when pilot.md holds only settled manoeuvre history"
+
+# 9. A pipe inside the constraint text must not disable expiry: the axis is
+#    everything before the FIRST pipe, the expiry is the LAST field, and the
+#    constraint is everything in between, pipes and all.
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until 2020-01-01\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge expires a manoeuvre whose constraint contains a pipe" \
+  || ko "pilot-nudge expires a manoeuvre whose constraint contains a pipe"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until 2099-01-01\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -n "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge still speaks for a live manoeuvre whose constraint contains a pipe" \
+  || ko "pilot-nudge still speaks for a live manoeuvre whose constraint contains a pipe"
+
+# 10. A malformed manoeuvre is not live: fail toward silence, never toward
+#     nudging forever. Reverses the old default, which treated all three of
+#     these shapes as "never expires".
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want and one constraint\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the until field is missing entirely" \
+  || ko "pilot-nudge stays silent when the until field is missing entirely"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want | whenever\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the last field is not until-shaped" \
+  || ko "pilot-nudge stays silent when the last field is not until-shaped"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want | until not-a-date\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the until date is garbage" \
+  || ko "pilot-nudge stays silent when the until date is garbage"
+
+# 11. A question is the opposite of delegated thinking: exempt outright, even
+#     when short and otherwise vague.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'explain what this error means?')" ] \
+  && ok "pilot-nudge exempts a prompt with a question mark" \
+  || ko "pilot-nudge exempts a prompt with a question mark"
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'why is CI failing')" ] \
+  && ok "pilot-nudge exempts a prompt starting with an interrogative word" \
+  || ko "pilot-nudge exempts a prompt starting with an interrogative word"
+
+# 12. Once per session: the nudge fires at most once, no matter how many vague
+#     prompts follow in the same session.
+pn_reset; pn_live direction "2099-01-01"
+[ -n "$(pn_run 'fix it' CAP1)" ] \
+  && ok "pilot-nudge speaks on the first vague prompt of a session" \
+  || ko "pilot-nudge speaks on the first vague prompt of a session"
+[ -z "$(pn_run 'fix it' CAP1)" ] \
+  && ok "pilot-nudge stays silent on a second vague prompt in the same session" \
+  || ko "pilot-nudge stays silent on a second vague prompt in the same session"
+rm -f "${TMPDIR:-/tmp}/claude-learner-CAP1.pilot-nudged"
 
 # --- learner_excluded -------------------------------------------------------
 echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
@@ -3355,13 +3444,15 @@ touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
       "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
       "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
       "$TMPDIR/claude-learner-${SID_X}.coach-last" \
-      "$TMPDIR/claude-learner-${SID_X}.edits"
+      "$TMPDIR/claude-learner-${SID_X}.edits" \
+      "$TMPDIR/claude-learner-${SID_X}.pilot-nudged"
 printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
 { [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
-  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ]; } \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.pilot-nudged" ]; } \
   && ok "cleanup removes the coach scratch files" || ko "cleanup removes the coach scratch files"
 
 # Both install paths must be wired, or half the users get half the feature.
