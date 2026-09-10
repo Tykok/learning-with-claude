@@ -115,6 +115,79 @@ else
   ok "pilot_enabled rejects a non-boolean pilotEnabled"
 fi
 
+# --- pilot-record -------------------------------------------------------------
+PR_TMP="$WORK/pilot-record"
+mkdir -p "$PR_TMP/cfg/learner" "$PR_TMP/norepo"
+PR_FIX="$ROOT/test/fixtures/pilot-transcript.jsonl"
+
+pr_run() {  # pr_run <cfgdir> <cwd> <extra-config-json>
+  printf '{"pilotEnabled":true}' > "$1/learner.json"
+  [ -n "${3:-}" ] && printf '%s' "$3" > "$1/learner.json"
+  printf '{"session_id":"S1","transcript_path":"%s","cwd":"%s","source":"other"}' "$PR_FIX" "$2" \
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+}
+
+# 1. The prompt filter. isMeta, tool_result arrays, <local-command-…> and
+#    <command-name> wrappers are all machinery; only two lines are the dev.
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+PR_LINE=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE" in
+  *" prompts=2 "*) ok "pilot-record counts only the dev's real prompts" ;;
+  *) ko "pilot-record counts only the dev's real prompts (got: $PR_LINE)" ;;
+esac
+
+# 2. Decision 8. Every other learner hook exits early without a git repo; this
+#    one must not, or the sessions with the worst delegation go unmeasured.
+case "$PR_LINE" in
+  *" repo=- "*) ok "pilot-record queues a session held outside any git repo" ;;
+  *) ko "pilot-record queues a session held outside any git repo (got: $PR_LINE)" ;;
+esac
+
+# 3. Decision 10. The scratch files are deleted by learner-cleanup.sh at the
+#    same SessionEnd, in parallel. Same input, none of them present, same line.
+rm -f "$TMPDIR/claude-learner-S1."* 2>/dev/null
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+[ "$(head -1 "$PR_TMP/cfg/learner/pilot-queue")" = "$PR_LINE" ] \
+  && ok "pilot-record does not depend on the TMPDIR scratch files" \
+  || ko "pilot-record does not depend on the TMPDIR scratch files"
+
+# 4. Opt-in. Nothing anywhere when the switch is off.
+rm -rf "$PR_TMP/off"; mkdir -p "$PR_TMP/off/learner"
+pr_run "$PR_TMP/off" "$PR_TMP/norepo" '{"pilotEnabled":false}'
+[ ! -f "$PR_TMP/off/learner/pilot-queue" ] \
+  && ok "pilot-record is inert while pilotEnabled is false" \
+  || ko "pilot-record is inert while pilotEnabled is false"
+
+# 5. Idempotent. SessionEnd can fire more than once for one session id
+#    (clear, resume); a second line would double-count the session in the index.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+[ "$(grep -c '^sid=S1 ' "$PR_TMP/cfg/learner/pilot-queue")" = "1" ] \
+  && ok "pilot-record queues a session id at most once" \
+  || ko "pilot-record queues a session id at most once"
+
+# 6. Budget. SessionEnd hooks share 1.5s, raised to the wired timeout of 15.
+#    A 5,000-line transcript must be nowhere near it.
+awk 'NR==1{for(i=0;i<5000;i++) print}' "$PR_FIX" > "$PR_TMP/big.jsonl"
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+PR_T0=$(date +%s)
+printf '{"session_id":"S2","transcript_path":"%s","cwd":"%s"}' "$PR_TMP/big.jsonl" "$PR_TMP/norepo" \
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh")
+[ $(( $(date +%s) - PR_T0 )) -le 5 ] \
+  && ok "pilot-record stays well inside its SessionEnd budget" \
+  || ko "pilot-record stays well inside its SessionEnd budget"
+
+# 7. A missing or unreadable transcript is a no-op, not a crash: the path comes
+#    from the harness and Pilot does not own its lifetime.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "$PR_TMP/norepo" \
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh") \
+  && [ ! -f "$PR_TMP/cfg/learner/pilot-queue" ] \
+  && ok "pilot-record no-ops on a missing transcript" \
+  || ko "pilot-record no-ops on a missing transcript"
+
 for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
   raw="${pair%%:*}"; want="${pair##*:}"
   got=$(cfgsh "learner_level $raw")
