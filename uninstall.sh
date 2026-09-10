@@ -109,6 +109,13 @@ if [ -n "$PROJECT" ]; then
   TARGET="$(cd "$PROJECT" && pwd)"
   require_parsable "$TARGET/.claude/settings.json"
   echo "→ Cleaning the legacy per-project install in: $TARGET"
+  # This list is deliberately frozen, not derived from hooks/*.sh: it
+  # inventories a layout that no longer ships, so it is history rather than
+  # something that must track what's currently in hooks/. It does not, and
+  # should not, name every current hook — learner-update-check.sh postdates
+  # this layout and was never part of it, so it is correctly absent here
+  # even though it is required in the global removal list below. A hook
+  # added after this layout was retired only needs to reach that list.
   rm -f "$TARGET/.claude/hooks/learner-onboard.sh" \
         "$TARGET/.claude/hooks/learner-record-edit.sh" \
         "$TARGET/.claude/hooks/learner-quiz.sh" \
