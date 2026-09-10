@@ -85,7 +85,7 @@
 <pre><code>claude plugin marketplace add Tykok/learning-with-claude
 claude plugin install learner</code></pre>
 
-  <p>Installs and enables the skill and its hooks natively — no <code>~/.claude</code> file
+  <p>Installs and enables the skills and their hooks natively — no <code>~/.claude</code> file
   copying, no <code>learner-install</code> step. Claude Code manages updates itself
   (<code>/plugin update learner</code>); run <code>learner update</code> and it will tell you
   the same thing rather than trying to curl a second, traditional install on top. Already
@@ -165,7 +165,7 @@ cd learning-with-claude
     not passed.</li>
   </ul>
 
-  <p>The installer is idempotent: re-running re-copies the hooks and the skill and
+  <p>The installer is idempotent: re-running re-copies the hooks and the skills and
   re-merges the hook wiring without duplicating entries, and it never overwrites a config
   you already have. <strong>It writes nothing into any repository.</strong> Every path it
   touches is under <code>$CLAUDE_CONFIG_DIR</code> (default <code>~/.claude</code>), and

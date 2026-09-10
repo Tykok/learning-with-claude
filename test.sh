@@ -1326,6 +1326,17 @@ jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPe
 # Two skills now ship. The installer hardcoded one path in six places; a
 # separate copy of the same path in each packaging script is how a second
 # skill ends up missing from one install path only (brew, apt, curl, plugin).
+# The mutation that shows the derived loops actually discriminate — on both
+# sides — rather than a hand-maintained list that happens to name today's two
+# skills: a skill this repo has never heard of, with no edit to install.sh or
+# uninstall.sh, must be copied in AND removed again. A hardcoded two-name
+# `SKILLS='learner pilot'` (install) or a two-name `rm -rf` (uninstall) would
+# satisfy every assertion about learner/pilot specifically while failing this
+# one, on either side.
+PROBE="$ROOT/skills/zz-probe"
+mkdir -p "$PROBE"
+printf '---\nname: zz-probe\ndescription: throwaway probe for the derived skill-copy loop, deleted immediately after.\n---\n\nprobe\n' > "$PROBE/SKILL.md"
+
 IS="$WORK/install-skills"
 rm -rf "$IS"; mkdir -p "$IS"
 CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
@@ -1333,19 +1344,9 @@ CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
   && ok "install ships the pilot skill" || ko "install ships the pilot skill"
 [ -f "$IS/skills/learner/SKILL.md" ] \
   && ok "install still ships the learner skill" || ko "install still ships the learner skill"
-
-# The mutation that shows the derived loop actually discriminates: a skill
-# this repo has never heard of, with no edit to install.sh, must still be
-# copied — the failure mode a hand-maintained list cannot produce a test for.
-PROBE="$ROOT/skills/zz-probe"
-mkdir -p "$PROBE"
-printf '---\nname: zz-probe\ndescription: throwaway probe for the derived skill-copy loop, deleted immediately after.\n---\n\nprobe\n' > "$PROBE/SKILL.md"
-IP="$WORK/install-skill-probe"; rm -rf "$IP"; mkdir -p "$IP"
-CLAUDE_CONFIG_DIR="$IP" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
-[ -f "$IP/skills/zz-probe/SKILL.md" ] \
+[ -f "$IS/skills/zz-probe/SKILL.md" ] \
   && ok "install's derived skill loop copies a skill it has never been told about" \
   || ko "install's derived skill loop copies a skill it has never been told about"
-rm -rf "$PROBE"
 
 # A skill directory with a SKILL.md and no references/ yet (pilot's own case
 # until a later task writes references/rubric.md and friends) must not break
@@ -1359,12 +1360,32 @@ CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
   && ok "uninstall removes the pilot skill" || ko "uninstall removes the pilot skill"
 [ ! -d "$IS/skills/learner" ] \
   && ok "uninstall still removes the learner skill" || ko "uninstall still removes the learner skill"
+[ ! -d "$IS/skills/zz-probe" ] \
+  && ok "uninstall's derived skill loop removes a skill it has never been told about" \
+  || ko "uninstall's derived skill loop removes a skill it has never been told about"
 
-# The packaging paths must not drift from the installer's.
-grep -q 'skills/pilot' "$ROOT/Formula/learner.rb" \
-  && ok "the brew formula ships the pilot skill" || ko "the brew formula ships the pilot skill"
-grep -q 'skills/pilot' "$ROOT/packaging/deb/build.sh" \
-  && ok "the deb build ships the pilot skill" || ko "the deb build ships the pilot skill"
+rm -rf "$PROBE"
+
+# Neither packaging file has ever enumerated skills by name — both already
+# ship the whole skills/ tree as one unit, which is what makes a second skill
+# arrive in both without a code change. So the invariant to assert is that
+# shape, not a name that happens to appear in a comment today: naming
+# 'skills/pilot' literally would go red on a harmless comment rewrite and stay
+# green if "skills" were ever narrowed to "skills/learner" — the false pass
+# that would actually break shipping the second skill.
+# Anchored to the actual install/copy line, not merely "'skills' appears
+# somewhere in the file" — a bare file-wide grep would still pass reading a
+# comment that says the right thing while the code beside it was narrowed to
+# "skills/learner", which is exactly the false pass this guard exists to
+# catch. Both patterns require the exact whole-directory token on the SAME
+# line as the copy call, so "skills/learner" (no closing quote right after
+# "skills") does not match either.
+grep -qE 'pkgshare\.install.*"skills"' "$ROOT/Formula/learner.rb" \
+  && ok "the brew formula ships the skills/ tree as a unit" \
+  || ko "the brew formula ships the skills/ tree as a unit"
+grep -qE 'cp -r.*"\$ROOT/skills"' "$ROOT/packaging/deb/build.sh" \
+  && ok "the deb build ships the skills/ tree as a unit" \
+  || ko "the deb build ships the skills/ tree as a unit"
 
 # One line of forwarding, not a third regime inlined into the quiz's dispatch.
 grep -q 'pilot' "$ROOT/skills/learner/SKILL.md" \
@@ -1703,10 +1724,16 @@ grep -qF '/plugin update learner' "$UPD" \
   && ok "update.md points a plugin install at /plugin update" \
   || ko "update.md points a plugin install at /plugin update"
 
-n=$(wc -l < "$SK" | tr -d ' ')
-[ "$n" -le 120 ] \
-  && ok "SKILL.md stays under 120 lines (it is always loaded)" \
-  || ko "SKILL.md stays under 120 lines (got $n)"
+# Every skill's SKILL.md, not just learner's — derived from skills/*/SKILL.md
+# rather than a second hardcoded path, so a third skill inherits this budget
+# without anyone remembering to add a check for it.
+for sk in "$ROOT"/skills/*/SKILL.md; do
+  skn=$(basename "$(dirname "$sk")")
+  n=$(wc -l < "$sk" | tr -d ' ')
+  [ "$n" -le 120 ] \
+    && ok "$skn/SKILL.md stays under 120 lines (it is always loaded)" \
+    || ko "$skn/SKILL.md stays under 120 lines (got $n)"
+done
 
 grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"' "$SK" "$REFS"/*.md \
   && ko "skill mentions no removed config key" \
@@ -2556,7 +2583,7 @@ grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
   && ok "index.html's hook count matches the $hook_n files on disk" \
   || ko "index.html's hook count matches the $hook_n files on disk"
 
-grep -qiF "the $hook_word hook files, the skill" "$SITE_SAFETY" \
+grep -qiF "the $hook_word hook files, the skills" "$SITE_SAFETY" \
   && ok "safety.html's hook count matches the $hook_n files on disk" \
   || ko "safety.html's hook count matches the $hook_n files on disk"
 
