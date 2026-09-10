@@ -424,6 +424,90 @@ cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
   && ko "learner_active fails under a disabled path" \
   || ok "learner_active fails under a disabled path"
 
+# --- pilot-brief --------------------------------------------------------------
+PB_TMP="$WORK/pilot-brief"
+pb_reset() {
+  rm -rf "$PB_TMP"; mkdir -p "$PB_TMP/cfg/learner" "$PB_TMP/wd"
+  printf '{"pilotEnabled":true}' > "$PB_TMP/cfg/learner.json"
+}
+pb_run() {
+  printf '{"session_id":"B1","source":"%s","cwd":"%s"}' "${1:-startup}" "$PB_TMP/wd" \
+    | (cd "$PB_TMP/wd" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" sh "$ROOT/hooks/pilot-brief.sh")
+}
+
+# 1. An empty queue and no history is silence, not a brief about nothing.
+pb_reset
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief says nothing with an empty queue and no history" \
+  || ko "pilot-brief says nothing with an empty queue and no history"
+
+# 2. A queued session with no prior drain is due immediately.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+PB_OUT=$(pb_run)
+printf '%s' "$PB_OUT" | jq -e '.hookSpecificOutput.additionalContext | test("score.md")' >/dev/null \
+  && ok "pilot-brief asks for a scoring pass when the queue is stale" \
+  || ko "pilot-brief asks for a scoring pass when the queue is stale"
+
+# 3. Within pilotJudgeIntervalHours of the last drain, it stays quiet: the whole
+#    point of batching is one subagent a day, not one per session.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf 'score=%s\n' "$(date +%s)" > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief respects pilotJudgeIntervalHours" \
+  || ko "pilot-brief respects pilotJudgeIntervalHours"
+
+# 4. Ordering. When both are due, the scorer must be named first and the brief
+#    deferred — a brief opened on a stale index quotes last week's numbers.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf '# Index\n\n- direction: 40\n' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+PB_OUT=$(pb_run)
+# The deferral message names no reference file — that is the point, the brief
+# must not be opened. So assert the scorer is asked for AND the brief is
+# explicitly deferred, rather than comparing two substring positions.
+printf '%s' "$PB_OUT" | jq -e '.hookSpecificOutput.additionalContext
+    | test("score.md") and test("[Dd]o NOT open it|next session start")' >/dev/null \
+  && ok "pilot-brief names the scoring pass and defers the brief" \
+  || ko "pilot-brief names the scoring pass and defers the brief"
+
+# 5. Only startup and resume. A compaction mid-session must not re-fire either,
+#    the same guard learner-onboard.sh already applies for the same reason.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+[ -z "$(pb_run compact)" ] \
+  && ok "pilot-brief ignores a compaction" \
+  || ko "pilot-brief ignores a compaction"
+
+# 6. Opt-in.
+pb_reset
+printf '{"pilotEnabled":false}' > "$PB_TMP/cfg/learner.json"
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief is inert while pilotEnabled is false" \
+  || ko "pilot-brief is inert while pilotEnabled is false"
+
+# 7. Declined twice, never offered again unasked. Pilot is not allowed to nag.
+pb_reset
+printf '# Index\n\n- direction: 40\n' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\ndeclined=2\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief stops offering the brief after two declines" \
+  || ko "pilot-brief stops offering the brief after two declines"
+
+# 8. `declined` must gate the brief and nothing else: a dev who does not want the
+#    weekly conversation has not asked to stop being measured. A queued session
+#    stays due for scoring even while the brief is suppressed.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf '# Index\n\n- direction: 40\n' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\ndeclined=2\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+pb_run | jq -e '.hookSpecificOutput.additionalContext | test("score.md")' >/dev/null \
+  && ok "declining the brief does not suppress a due scoring pass" \
+  || ko "declining the brief does not suppress a due scoring pass"
+
 # --- learner_excluded -------------------------------------------------------
 echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
 rm -f "$PCFG"
