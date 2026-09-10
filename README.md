@@ -94,7 +94,7 @@ claude plugin marketplace add Tykok/learning-with-claude
 claude plugin install learner
 ```
 
-Installs and enables the skill and its hooks natively — no `~/.claude` file copying, no
+Installs and enables the skills and their hooks natively — no `~/.claude` file copying, no
 `learner-install` step. Claude Code manages updates itself (`/plugin update learner`); run
 `learner update` and it will tell you the same thing rather than trying to curl a second,
 traditional install on top. Already installed via curl, clone, Homebrew, or apt? Run
@@ -168,7 +168,7 @@ cd learning-with-claude
 - `--dry-run` — print what would be written; write nothing.
 - `--yes` (`-y`) — never prompt; fill in anything not passed with its default.
 
-The installer is idempotent: re-running re-copies the hooks and the skill and re-merges the
+The installer is idempotent: re-running re-copies the hooks and the skills and re-merges the
 hook wiring into `settings.json` without duplicating entries, and it never overwrites an
 existing config. **It writes nothing into any repository** — every path it touches sits under
 `$CLAUDE_CONFIG_DIR` (default `~/.claude`), and every hook command it wires into
