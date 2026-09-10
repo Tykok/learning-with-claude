@@ -56,11 +56,25 @@ if [ -f "$Q" ] && grep -q "^sid=$SID " "$Q" 2>/dev/null; then exit 0; fi
 # Medians are computed here rather than by piping to `sort -n`: we are already
 # inside jq with the list in hand, and it saves a subprocess against the budget.
 COUNTS=$(jq -rn '
+  # A genuine prompt can legitimately BEGIN with a <system-reminder> block the
+  # harness prepends ahead of the actual text in the same message, so this
+  # cannot be a prefix test. Strip every wrapper the harness or a slash command
+  # can inject, then classify on what is left: a slash-command echo or a bare
+  # caveat/stdout wrapper strips to nothing and is still rejected, but a real
+  # prompt that merely carries a reminder ahead of it is not lost with it.
+  def strip:
+    gsub("(?s)<system-reminder>.*?</system-reminder>"; "")
+    | gsub("(?s)<local-command-[^>]*>.*?</local-command-[^>]*>"; "")
+    | gsub("(?s)<command-name>.*?</command-name>"; "")
+    | gsub("(?s)<command-message>.*?</command-message>"; "")
+    | gsub("(?s)<command-args>.*?</command-args>"; "")
+    | gsub("^[[:space:]]+|[[:space:]]+$"; "");
+
   def isprompt:
     .type == "user"
     and ((.isMeta // false) | not)
     and ((.message.content // null) | type == "string")
-    and (.message.content | test("^<(local-command|command-name|system-reminder)") | not);
+    and ((.message.content | strip | length) > 0);
 
   # Claude Code stamps milliseconds, which fromdateiso8601 rejects.
   def ts:
@@ -76,7 +90,9 @@ COUNTS=$(jq -rn '
 
   [inputs] as $all
   | [ $all[] | select(isprompt) ]                       as $p
-  | [ $p[] | .message.content | words ]                 as $w
+  # Word counts are taken on the STRIPPED text: reminder boilerplate ahead of
+  # a real prompt must not inflate pw_med/pw_min for the sessions that carry it.
+  | [ $p[] | .message.content | strip | words ]         as $w
   | [ $all[] | ts | select(. != null) ]                 as $t
   | [ $p[]   | ts | select(. != null) ]                 as $pt
   | [ $all[] | select(.type == "assistant")
