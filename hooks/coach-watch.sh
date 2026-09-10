@@ -282,6 +282,16 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
 
   _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
 
+  # Persist what this cycle measured, durably. pilot-record.sh needs it at
+  # SessionEnd, and it cannot read this watcher's TMPDIR state: hooks for one
+  # event run in parallel and learner-cleanup.sh deletes those files at the
+  # same event. Best-effort — a coach cycle must never fail over Pilot's
+  # bookkeeping, so every failure here is swallowed.
+  if pilot_enabled "$CFG" 2>/dev/null; then
+    mkdir -p "$LEARNER_CFG_DIR/learner" 2>/dev/null \
+      && printf '%s %s\n' "$SID" "$_ccl" >> "$LEARNER_CFG_DIR/learner/pilot-devlines" 2>/dev/null
+  fi
+
   # Same contract as the quiz trigger: parameters and a pointer to the protocol,
   # never the protocol itself. Rendered in the console, so it stays one screen.
   printf '%s\n' "🧑‍🏫 Coach (level: $LEVEL, cycle: ${CYCLE:-1}, files: $_ccn, lines: $_ccl) — $_ccfiles
