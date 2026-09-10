@@ -259,6 +259,88 @@ printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "
   && ok "pilot-record no-ops on a missing transcript" \
   || ko "pilot-record no-ops on a missing transcript"
 
+# 11. The writing axis's coach-tally branch (ruling, Task 3 fix round 1): a
+#     coach tally alone is a lower bound, not an exact count — pomodoro only
+#     measures completed work blocks — so dev_lines is the LARGER of the
+#     tally and the git working-tree estimate, and est=0 only when the
+#     estimate does not exceed the tally. This is the least-inspected code in
+#     the task and the code the whole axis reads, so each reachable branch
+#     but one gets its own case here, each in a fresh cfg dir and repo so one
+#     case's tally or commit state cannot leak into another's. The fifth
+#     branch (no tally, no repo) is already PR_EXPECT above.
+#     PR_FIX's cl_lines is 4 throughout (pinned at item 3).
+
+# (a) tally covers the tree: 5 uncommitted insertions minus cl_lines=4 nets
+#     an estimate of 1, well under a tally of 50 — chosen large enough that
+#     no plausible off-by-one in the comparison could flip the branch.
+PR_A="$WORK/pr-axis-a"; rm -rf "$PR_A"; mkdir -p "$PR_A/cfg/learner" "$PR_A/repo"
+git -C "$PR_A/repo" init -q
+printf 'orig\n' > "$PR_A/repo/f.txt"
+git -C "$PR_A/repo" add f.txt
+git -C "$PR_A/repo" -c user.email=t@t -c user.name=t commit -qm init
+printf 'x1\nx2\nx3\nx4\nx5\n' > "$PR_A/repo/f.txt"
+printf 'S1 50\n' > "$PR_A/cfg/learner/pilot-devlines"
+pr_run "$PR_A/cfg" "$PR_A/repo"
+PR_A_LINE=$(grep '^sid=S1 ' "$PR_A/cfg/learner/pilot-queue" 2>/dev/null)
+PR_A_OK=1
+case "$PR_A_LINE" in *" dev_lines=50 "*) ;; *) PR_A_OK=0 ;; esac
+case "$PR_A_LINE" in *" est=0 "*) ;; *) PR_A_OK=0 ;; esac
+[ "$PR_A_OK" = 1 ] \
+  && ok "pilot-record's writing axis: a tally that covers the tree wins exact (dev_lines=50 est=0)" \
+  || ko "pilot-record's writing axis: a tally that covers the tree wins exact (got: $PR_A_LINE)"
+
+# (b) the estimate exceeds the tally by a margin no sign error or off-by-one
+#     could produce by accident: 100 uncommitted insertions minus cl_lines=4
+#     nets an estimate of 96 against a tally of 3.
+PR_B="$WORK/pr-axis-b"; rm -rf "$PR_B"; mkdir -p "$PR_B/cfg/learner" "$PR_B/repo"
+git -C "$PR_B/repo" init -q
+printf 'orig\n' > "$PR_B/repo/f.txt"
+git -C "$PR_B/repo" add f.txt
+git -C "$PR_B/repo" -c user.email=t@t -c user.name=t commit -qm init
+awk 'BEGIN { for (i = 0; i < 100; i++) print "y" i }' > "$PR_B/repo/f.txt"
+printf 'S1 3\n' > "$PR_B/cfg/learner/pilot-devlines"
+pr_run "$PR_B/cfg" "$PR_B/repo"
+PR_B_LINE=$(grep '^sid=S1 ' "$PR_B/cfg/learner/pilot-queue" 2>/dev/null)
+PR_B_OK=1
+case "$PR_B_LINE" in *" dev_lines=96 "*) ;; *) PR_B_OK=0 ;; esac
+case "$PR_B_LINE" in *" est=1 "*) ;; *) PR_B_OK=0 ;; esac
+[ "$PR_B_OK" = 1 ] \
+  && ok "pilot-record's writing axis: an estimate that exceeds the tally wins, marked est=1 (dev_lines=96)" \
+  || ko "pilot-record's writing axis: an estimate that exceeds the tally wins (got: $PR_B_LINE)"
+
+# (c) no tally, repo present, clean tree: the estimate itself computes to 0
+#     (0 insertions minus cl_lines=4, floored), but it is still a GUESS, not
+#     a measurement — est=1 on that zero is the whole point (it means "we
+#     did not measure this, we guessed, and the guess is zero", not "we
+#     measured, and they wrote nothing"), so both the value and the marker
+#     are pinned, not just the zero.
+PR_C="$WORK/pr-axis-c"; rm -rf "$PR_C"; mkdir -p "$PR_C/cfg/learner" "$PR_C/repo"
+git -C "$PR_C/repo" init -q
+printf 'orig\n' > "$PR_C/repo/f.txt"
+git -C "$PR_C/repo" add f.txt
+git -C "$PR_C/repo" -c user.email=t@t -c user.name=t commit -qm init
+pr_run "$PR_C/cfg" "$PR_C/repo"
+PR_C_LINE=$(grep '^sid=S1 ' "$PR_C/cfg/learner/pilot-queue" 2>/dev/null)
+PR_C_OK=1
+case "$PR_C_LINE" in *" dev_lines=0 "*) ;; *) PR_C_OK=0 ;; esac
+case "$PR_C_LINE" in *" est=1 "*) ;; *) PR_C_OK=0 ;; esac
+[ "$PR_C_OK" = 1 ] \
+  && ok "pilot-record's writing axis: no tally with a clean repo is a guessed zero, marked est=1" \
+  || ko "pilot-record's writing axis: no tally with a clean repo is a guessed zero, marked est=1 (got: $PR_C_LINE)"
+
+# (e) tally exists, no repo to estimate against at all: the tally stands
+#     alone and is exact.
+PR_E="$WORK/pr-axis-e"; rm -rf "$PR_E"; mkdir -p "$PR_E/cfg/learner" "$PR_E/norepo"
+printf 'S1 7\n' > "$PR_E/cfg/learner/pilot-devlines"
+pr_run "$PR_E/cfg" "$PR_E/norepo"
+PR_E_LINE=$(grep '^sid=S1 ' "$PR_E/cfg/learner/pilot-queue" 2>/dev/null)
+PR_E_OK=1
+case "$PR_E_LINE" in *" dev_lines=7 "*) ;; *) PR_E_OK=0 ;; esac
+case "$PR_E_LINE" in *" est=0 "*) ;; *) PR_E_OK=0 ;; esac
+[ "$PR_E_OK" = 1 ] \
+  && ok "pilot-record's writing axis: a tally with no repo to compare against is exact" \
+  || ko "pilot-record's writing axis: a tally with no repo to compare against is exact (got: $PR_E_LINE)"
+
 for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
   raw="${pair%%:*}"; want="${pair##*:}"
   got=$(cfgsh "learner_level $raw")
