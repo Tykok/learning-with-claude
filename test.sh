@@ -467,11 +467,13 @@ printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
 PB_OUT=$(pb_run)
 # The deferral message names no reference file — that is the point, the brief
 # must not be opened. So assert the scorer is asked for AND the brief is
-# explicitly deferred, rather than comparing two substring positions.
+# explicitly deferred, AND that the scorer text comes first: a "both present,
+# either order" check would pass even if the deferral were emitted before the
+# scoring instruction, which defeats the ordering this task exists to provide.
 printf '%s' "$PB_OUT" | jq -e '.hookSpecificOutput.additionalContext
-    | test("score.md") and test("[Dd]o NOT open it|next session start")' >/dev/null \
-  && ok "pilot-brief names the scoring pass and defers the brief" \
-  || ko "pilot-brief names the scoring pass and defers the brief"
+    | test("score.md") and test("Do NOT open it") and (index("score.md") < index("Do NOT open it"))' >/dev/null \
+  && ok "pilot-brief names the scoring pass before it defers the brief" \
+  || ko "pilot-brief names the scoring pass before it defers the brief"
 
 # 5. Only startup and resume. A compaction mid-session must not re-fire either,
 #    the same guard learner-onboard.sh already applies for the same reason.
