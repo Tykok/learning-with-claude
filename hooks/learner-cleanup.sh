@@ -17,6 +17,7 @@ rm -f "$DIR/claude-learner-${SID}.edits" \
       "$DIR/claude-learner-${SID}.guard" \
       "$DIR/claude-learner-${SID}.coach-scope" \
       "$DIR/claude-learner-${SID}.coach-empty" \
-      "$DIR/claude-learner-${SID}.coach-last"
+      "$DIR/claude-learner-${SID}.coach-last" \
+      "$DIR/claude-learner-${SID}.pilot-nudged"
 rm -rf "$DIR/claude-learner-${SID}.coach-base"
 exit 0
