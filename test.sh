@@ -1322,6 +1322,68 @@ jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPe
   && ok "the old example file is gone" \
   || ko "the old example file is gone"
 
+# --- second skill (pilot) -----------------------------------------------------
+# Two skills now ship. The installer hardcoded one path in six places; a
+# separate copy of the same path in each packaging script is how a second
+# skill ends up missing from one install path only (brew, apt, curl, plugin).
+IS="$WORK/install-skills"
+rm -rf "$IS"; mkdir -p "$IS"
+CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -f "$IS/skills/pilot/SKILL.md" ] \
+  && ok "install ships the pilot skill" || ko "install ships the pilot skill"
+[ -f "$IS/skills/learner/SKILL.md" ] \
+  && ok "install still ships the learner skill" || ko "install still ships the learner skill"
+
+# The mutation that shows the derived loop actually discriminates: a skill
+# this repo has never heard of, with no edit to install.sh, must still be
+# copied — the failure mode a hand-maintained list cannot produce a test for.
+PROBE="$ROOT/skills/zz-probe"
+mkdir -p "$PROBE"
+printf '---\nname: zz-probe\ndescription: throwaway probe for the derived skill-copy loop, deleted immediately after.\n---\n\nprobe\n' > "$PROBE/SKILL.md"
+IP="$WORK/install-skill-probe"; rm -rf "$IP"; mkdir -p "$IP"
+CLAUDE_CONFIG_DIR="$IP" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -f "$IP/skills/zz-probe/SKILL.md" ] \
+  && ok "install's derived skill loop copies a skill it has never been told about" \
+  || ko "install's derived skill loop copies a skill it has never been told about"
+rm -rf "$PROBE"
+
+# A skill directory with a SKILL.md and no references/ yet (pilot's own case
+# until a later task writes references/rubric.md and friends) must not break
+# the install.
+[ -d "$IS/skills/pilot/references" ] \
+  && ko "pilot ships no references/ yet (installer should not have invented one)" \
+  || ok "install does not fail or fabricate references/ for a skill that has none yet"
+
+CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
+[ ! -d "$IS/skills/pilot" ] \
+  && ok "uninstall removes the pilot skill" || ko "uninstall removes the pilot skill"
+[ ! -d "$IS/skills/learner" ] \
+  && ok "uninstall still removes the learner skill" || ko "uninstall still removes the learner skill"
+
+# The packaging paths must not drift from the installer's.
+grep -q 'skills/pilot' "$ROOT/Formula/learner.rb" \
+  && ok "the brew formula ships the pilot skill" || ko "the brew formula ships the pilot skill"
+grep -q 'skills/pilot' "$ROOT/packaging/deb/build.sh" \
+  && ok "the deb build ships the pilot skill" || ko "the deb build ships the pilot skill"
+
+# One line of forwarding, not a third regime inlined into the quiz's dispatch.
+grep -q 'pilot' "$ROOT/skills/learner/SKILL.md" \
+  && ok "the learner skill forwards pilot subcommands" \
+  || ko "the learner skill forwards pilot subcommands"
+
+# Decision 14: the mark and its profile labels stay out of every shipped file.
+if grep -rqi 'cogniscore' "$ROOT/skills" "$ROOT/hooks" "$ROOT/README.md" "$ROOT/docs"; then
+  ko "no shipped file reuses the CogniScore mark"
+else
+  ok "no shipped file reuses the CogniScore mark"
+fi
+
+# Decision 12, asserted where a reader will look rather than only in a spec
+# they will never read.
+grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
+  && ok "the pilot skill states that it is opt-in" \
+  || ko "the pilot skill states that it is opt-in"
+
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
 printf '{"session_id":"%s","tool_input":{"file_path":"%s/proj/src/Baz.kt"}}' "$SID3" "$WORK" | sh "$REC"
