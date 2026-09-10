@@ -119,11 +119,21 @@ fi
 PR_TMP="$WORK/pilot-record"
 mkdir -p "$PR_TMP/cfg/learner" "$PR_TMP/norepo"
 PR_FIX="$ROOT/test/fixtures/pilot-transcript.jsonl"
+PR_FIX_REM="$ROOT/test/fixtures/pilot-transcript-reminder.jsonl"
+PR_FIX_BURST="$ROOT/test/fixtures/pilot-transcript-burst.jsonl"
 
 pr_run() {  # pr_run <cfgdir> <cwd> <extra-config-json>
   printf '{"pilotEnabled":true}' > "$1/learner.json"
   [ -n "${3:-}" ] && printf '%s' "$3" > "$1/learner.json"
   printf '{"session_id":"S1","transcript_path":"%s","cwd":"%s","source":"other"}' "$PR_FIX" "$2" \
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+}
+
+# pr_run_fix <cfgdir> <cwd> <sid> <fixture> — like pr_run, but for a fixture
+# other than the pinned one, under its own session id.
+pr_run_fix() {
+  printf '{"pilotEnabled":true}' > "$1/learner.json"
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","source":"other"}' "$3" "$4" "$2" \
     | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
 }
 
@@ -143,23 +153,84 @@ case "$PR_LINE" in
   *) ko "pilot-record queues a session held outside any git repo (got: $PR_LINE)" ;;
 esac
 
-# 3. Decision 10. The scratch files are deleted by learner-cleanup.sh at the
-#    same SessionEnd, in parallel. Same input, none of them present, same line.
-rm -f "$TMPDIR/claude-learner-S1."* 2>/dev/null
+# 3. Every counter and the field order, pinned in one literal comparison
+#    against test/fixtures/pilot-transcript.jsonl. pw_med=12 and burst=1 are
+#    hand-recounted values (12: "add a retry to the http client, max three
+#    attempts, exponential backoff" is 12 words by plain word count; 1: the
+#    fixture's two real prompts are ten minutes apart, so no 5-minute window
+#    ever holds more than one of them) — not the numbers the task brief
+#    guessed, which is why this is a literal string and not a re-derivation of
+#    the same arithmetic the script already does.
+PR_EXPECT="sid=S1 date=2026-09-10 repo=- dur_min=11 prompts=2 pw_med=12 pw_min=5 burst=1 tools=2 cl_writes=1 cl_lines=4 dev_lines=- est=- coach=0 jsonl=$PR_FIX"
+[ "$PR_LINE" = "$PR_EXPECT" ] \
+  && ok "pilot-record's queue line matches every counter and the field order" \
+  || ko "pilot-record's queue line matches every counter and the field order (got: $PR_LINE)"
+
+# 4. A real prompt can legitimately BEGIN with a <system-reminder> block the
+#    harness prepends ahead of the actual text in the same message. Classifying
+#    by prefix would drop it entirely and silently corrupt prompts/pw_med/
+#    pw_min/burst; stripping the wrapper and judging what remains keeps it.
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run_fix "$PR_TMP/cfg" "$PR_TMP/norepo" SR "$PR_FIX_REM"
+PR_LINE_REM=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE_REM" in
+  *" prompts=1 "*) ok "pilot-record counts a prompt that carries a leading system-reminder" ;;
+  *) ko "pilot-record counts a prompt that carries a leading system-reminder (got: $PR_LINE_REM)" ;;
+esac
+# Checked as two independent substrings rather than one combined pattern: a
+# single glob requiring both " pw_med=5 " and " pw_min=5 " in sequence would
+# have the second copy consume the space the first copy already matched,
+# which is exactly the kind of self-inflicted false negative this file exists
+# to avoid.
+PR_REM_OK=1
+case "$PR_LINE_REM" in *" pw_med=5 "*) ;; *) PR_REM_OK=0 ;; esac
+case "$PR_LINE_REM" in *" pw_min=5 "*) ;; *) PR_REM_OK=0 ;; esac
+[ "$PR_REM_OK" = 1 ] \
+  && ok "pilot-record's word count is taken on the stripped text, not the reminder" \
+  || ko "pilot-record's word count is taken on the stripped text, not the reminder (got: $PR_LINE_REM)"
+
+# 5. The burst window is the most intricate part of the jq program and the
+#    pinned fixture never exercises it (its two real prompts are ten minutes
+#    apart). A second fixture with three prompts inside one 5-minute window
+#    (09:00, 09:02, 09:04) pins the true widest cluster.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run_fix "$PR_TMP/cfg" "$PR_TMP/norepo" SB "$PR_FIX_BURST"
+PR_LINE_BURST=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE_BURST" in
+  *" burst=3 "*) ok "pilot-record's burst window counts the true widest cluster" ;;
+  *) ko "pilot-record's burst window counts the true widest cluster (got: $PR_LINE_BURST)" ;;
+esac
+
+# 6. Decision 10. The scratch files are deleted by learner-cleanup.sh at the
+#    same SessionEnd, in parallel, so nothing here may read them. A merely
+#    absent file can't tell a regression apart from compliance, so the files
+#    are PLANTED with values that contradict the transcript's truth — if
+#    anything here ever starts trusting them, the line changes and this fails.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+PR_TD="${TMPDIR:-/tmp}"
+printf '/fake/one\n/fake/two\n/fake/three\n/fake/four\n' > "$PR_TD/claude-learner-S1.edits"
+printf '/fake/one\n/fake/two\n' > "$PR_TD/claude-learner-S1.session"
+printf '999' > "$PR_TD/claude-learner-S1.count"
+printf '1' > "$PR_TD/claude-learner-S1.guard"
+printf 'bogus-scope' > "$PR_TD/claude-learner-S1.coach-scope"
+printf '1' > "$PR_TD/claude-learner-S1.coach-empty"
+printf '2020-01-01T00:00:00.000Z' > "$PR_TD/claude-learner-S1.coach-last"
+mkdir -p "$PR_TD/claude-learner-S1.coach-base/bogus"
+printf 'bogus\n' > "$PR_TD/claude-learner-S1.coach-base/bogus/file"
 pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
 [ "$(head -1 "$PR_TMP/cfg/learner/pilot-queue")" = "$PR_LINE" ] \
   && ok "pilot-record does not depend on the TMPDIR scratch files" \
   || ko "pilot-record does not depend on the TMPDIR scratch files"
+rm -rf "$PR_TD/claude-learner-S1."*
 
-# 4. Opt-in. Nothing anywhere when the switch is off.
+# 7. Opt-in. Nothing anywhere when the switch is off.
 rm -rf "$PR_TMP/off"; mkdir -p "$PR_TMP/off/learner"
 pr_run "$PR_TMP/off" "$PR_TMP/norepo" '{"pilotEnabled":false}'
 [ ! -f "$PR_TMP/off/learner/pilot-queue" ] \
   && ok "pilot-record is inert while pilotEnabled is false" \
   || ko "pilot-record is inert while pilotEnabled is false"
 
-# 5. Idempotent. SessionEnd can fire more than once for one session id
+# 8. Idempotent. SessionEnd can fire more than once for one session id
 #    (clear, resume); a second line would double-count the session in the index.
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
 pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
@@ -168,7 +239,7 @@ pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
   && ok "pilot-record queues a session id at most once" \
   || ko "pilot-record queues a session id at most once"
 
-# 6. Budget. SessionEnd hooks share 1.5s, raised to the wired timeout of 15.
+# 9. Budget. SessionEnd hooks share 1.5s, raised to the wired timeout of 15.
 #    A 5,000-line transcript must be nowhere near it.
 awk 'NR==1{for(i=0;i<5000;i++) print}' "$PR_FIX" > "$PR_TMP/big.jsonl"
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
@@ -179,8 +250,8 @@ printf '{"session_id":"S2","transcript_path":"%s","cwd":"%s"}' "$PR_TMP/big.json
   && ok "pilot-record stays well inside its SessionEnd budget" \
   || ko "pilot-record stays well inside its SessionEnd budget"
 
-# 7. A missing or unreadable transcript is a no-op, not a crash: the path comes
-#    from the harness and Pilot does not own its lifetime.
+# 10. A missing or unreadable transcript is a no-op, not a crash: the path
+#     comes from the harness and Pilot does not own its lifetime.
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
 printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "$PR_TMP/norepo" \
   | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh") \
