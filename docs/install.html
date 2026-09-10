@@ -229,6 +229,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/hooks/coach-watch.sh</code></td><td>No static entry — armed as a <code>Monitor</code> by <code>learner-onboard.sh</code> at session start, when coach mode is on; runs the review cadence</td></tr>
       <tr><td><code>$CFG/hooks/pilot-record.sh</code></td><td><code>SessionEnd</code> — turns one finished transcript into one line of delegation counters, when Pilot is enabled; not yet wired into <code>settings.json</code>, a later task adds the entry</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> — decides whether a scoring pass, a weekly brief, or neither is due; not yet wired into <code>settings.json</code>, a later task adds the entry</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
@@ -239,17 +240,18 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Nine hook files ship and six are wired, into <code>SessionStart</code> (twice —
+  <p>Ten hook files ship and six are wired, into <code>SessionStart</code> (twice —
   <code>learner-onboard.sh</code> and <code>learner-update-check.sh</code> both fire
   there), <code>PreToolUse</code> (<code>coach-gate.sh</code>),
   <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>
-  (<code>learner-cleanup.sh</code>). Three ship unwired:
+  (<code>learner-cleanup.sh</code>). Four ship unwired:
   <code>learner-config.sh</code> is sourced-only, and Claude Code never invokes it
   directly; <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
-  only once coach mode is on; and <code>pilot-record.sh</code> is not yet wired at
-  all — a later task adds its own <code>SessionEnd</code> entry. Seven of the other
-  eight source <code>learner-config.sh</code> — every hook but
+  only once coach mode is on; and <code>pilot-record.sh</code> and
+  <code>pilot-brief.sh</code> are not yet wired at all — a later task adds their
+  <code>SessionEnd</code> and <code>SessionStart</code> entries. Eight of the other
+  nine source <code>learner-config.sh</code> — every hook but
   <code>learner-cleanup.sh</code>, which needs none of it.</p>
 
   <h2 id="platforms">Platforms</h2>
@@ -291,7 +293,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>One skill and eight POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>One skill and ten POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>
