@@ -1,0 +1,7 @@
+{"type":"user","isMeta":true,"timestamp":"2026-09-10T09:00:00.000Z","message":{"role":"user","content":"injected context"}}
+{"type":"user","timestamp":"2026-09-10T09:00:10.000Z","message":{"role":"user","content":"<local-command-caveat>ignore me</local-command-caveat>"}}
+{"type":"user","timestamp":"2026-09-10T09:00:20.000Z","message":{"role":"user","content":"<command-name>/clear</command-name>"}}
+{"type":"user","timestamp":"2026-09-10T09:01:00.000Z","message":{"role":"user","content":"add a retry to the http client, max three attempts, exponential backoff"}}
+{"type":"user","timestamp":"2026-09-10T09:02:00.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-10T09:03:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/a.py","content":"one\ntwo\nthree\n"}},{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/b.py"}}]}}
+{"type":"user","timestamp":"2026-09-10T09:11:00.000Z","message":{"role":"user","content":"why three and not five"}}
