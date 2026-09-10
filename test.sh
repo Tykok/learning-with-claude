@@ -82,6 +82,39 @@ err=$(cat "$noJqErr")
   && ok "learner_config fails clean (no stderr, empty stdout) when jq is missing" \
   || ko "learner_config fails clean (no stderr, empty stdout) when jq is missing (out='$out' rc=$rc err='$err')"
 
+# Pilot is opt-in: the master switch must default to false, or installing an
+# update would silently start reading every prompt the dev types.
+CFG_P=$(cd "$ROOT" && CLAUDE_CONFIG_DIR="$WORK/empty" CLAUDE_PROJECT_DIR="$WORK/empty" \
+  sh -c '. hooks/learner-config.sh; learner_config')
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotEnabled')" = "false" ] \
+  && ok "pilotEnabled defaults to false" \
+  || ko "pilotEnabled defaults to false"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotCadenceDays')" = "7" ] \
+  && ok "pilotCadenceDays defaults to 7" \
+  || ko "pilotCadenceDays defaults to 7"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotJudgeIntervalHours')" = "24" ] \
+  && ok "pilotJudgeIntervalHours defaults to 24" \
+  || ko "pilotJudgeIntervalHours defaults to 24"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotNudge')" = "true" ] \
+  && ok "pilotNudge defaults to true" \
+  || ko "pilotNudge defaults to true"
+
+# pilot_enabled is a predicate, so assert both directions: a truthy string must
+# not pass, or a typo like "yes" would enable the whole subsystem.
+if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":true}"'); then
+  ok "pilot_enabled is true for pilotEnabled:true"
+else
+  ko "pilot_enabled is true for pilotEnabled:true"
+fi
+if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"yes\"}"'); then
+  ko "pilot_enabled rejects a non-boolean pilotEnabled"
+else
+  ok "pilot_enabled rejects a non-boolean pilotEnabled"
+fi
+
 for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
   raw="${pair%%:*}"; want="${pair##*:}"
   got=$(cfgsh "learner_level $raw")
