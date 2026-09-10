@@ -596,23 +596,35 @@ pn_reset; pn_live direction "2099-01-01"
 # 8. The realistic "no live manoeuvre" case: pilot.md exists, holding a settled
 #    manoeuvre's history, but the Manoeuvres block has no `- live:` line — the
 #    normal state after an expiry (spec §8). Different from "no pilot.md at
-#    all", which the earlier `[ -f ]` gate already catches.
+#    all", which the earlier `[ -f ]` gate already catches. The settled line's
+#    BODY is deliberately well-formed (a clean axis, constraint, and a future
+#    until date — it would parse as a live manoeuvre if the prefix matched) so
+#    the missing `- live:` prefix is the only thing keeping this silent, not
+#    an incidental parse failure elsewhere in the line.
 pn_reset
-printf '# Manoeuvres\n\n- 2026-01-01..2026-02-14: direction | name the result you want | until 2026-02-14 — kept\n' \
+printf '# Manoeuvres\n\n- settled: direction | name the result you want and one constraint | until 2099-01-01\n' \
   > "$PN_TMP/cfg/learner/pilot.md"
 [ -z "$(pn_run 'fix it')" ] \
   && ok "pilot-nudge is silent when pilot.md holds only settled manoeuvre history" \
   || ko "pilot-nudge is silent when pilot.md holds only settled manoeuvre history"
 
-# 9. A pipe inside the constraint text must not disable expiry: the axis is
-#    everything before the FIRST pipe, the expiry is the LAST field, and the
-#    constraint is everything in between, pipes and all.
+# 9. A pipe inside the constraint text must not disable expiry, and must not
+#    make the parser misread the date either. Under malformed-is-silent, a
+#    PAST date can't discriminate the parser: the naive 3-field split and the
+#    correct one both end up silent for a past date (the naive split loses
+#    the date entirely and reads as malformed; the correct one reads it and
+#    finds it expired) — silent either way, so that assertion proves nothing
+#    about which parser ran. A date of TODAY does discriminate: the correct
+#    parser reads it, today is not past, and the hook must speak; the naive
+#    parser loses the date to the pipe and goes silent as malformed. Computed,
+#    not hardcoded, so this does not start failing tomorrow.
+PN_TODAY=$(date +%F)
 pn_reset
-printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until 2020-01-01\n' \
+printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until %s\n' "$PN_TODAY" \
   > "$PN_TMP/cfg/learner/pilot.md"
-[ -z "$(pn_run 'fix it')" ] \
-  && ok "pilot-nudge expires a manoeuvre whose constraint contains a pipe" \
-  || ko "pilot-nudge expires a manoeuvre whose constraint contains a pipe"
+[ -n "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge speaks for a manoeuvre whose constraint contains a pipe and expires today" \
+  || ko "pilot-nudge speaks for a manoeuvre whose constraint contains a pipe and expires today"
 pn_reset
 printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until 2099-01-01\n' \
   > "$PN_TMP/cfg/learner/pilot.md"
@@ -652,6 +664,15 @@ pn_reset; pn_live direction "2099-01-01"
 [ -z "$(pn_run 'why is CI failing')" ] \
   && ok "pilot-nudge exempts a prompt starting with an interrogative word" \
   || ko "pilot-nudge exempts a prompt starting with an interrogative word"
+
+# 11b. An auxiliary (is/are/does/do/can/should) is not a wh-word: a prompt
+#      starting with one, and carrying no question mark, is a vague
+#      delegation ("do the refactor"), not a question, and must still nudge.
+#      Guards against the exemption list quietly growing back to swallow it.
+pn_reset; pn_live direction "2099-01-01"
+[ -n "$(pn_run 'do the refactor')" ] \
+  && ok "pilot-nudge nudges an auxiliary-led delegation with no question mark" \
+  || ko "pilot-nudge nudges an auxiliary-led delegation with no question mark"
 
 # 12. Once per session: the nudge fires at most once, no matter how many vague
 #     prompts follow in the same session.
