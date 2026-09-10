@@ -114,10 +114,13 @@ fi
 
 echo "→ Installing learner into: $CFG_DIR"
 if [ "$DRY" = 1 ]; then
+  # Counted from disk, not hardcoded — see the copy loop and the snippet below.
+  N_HOOKS=$(find "$SRC_DIR/hooks" -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
+  N_WIRED=$(jq '[.. | .command? // empty] | length' "$SRC_DIR/hooks/settings.snippet.json")
   echo "  (dry run — nothing will be written)"
-  echo "  would copy 8 hooks    → $CFG_DIR/hooks/"
+  echo "  would copy $N_HOOKS hooks   → $CFG_DIR/hooks/"
   echo "  would copy the skill  → $CFG_DIR/skills/learner/"
-  echo "  would merge 5 hooks   → $SETTINGS"
+  echo "  would merge $N_WIRED hooks   → $SETTINGS"
   if [ "$CONFIG_EXISTS" = 1 ]; then
     echo "  would keep existing   → $CONFIG"
   else
@@ -128,11 +131,14 @@ fi
 
 mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills/learner/references" "$CFG_DIR/learner"
 
-for h in learner-config.sh learner-onboard.sh learner-record-edit.sh \
-         learner-quiz.sh learner-cleanup.sh learner-update-check.sh \
-         coach-gate.sh coach-watch.sh; do
-  cp "$SRC_DIR/hooks/$h" "$CFG_DIR/hooks/$h"
-  chmod +x "$CFG_DIR/hooks/$h"
+# Copy every hook script this repo ships, derived from what is actually in
+# hooks/ rather than named one by one — a hand-maintained list here is exactly
+# what let three Pilot hooks ship uncopied even after Tasks 2/4/5 wrote them.
+# A new hook needs no edit to this loop, only a file in hooks/.
+for h in "$SRC_DIR"/hooks/*.sh; do
+  base="$(basename "$h")"
+  cp "$h" "$CFG_DIR/hooks/$base"
+  chmod +x "$CFG_DIR/hooks/$base"
 done
 echo "  ✓ hooks → $CFG_DIR/hooks/"
 
@@ -155,12 +161,14 @@ jq -n \
   # installed, then append the fresh ones, so re-running never duplicates.
   #
   # Matched by naming convention, not by an exhaustive per-script list: every
-  # hook script this project ships is named "learner-*.sh" or "coach-*.sh"
-  # (see install.sh'"'"'s copy loop and hooks/settings.snippet.json). A
-  # convention-based match keeps pace with new scripts on its own — no list
-  # to remember to update here — which is exactly what a literal-name or
-  # single-prefix match cannot do (a coach-*.sh hook once slipped past a
-  # "learner-"-only match this same way).
+  # hook script this project ships is named "learner-*.sh", "coach-*.sh" or
+  # "pilot-*.sh" (see install.sh'"'"'s copy loop and
+  # hooks/settings.snippet.json). A convention-based match keeps pace with
+  # new scripts on its own — no list to remember to update here — which is
+  # exactly what a literal-name or single-prefix match cannot do (a
+  # coach-*.sh hook once slipped past a "learner-"-only match this same way,
+  # and the three pilot-*.sh hooks shipped uncopied by install.sh'"'"'s old
+  # per-script list for the same reason).
   #
   # The name match alone is not enough: a bare "/hooks/(learner|coach)-*.sh"
   # matches that path shape anywhere on disk, so a sibling tool that also
@@ -180,8 +188,8 @@ jq -n \
   # forms above, leaving that wiring behind forever on an uninstall — the
   # same kind of leak this predicate exists to prevent. Residual risk
   # accepted: another tool that specifically nests its own hook under a
-  # ".claude/hooks/" tree with a learner-/coach-prefixed name would still
-  # collide; that requires deliberately mimicking this project'"'"'s install
+  # ".claude/hooks/" tree with a learner-/coach-/pilot-prefixed name would
+  # still collide; that requires deliberately mimicking this project'"'"'s install
   # location and naming convention together, which is a much narrower target
   # than the bare path-shape match this predicate replaces.
   #
@@ -191,7 +199,7 @@ jq -n \
     $base;
     .hooks[$ev] = (
       ((.hooks[$ev] // [])
-        | map(select(any(.hooks[]; .command | test("\\.claude\\}?/hooks/(learner|coach)-[A-Za-z0-9_.-]+\\.sh")) | not)))
+        | map(select(any(.hooks[]; .command | test("\\.claude\\}?/hooks/(learner|coach|pilot)-[A-Za-z0-9_.-]+\\.sh")) | not)))
       + $add.hooks[$ev]
     )
   )
