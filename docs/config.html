@@ -89,10 +89,10 @@
       <tr><td><code>coachCooldownMinutes</code></td><td>int ≥ 0</td><td><code>5</code></td><td>Floor between two reviews — <code>threshold</code> only</td></tr>
     </tbody>
     <tbody class="group-pilot">
-      <tr><td><code>pilotEnabled</code></td><td>bool</td><td><code>false</code></td><td>Pilot is opt-in; enable to allow session analysis</td></tr>
-      <tr><td><code>pilotCadenceDays</code></td><td>int ≥ 1</td><td><code>7</code></td><td>Interval for computing delegation scores</td></tr>
-      <tr><td><code>pilotJudgeIntervalHours</code></td><td>int ≥ 1</td><td><code>24</code></td><td>Window for scoring recent sessions</td></tr>
-      <tr><td><code>pilotNudge</code></td><td>bool</td><td><code>true</code></td><td>Show nudges when low delegation detected</td></tr>
+      <tr><td><code>pilotEnabled</code></td><td>bool</td><td><code>false</code></td><td>Opt-in master switch</td></tr>
+      <tr><td><code>pilotCadenceDays</code></td><td>int ≥ 1</td><td><code>7</code></td><td>Days between briefs</td></tr>
+      <tr><td><code>pilotJudgeIntervalHours</code></td><td>int ≥ 1</td><td><code>24</code></td><td>Minimum gap between queue drains</td></tr>
+      <tr><td><code>pilotNudge</code></td><td>bool</td><td><code>true</code></td><td>Whether a live manoeuvre may speak on UserPromptSubmit</td></tr>
     </tbody>
   </table>
   </div>
@@ -103,7 +103,7 @@
   <code>coachCadence</code>; the last five keys, marked "threshold only" above, are read only
   when <code>coachCadence</code> is <code>"threshold"</code>. See the coach section of
   <a href="usage.html">Usage</a> for how the cadence behaves. The four <code>pilot*</code> keys
-  configure Pilot, an opt-in subsystem that scores delegation to Claude within a session.</p>
+  configure Pilot, an opt-in subsystem that measures delegation to Claude across all repositories over weeks.</p>
 
   <p><code>level</code> is the only one of the seven with no default. The other six have
   theirs in <code>LEARNER_DEFAULTS</code> at the top of
