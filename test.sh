@@ -3059,6 +3059,26 @@ printf '%s' "$out2" | grep -q 'the watcher has stopped' \
   || ko "polls-per-period guard clamps to 1 (got '$out2')"
 echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
+# The writing axis is only exact if the watcher's own measurement outlives the
+# session. Its TMPDIR state does not: learner-cleanup.sh deletes it at the same
+# SessionEnd that pilot-record.sh runs at, in parallel.
+CW_TMP="$WORK/coach-devlines"
+rm -rf "$CW_TMP"; mkdir -p "$CW_TMP/cfg/learner" "$CW_TMP/repo"
+git -C "$CW_TMP/repo" init -q
+printf 'a\nb\nc\n' > "$CW_TMP/repo/f.txt"
+git -C "$CW_TMP/repo" add f.txt
+git -C "$CW_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
+printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW_TMP/cfg/learner.json"
+printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
+(cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
+  sh "$ROOT/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
+if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
+   && grep -q '^CW1 [0-9][0-9]*$' "$CW_TMP/cfg/learner/pilot-devlines"; then
+  ok "coach-watch persists the dev's line count for the writing axis"
+else
+  ko "coach-watch persists the dev's line count for the writing axis"
+fi
+
 # --- coach arming and cleanup ----------------------------------------------
 onboard() { printf '{"session_id":"%s"}' "$1" | sh "$ONB"; }
 
