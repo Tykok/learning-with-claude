@@ -510,6 +510,71 @@ pb_run | jq -e '.hookSpecificOutput.additionalContext | test("score.md")' >/dev/
   && ok "declining the brief does not suppress a due scoring pass" \
   || ko "declining the brief does not suppress a due scoring pass"
 
+# --- pilot-nudge ----------------------------------------------------------
+PN_TMP="$WORK/pilot-nudge"
+pn_reset() {
+  rm -rf "$PN_TMP"; mkdir -p "$PN_TMP/cfg/learner" "$PN_TMP/wd"
+  printf '{"pilotEnabled":true}' > "$PN_TMP/cfg/learner.json"
+}
+pn_live() {  # pn_live <axis> <until>
+  printf '# Manoeuvres\n\n- live: %s | name the result you want and one constraint | until %s\n' \
+    "$1" "$2" > "$PN_TMP/cfg/learner/pilot.md"
+}
+pn_run() {
+  printf '{"session_id":"N1","prompt":"%s","cwd":"%s"}' "$1" "$PN_TMP/wd" \
+    | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh")
+}
+
+# 1. THE constraint of this file. Exit 2 on UserPromptSubmit blocks the prompt
+#    AND ERASES IT. Destroying what the dev typed to remind them to type it
+#    better is indefensible, so assert status 0 on every path, loudest here.
+pn_reset; pn_live direction "2099-01-01"
+pn_run "fix it" >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with a live manoeuvre and a vague prompt" \
+             || ko "pilot-nudge exits 0 with a live manoeuvre and a vague prompt"
+pn_reset
+pn_run "fix it" >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with no manoeuvre" \
+             || ko "pilot-nudge exits 0 with no manoeuvre"
+pn_reset; pn_live direction "2099-01-01"
+printf '{"session_id":"N1","cwd":"%s"}' "$PN_TMP/wd" \
+  | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with no prompt field at all" \
+             || ko "pilot-nudge exits 0 with no prompt field at all"
+
+# 2. Silence unless a manoeuvre is live. Pilot measures passively; the nudge is
+#    the one place it speaks, and only while the dev has agreed to a manoeuvre.
+pn_reset
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge is silent with no live manoeuvre" \
+  || ko "pilot-nudge is silent with no live manoeuvre"
+
+# 3. An expired manoeuvre is not a live one.
+pn_reset; pn_live direction "2020-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge ignores an expired manoeuvre" \
+  || ko "pilot-nudge ignores an expired manoeuvre"
+
+# 4. Live and vague: speak.
+pn_reset; pn_live direction "2099-01-01"
+pn_run 'fix it' | jq -e '.hookSpecificOutput.additionalContext | test("constraint")' >/dev/null \
+  && ok "pilot-nudge reminds the dev on a vague prompt" \
+  || ko "pilot-nudge reminds the dev on a vague prompt"
+
+# 5. A specific prompt needs no reminder — a nudge on every prompt is noise,
+#    and noise is how a manoeuvre gets switched off.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'in src/http/client.py add a retry of at most three attempts, no new dependency')" ] \
+  && ok "pilot-nudge stays quiet on a specific prompt" \
+  || ko "pilot-nudge stays quiet on a specific prompt"
+
+# 6. pilotNudge is its own consent, separate from the brief's.
+pn_reset; pn_live direction "2099-01-01"
+printf '{"pilotEnabled":true,"pilotNudge":false}' > "$PN_TMP/cfg/learner.json"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge honours pilotNudge:false" \
+  || ko "pilot-nudge honours pilotNudge:false"
+
 # --- learner_excluded -------------------------------------------------------
 echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
 rm -f "$PCFG"
@@ -2280,6 +2345,7 @@ case "$hook_n" in
   8) hook_word=eight ;;
   9) hook_word=nine ;;
   10) hook_word=ten ;;
+  11) hook_word=eleven ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
