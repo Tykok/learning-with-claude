@@ -72,13 +72,24 @@ PROMPT=$(printf '%s' "$DATA" | jq -r '.prompt // ""' 2>/dev/null)
 # correct — so any interrogative prompt is exempt before the length check even
 # runs. A false negative costs one missed reminder; a false positive costs the
 # dev's patience, which is the expensive one.
+#
+# The first-word check is wh-words ONLY (why/what/how/when/where/who) — those
+# are interrogative even with no question mark. Auxiliaries (is/are/does/do/
+# can/should) deliberately stay off this list: "do the refactor", "can you
+# just fix it", "should be easy just make it work" are exactly the vague
+# delegations this heuristic exists to catch, not questions. An auxiliary-led
+# prompt that really is a question ("is this right?", "should I merge this?")
+# carries a question mark and is already exempt through the `*'?'*` rule
+# above; one with no question mark ("is this right") nudges, and the
+# once-per-session cap below makes that a single ignorable line rather than a
+# recurring one.
 if [ "$AXIS" = "direction" ] && [ -n "$PROMPT" ]; then
   case "$PROMPT" in
     *'?'*) exit 0 ;;
   esac
   FIRST_WORD=$(printf '%s' "$PROMPT" | awk '{print tolower($1)}')
   case "$FIRST_WORD" in
-    why|what|how|when|where|who|is|are|does|do|can|should) exit 0 ;;
+    why|what|how|when|where|who) exit 0 ;;
   esac
   WORDS=$(printf '%s' "$PROMPT" | wc -w | tr -d ' ')
   case "$PROMPT" in
