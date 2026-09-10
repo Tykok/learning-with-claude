@@ -127,23 +127,48 @@ case "$CL_LINES" in ''|*[!0-9]*) CL_LINES=0 ;; esac
 # persisted them (hooks/coach-watch.sh, Task 3); estimated from the working tree
 # when there is a repo to diff; unavailable otherwise. Estimated and unavailable
 # are marked, never dressed up: `~` in the dashboard, `-` not assessable.
+#
+# A coach tally alone is a lower bound, not a true count: the default pomodoro
+# cadence measures only at the end of a completed work block, so a session that
+# ends mid-block never runs a cycle for that block and its lines are never
+# tallied. Trusting the tally as exact regardless would then label a session
+# `est=0` while silently missing its tail — understating what the dev wrote,
+# which is the one direction this score must not be wrong in. The git estimate
+# (uncommitted insertions minus Claude's own lines) sees exactly that untallied
+# tail, so taking the LARGER of the two is never worse than either alone: it
+# recovers most of what the mid-block ending loses. `est=0` only when the tree
+# holds nothing beyond the tally already counted (estimate <= tally) — that is
+# the case where nothing untallied is sitting in the working tree; otherwise
+# the estimate wins and the line is marked `est=1`, same as when there is no
+# tally at all.
 COACH=0
 [ -n "$ROOT" ] && learner_coach_active "$CFG" "$ROOT" && COACH=1
 DEVF="$QDIR/pilot-devlines"
 DEV='-'
 EST='-'
+TALLY=''
 if [ -f "$DEVF" ] && grep -q "^$SID " "$DEVF" 2>/dev/null; then
-  DEV=$(awk -v s="$SID" '$1 == s { n += $2 } END { print n + 0 }' "$DEVF")
-  EST=0
-elif [ -n "$ROOT" ]; then
+  TALLY=$(awk -v s="$SID" '$1 == s { n += $2 } END { print n + 0 }' "$DEVF")
+fi
+if [ -n "$ROOT" ]; then
   # --shortstat over HEAD so staged work counts too. This measures the working
-  # tree now, not this session's delta, which is exactly why est=1.
+  # tree now, not this session's delta — needed even when a tally exists, to
+  # catch the untallied tail described above.
   INS=$(git -C "$ROOT" diff --shortstat HEAD 2>/dev/null \
     | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^insertion/) print $(i - 1) }')
   case "$INS" in ''|*[!0-9]*) INS=0 ;; esac
-  DEV=$((INS - CL_LINES))
-  [ "$DEV" -lt 0 ] && DEV=0
-  EST=1
+  ESTIMATE=$((INS - CL_LINES))
+  [ "$ESTIMATE" -lt 0 ] && ESTIMATE=0
+  if [ -n "$TALLY" ] && [ "$ESTIMATE" -le "$TALLY" ]; then
+    DEV=$TALLY
+    EST=0
+  else
+    DEV=$ESTIMATE
+    EST=1
+  fi
+elif [ -n "$TALLY" ]; then
+  DEV=$TALLY
+  EST=0
 fi
 
 REST=$(printf '%s' "$COUNTS" | sed 's/^date=[^ ]* *//')

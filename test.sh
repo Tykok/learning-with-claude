@@ -3073,7 +3073,7 @@ printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
 (cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
   sh "$ROOT/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
 if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
-   && grep -q '^CW1 [0-9][0-9]*$' "$CW_TMP/cfg/learner/pilot-devlines"; then
+   && grep -q '^CW1 5$' "$CW_TMP/cfg/learner/pilot-devlines"; then
   ok "coach-watch persists the dev's line count for the writing axis"
 else
   ko "coach-watch persists the dev's line count for the writing axis"
