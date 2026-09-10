@@ -1522,14 +1522,15 @@ jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/coach-l
   && ok "strip_wiring leaves a same-convention third-party hook outside .claude intact" \
   || ko "strip_wiring leaves a same-convention third-party hook outside .claude intact (got $(cat "$SWC"))"
 
-# Both script-removal lists in uninstall.sh must name the coach scripts, or
-# the files survive on disk even once the wiring above is stripped clean.
-[ "$(grep -c 'hooks/coach-gate\.sh' "$ROOT/uninstall.sh")" = 2 ] \
-  && ok "uninstall.sh's two removal lists both name coach-gate.sh" \
-  || ko "uninstall.sh's two removal lists both name coach-gate.sh"
-[ "$(grep -c 'hooks/coach-watch\.sh' "$ROOT/uninstall.sh")" = 2 ] \
-  && ok "uninstall.sh's two removal lists both name coach-watch.sh" \
-  || ko "uninstall.sh's two removal lists both name coach-watch.sh"
+# uninstall.sh's global removal list must name every hook this project ships,
+# or a hook survives on disk even once the wiring above is stripped clean.
+# Checked once, generically, further down (search "every hook is named in
+# uninstall.sh's global removal list") once HOOK_SH is in scope — that single
+# derived check replaced three hand-named ones here (coach-gate.sh,
+# coach-watch.sh, and later the three pilot-*.sh hooks), each of which was
+# itself the same frozen-enumeration defect this task exists to close: a
+# twelfth hook could ship, get copied and wired, and never be named here,
+# and none of the three literal checks would ever have caught it.
 
 U="$WORK/uninst"; mkdir -p "$U"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
@@ -3525,13 +3526,24 @@ jq -e '.hooks.UserPromptSubmit | length > 0' "$ROOT/hooks/hooks.json" >/dev/null
   && ok "hooks.json declares the UserPromptSubmit event" \
   || ko "hooks.json declares the UserPromptSubmit event"
 
-# Both script-removal lists in uninstall.sh must name the pilot scripts, or the
-# files survive on disk even once the wiring above is stripped clean — the same
-# guard already in place for coach-gate.sh and coach-watch.sh above.
-for pf in pilot-record.sh pilot-brief.sh pilot-nudge.sh; do
-  [ "$(grep -c "hooks/${pf%.sh}\.sh" "$ROOT/uninstall.sh")" = 2 ] \
-    && ok "uninstall.sh's two removal lists both name $pf" \
-    || ko "uninstall.sh's two removal lists both name $pf"
+# Every hook is named in uninstall.sh's global removal list — one loop over
+# HOOK_SH (already derived above for the licence guards) rather than a
+# hand-named check per script. Three literal checks used to live here and at
+# uninstall.sh's other coach-gate.sh/coach-watch.sh assertion (one hand-named
+# entry per script, added one at a time): that is the exact defect this task
+# closes, relocated into the test suite — a twelfth hook could ship, get
+# copied by install.sh and wired in both manifests, and never be added here,
+# and the suite would stay green while the file survived every uninstall.
+#
+# Only the GLOBAL list ($CFG_DIR/hooks/...) is asserted, deliberately not the
+# legacy --project list: that list is frozen on purpose (see its own comment)
+# and does not name every current hook — learner-update-check.sh postdates
+# that layout and never belonged in it, so a "named in both lists" assertion
+# would be false about a file that is correctly absent.
+for hf in $HOOK_SH; do
+  grep -qF '$CFG_DIR/hooks/'"$hf" "$ROOT/uninstall.sh" \
+    && ok "uninstall.sh's global removal list names $hf" \
+    || ko "uninstall.sh's global removal list names $hf"
 done
 
 # Reinstall must not double-wire, and uninstall must leave nothing behind.
