@@ -92,6 +92,10 @@
     <dt><code>learner off</code> / <code>learner on</code></dt>
     <dd>Silences or restores the automatic quiz in the current repository. See
     <a href="config.html#off">Turning it off</a> for what that writes and why.</dd>
+    <dt><code>learner pilot …</code></dt>
+    <dd>Forwards the rest of the line to the separate, opt-in <code>pilot</code> skill —
+    a delegation-habit score read from your sessions themselves, off by default. Reachable
+    directly too, as plain <code>pilot …</code>.</dd>
     <dt><code>learner help</code></dt>
     <dd>Prints its subcommand and parameter reference, then stops.</dd>
   </dl>
@@ -155,7 +159,7 @@
         </svg>
         Claude Learner
       </a>
-      <p>One skill and eleven POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and eleven POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

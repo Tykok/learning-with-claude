@@ -15,6 +15,11 @@
 # Requires: jq.
 set -euo pipefail
 
+# Used only to derive which skill directories to remove from $CFG_DIR/skills/
+# (see strip below) — every other removal in this script is a frozen, literal
+# list, not something read off this tree.
+SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 PURGE=0
 PROJECT=""
 while [ $# -gt 0 ]; do
@@ -156,8 +161,17 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/pilot-record.sh" \
       "$CFG_DIR/hooks/pilot-brief.sh" \
       "$CFG_DIR/hooks/pilot-nudge.sh"
-rm -rf "$CFG_DIR/skills/learner"
-echo "  ✓ hooks + skill removed"
+# Skill directories to remove, derived from what install.sh actually ships
+# alongside this script rather than named one by one — a second skill
+# (pilot) must not need a second line here, or removal only fixes one at a
+# time exactly like the hook list above would if it were derived by hand.
+# Falls through harmlessly (no directories, nothing removed) if this script
+# is ever run with no sibling skills/ tree.
+for d in "$SRC_DIR"/skills/*/; do
+  [ -d "$d" ] || continue
+  rm -rf "$CFG_DIR/skills/$(basename "$d")"
+done
+echo "  ✓ hooks + skills removed"
 
 strip_wiring "$CFG_DIR/settings.json"
 echo "  ✓ hook wiring stripped from settings.json"

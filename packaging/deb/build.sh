@@ -19,6 +19,10 @@ trap 'rm -rf "$PKGROOT"' EXIT
 
 mkdir -p "$PKGROOT/DEBIAN" "$PKGROOT/usr/share/learner" "$PKGROOT/usr/bin"
 
+# "$ROOT/skills" copies the whole directory, every skill under it included —
+# skills/learner and skills/pilot today, and any later addition — without
+# naming one here. Do not narrow this to a per-skill path: that is the exact
+# hand-maintained list install.sh's copy loop exists to avoid.
 cp -r "$ROOT/hooks" "$ROOT/skills" "$ROOT/install.sh" "$ROOT/uninstall.sh" \
       "$ROOT/VERSION" "$ROOT/LICENSE" "$PKGROOT/usr/share/learner/"
 

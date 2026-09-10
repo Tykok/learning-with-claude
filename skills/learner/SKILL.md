@@ -27,20 +27,15 @@ language the dev is using in this conversation. There is no language setting.
 | `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | `references/update.md` |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
+| `pilot …` | Invoke the `pilot` skill and hand it the rest of the line | — |
 | `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | — |
 | *(empty)* | Same as `config` with no pairs: show current settings | this file, § Config |
 
 A bare config instruction with no subcommand (`level=S`, `disable`) is `config` shorthand.
 
-**Invoked by the Stop hook.** The hook blocks with a trigger line of the form
-`🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`.
-When you see it, read `references/hook-quiz.md` and follow it with those values. Do not
-treat the trigger as the protocol — it is only parameters.
+**Invoked by the Stop hook.** The hook blocks with a trigger line of the form `🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`. When you see it, read `references/hook-quiz.md` and follow it with those values. Do not treat the trigger as the protocol — it is only parameters.
 
-**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with
-`🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it,
-read `references/coach.md` and follow it with those values. As with the quiz trigger, the line is
-parameters, not the protocol.
+**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with `🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it, read `references/coach.md` and follow it with those values. As with the quiz trigger, the line is parameters, not the protocol.
 
 ## Levels
 
@@ -115,6 +110,8 @@ Read-only: no quiz, no config write, no data-file update.
    `references/data.md` for paths). If nothing is recorded, say so and suggest `learner quiz`.
 3. Print one line for the level and version, then one line for coach status — on/off, the
    current cycle if a coach session is running, and the delegated globs read from
-   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then a handful of
-   bullets: broad competency themes grouped by domain, skipping anything already under
-   `Mastered`. Summarise; never dump the file. No tables, no history.
+   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then, if
+   `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
+   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a
+   handful of bullets: broad competency themes grouped by domain, skipping anything already
+   under `Mastered`. Summarise; never dump the file. No tables, no history.
