@@ -82,6 +82,286 @@ err=$(cat "$noJqErr")
   && ok "learner_config fails clean (no stderr, empty stdout) when jq is missing" \
   || ko "learner_config fails clean (no stderr, empty stdout) when jq is missing (out='$out' rc=$rc err='$err')"
 
+# Pilot is opt-in: the master switch must default to false, or installing an
+# update would silently start reading every prompt the dev types.
+CFG_P=$(cd "$ROOT" && CLAUDE_CONFIG_DIR="$WORK/empty" CLAUDE_PROJECT_DIR="$WORK/empty" \
+  sh -c '. hooks/learner-config.sh; learner_config')
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotEnabled')" = "false" ] \
+  && ok "pilotEnabled defaults to false" \
+  || ko "pilotEnabled defaults to false"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotCadenceDays')" = "7" ] \
+  && ok "pilotCadenceDays defaults to 7" \
+  || ko "pilotCadenceDays defaults to 7"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotJudgeIntervalHours')" = "24" ] \
+  && ok "pilotJudgeIntervalHours defaults to 24" \
+  || ko "pilotJudgeIntervalHours defaults to 24"
+
+[ "$(printf '%s' "$CFG_P" | jq -r '.pilotNudge')" = "true" ] \
+  && ok "pilotNudge defaults to true" \
+  || ko "pilotNudge defaults to true"
+
+# pilot_enabled is a predicate, so assert both directions: a truthy string must
+# not pass, or a typo like "yes" would enable the whole subsystem.
+if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":true}"'); then
+  ok "pilot_enabled is true for pilotEnabled:true"
+else
+  ko "pilot_enabled is true for pilotEnabled:true"
+fi
+if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"yes\"}"'); then
+  ko "pilot_enabled rejects any value other than the literal string \"true\""
+else
+  ok "pilot_enabled rejects any value other than the literal string \"true\""
+fi
+# It is a text comparison, not a JSON-type check: a JSON STRING "true" passes
+# exactly like the boolean does, because jq -r renders both the same way.
+# Pinned explicitly so the guard's own comment and this test's name cannot
+# drift back to claiming "boolean" when the code has never checked JSON type.
+if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"true\"}"'); then
+  ok "pilot_enabled accepts the JSON string \"true\", not only the boolean"
+else
+  ko "pilot_enabled accepts the JSON string \"true\", not only the boolean"
+fi
+
+# --- pilot-record -------------------------------------------------------------
+PR_TMP="$WORK/pilot-record"
+mkdir -p "$PR_TMP/cfg/learner" "$PR_TMP/norepo"
+PR_FIX="$ROOT/test/fixtures/pilot-transcript.jsonl"
+PR_FIX_REM="$ROOT/test/fixtures/pilot-transcript-reminder.jsonl"
+PR_FIX_BURST="$ROOT/test/fixtures/pilot-transcript-burst.jsonl"
+
+pr_run() {  # pr_run <cfgdir> <cwd> <extra-config-json>
+  printf '{"pilotEnabled":true}' > "$1/learner.json"
+  [ -n "${3:-}" ] && printf '%s' "$3" > "$1/learner.json"
+  printf '{"session_id":"S1","transcript_path":"%s","cwd":"%s","source":"other"}' "$PR_FIX" "$2" \
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+}
+
+# pr_run_fix <cfgdir> <cwd> <sid> <fixture> — like pr_run, but for a fixture
+# other than the pinned one, under its own session id.
+pr_run_fix() {
+  printf '{"pilotEnabled":true}' > "$1/learner.json"
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","source":"other"}' "$3" "$4" "$2" \
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+}
+
+# 1. The prompt filter. isMeta, tool_result arrays, <local-command-…> and
+#    <command-name> wrappers are all machinery; only two lines are the dev.
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+PR_LINE=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE" in
+  *" prompts=2 "*) ok "pilot-record counts only the dev's real prompts" ;;
+  *) ko "pilot-record counts only the dev's real prompts (got: $PR_LINE)" ;;
+esac
+
+# 2. Decision 8. Every other learner hook exits early without a git repo; this
+#    one must not, or the sessions with the worst delegation go unmeasured.
+case "$PR_LINE" in
+  *" repo=- "*) ok "pilot-record queues a session held outside any git repo" ;;
+  *) ko "pilot-record queues a session held outside any git repo (got: $PR_LINE)" ;;
+esac
+
+# 3. Every counter and the field order, pinned in one literal comparison
+#    against test/fixtures/pilot-transcript.jsonl. pw_med=12 and burst=1 are
+#    hand-recounted values (12: "add a retry to the http client, max three
+#    attempts, exponential backoff" is 12 words by plain word count; 1: the
+#    fixture's two real prompts are ten minutes apart, so no 5-minute window
+#    ever holds more than one of them) — not the numbers the task brief
+#    guessed, which is why this is a literal string and not a re-derivation of
+#    the same arithmetic the script already does.
+PR_EXPECT="sid=S1 date=2026-09-10 repo=- dur_min=11 prompts=2 pw_med=12 pw_min=5 burst=1 tools=2 cl_writes=1 cl_lines=4 dev_lines=- est=- coach=0 jsonl=$PR_FIX"
+[ "$PR_LINE" = "$PR_EXPECT" ] \
+  && ok "pilot-record's queue line matches every counter and the field order" \
+  || ko "pilot-record's queue line matches every counter and the field order (got: $PR_LINE)"
+
+# 4. A real prompt can legitimately BEGIN with a <system-reminder> block the
+#    harness prepends ahead of the actual text in the same message. Classifying
+#    by prefix would drop it entirely and silently corrupt prompts/pw_med/
+#    pw_min/burst; stripping the wrapper and judging what remains keeps it.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run_fix "$PR_TMP/cfg" "$PR_TMP/norepo" SR "$PR_FIX_REM"
+PR_LINE_REM=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE_REM" in
+  *" prompts=1 "*) ok "pilot-record counts a prompt that carries a leading system-reminder" ;;
+  *) ko "pilot-record counts a prompt that carries a leading system-reminder (got: $PR_LINE_REM)" ;;
+esac
+# Checked as two independent substrings rather than one combined pattern: a
+# single glob requiring both " pw_med=5 " and " pw_min=5 " in sequence would
+# have the second copy consume the space the first copy already matched,
+# which is exactly the kind of self-inflicted false negative this file exists
+# to avoid.
+PR_REM_OK=1
+case "$PR_LINE_REM" in *" pw_med=5 "*) ;; *) PR_REM_OK=0 ;; esac
+case "$PR_LINE_REM" in *" pw_min=5 "*) ;; *) PR_REM_OK=0 ;; esac
+[ "$PR_REM_OK" = 1 ] \
+  && ok "pilot-record's word count is taken on the stripped text, not the reminder" \
+  || ko "pilot-record's word count is taken on the stripped text, not the reminder (got: $PR_LINE_REM)"
+
+# 5. The burst window is the most intricate part of the jq program and the
+#    pinned fixture never exercises it (its two real prompts are ten minutes
+#    apart). A second fixture with three prompts inside one 5-minute window
+#    (09:00, 09:02, 09:04) pins the true widest cluster.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run_fix "$PR_TMP/cfg" "$PR_TMP/norepo" SB "$PR_FIX_BURST"
+PR_LINE_BURST=$(head -1 "$PR_TMP/cfg/learner/pilot-queue" 2>/dev/null)
+case "$PR_LINE_BURST" in
+  *" burst=3 "*) ok "pilot-record's burst window counts the true widest cluster" ;;
+  *) ko "pilot-record's burst window counts the true widest cluster (got: $PR_LINE_BURST)" ;;
+esac
+
+# 6. Decision 10. The scratch files are deleted by learner-cleanup.sh at the
+#    same SessionEnd, in parallel, so nothing here may read them. A merely
+#    absent file can't tell a regression apart from compliance, so the files
+#    are PLANTED with values that contradict the transcript's truth — if
+#    anything here ever starts trusting them, the line changes and this fails.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+PR_TD="${TMPDIR:-/tmp}"
+printf '/fake/one\n/fake/two\n/fake/three\n/fake/four\n' > "$PR_TD/claude-learner-S1.edits"
+printf '/fake/one\n/fake/two\n' > "$PR_TD/claude-learner-S1.session"
+printf '999' > "$PR_TD/claude-learner-S1.count"
+printf '1' > "$PR_TD/claude-learner-S1.guard"
+printf 'bogus-scope' > "$PR_TD/claude-learner-S1.coach-scope"
+printf '1' > "$PR_TD/claude-learner-S1.coach-empty"
+printf '2020-01-01T00:00:00.000Z' > "$PR_TD/claude-learner-S1.coach-last"
+mkdir -p "$PR_TD/claude-learner-S1.coach-base/bogus"
+printf 'bogus\n' > "$PR_TD/claude-learner-S1.coach-base/bogus/file"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+[ "$(head -1 "$PR_TMP/cfg/learner/pilot-queue")" = "$PR_LINE" ] \
+  && ok "pilot-record does not depend on the TMPDIR scratch files" \
+  || ko "pilot-record does not depend on the TMPDIR scratch files"
+rm -rf "$PR_TD/claude-learner-S1."*
+
+# 7. Opt-in. Nothing anywhere when the switch is off.
+rm -rf "$PR_TMP/off"; mkdir -p "$PR_TMP/off/learner"
+pr_run "$PR_TMP/off" "$PR_TMP/norepo" '{"pilotEnabled":false}'
+[ ! -f "$PR_TMP/off/learner/pilot-queue" ] \
+  && ok "pilot-record is inert while pilotEnabled is false" \
+  || ko "pilot-record is inert while pilotEnabled is false"
+
+# 7b. disabledPaths silences Pilot's record hook too, same as the quiz: a repo
+#     listed there gets no queue line at all, even though the transcript
+#     itself would otherwise be perfectly readable.
+PR_DIS_REPO="$WORK/pr-disabled-repo"; rm -rf "$PR_DIS_REPO"; mkdir -p "$PR_DIS_REPO"
+git -C "$PR_DIS_REPO" init -q
+rm -rf "$PR_TMP/disabled"; mkdir -p "$PR_TMP/disabled/learner"
+pr_run "$PR_TMP/disabled" "$PR_DIS_REPO" \
+  "$(printf '{"pilotEnabled":true,"disabledPaths":["%s"]}' "$PR_DIS_REPO")"
+[ ! -f "$PR_TMP/disabled/learner/pilot-queue" ] \
+  && ok "pilot-record is inert inside a disabledPaths repo" \
+  || ko "pilot-record is inert inside a disabledPaths repo"
+
+# 8. Idempotent. SessionEnd can fire more than once for one session id
+#    (clear, resume); a second line would double-count the session in the index.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+pr_run "$PR_TMP/cfg" "$PR_TMP/norepo"
+[ "$(grep -c '^sid=S1 ' "$PR_TMP/cfg/learner/pilot-queue")" = "1" ] \
+  && ok "pilot-record queues a session id at most once" \
+  || ko "pilot-record queues a session id at most once"
+
+# 9. Budget. SessionEnd hooks share 1.5s, raised to the wired timeout of 15.
+#    A 5,000-line transcript must be nowhere near it.
+awk 'NR==1{for(i=0;i<5000;i++) print}' "$PR_FIX" > "$PR_TMP/big.jsonl"
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+PR_T0=$(date +%s)
+printf '{"session_id":"S2","transcript_path":"%s","cwd":"%s"}' "$PR_TMP/big.jsonl" "$PR_TMP/norepo" \
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh")
+[ $(( $(date +%s) - PR_T0 )) -le 5 ] \
+  && ok "pilot-record stays well inside its SessionEnd budget" \
+  || ko "pilot-record stays well inside its SessionEnd budget"
+
+# 10. A missing or unreadable transcript is a no-op, not a crash: the path
+#     comes from the harness and Pilot does not own its lifetime.
+rm -f "$PR_TMP/cfg/learner/pilot-queue"
+printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "$PR_TMP/norepo" \
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh") \
+  && [ ! -f "$PR_TMP/cfg/learner/pilot-queue" ] \
+  && ok "pilot-record no-ops on a missing transcript" \
+  || ko "pilot-record no-ops on a missing transcript"
+
+# 11. The writing axis's coach-tally branch (ruling, Task 3 fix round 1): a
+#     coach tally alone is a lower bound, not an exact count — pomodoro only
+#     measures completed work blocks — so dev_lines is the LARGER of the
+#     tally and the git working-tree estimate, and est=0 only when the
+#     estimate does not exceed the tally. This is the least-inspected code in
+#     the task and the code the whole axis reads, so each reachable branch
+#     but one gets its own case here, each in a fresh cfg dir and repo so one
+#     case's tally or commit state cannot leak into another's. The fifth
+#     branch (no tally, no repo) is already PR_EXPECT above.
+#     PR_FIX's cl_lines is 4 throughout (pinned at item 3).
+
+# (a) tally covers the tree: 5 uncommitted insertions minus cl_lines=4 nets
+#     an estimate of 1, well under a tally of 50 — chosen large enough that
+#     no plausible off-by-one in the comparison could flip the branch.
+PR_A="$WORK/pr-axis-a"; rm -rf "$PR_A"; mkdir -p "$PR_A/cfg/learner" "$PR_A/repo"
+git -C "$PR_A/repo" init -q
+printf 'orig\n' > "$PR_A/repo/f.txt"
+git -C "$PR_A/repo" add f.txt
+git -C "$PR_A/repo" -c user.email=t@t -c user.name=t commit -qm init
+printf 'x1\nx2\nx3\nx4\nx5\n' > "$PR_A/repo/f.txt"
+printf 'S1 50\n' > "$PR_A/cfg/learner/pilot-devlines"
+pr_run "$PR_A/cfg" "$PR_A/repo"
+PR_A_LINE=$(grep '^sid=S1 ' "$PR_A/cfg/learner/pilot-queue" 2>/dev/null)
+PR_A_OK=1
+case "$PR_A_LINE" in *" dev_lines=50 "*) ;; *) PR_A_OK=0 ;; esac
+case "$PR_A_LINE" in *" est=0 "*) ;; *) PR_A_OK=0 ;; esac
+[ "$PR_A_OK" = 1 ] \
+  && ok "pilot-record's writing axis: a tally that covers the tree wins exact (dev_lines=50 est=0)" \
+  || ko "pilot-record's writing axis: a tally that covers the tree wins exact (got: $PR_A_LINE)"
+
+# (b) the estimate exceeds the tally by a margin no sign error or off-by-one
+#     could produce by accident: 100 uncommitted insertions minus cl_lines=4
+#     nets an estimate of 96 against a tally of 3.
+PR_B="$WORK/pr-axis-b"; rm -rf "$PR_B"; mkdir -p "$PR_B/cfg/learner" "$PR_B/repo"
+git -C "$PR_B/repo" init -q
+printf 'orig\n' > "$PR_B/repo/f.txt"
+git -C "$PR_B/repo" add f.txt
+git -C "$PR_B/repo" -c user.email=t@t -c user.name=t commit -qm init
+awk 'BEGIN { for (i = 0; i < 100; i++) print "y" i }' > "$PR_B/repo/f.txt"
+printf 'S1 3\n' > "$PR_B/cfg/learner/pilot-devlines"
+pr_run "$PR_B/cfg" "$PR_B/repo"
+PR_B_LINE=$(grep '^sid=S1 ' "$PR_B/cfg/learner/pilot-queue" 2>/dev/null)
+PR_B_OK=1
+case "$PR_B_LINE" in *" dev_lines=96 "*) ;; *) PR_B_OK=0 ;; esac
+case "$PR_B_LINE" in *" est=1 "*) ;; *) PR_B_OK=0 ;; esac
+[ "$PR_B_OK" = 1 ] \
+  && ok "pilot-record's writing axis: an estimate that exceeds the tally wins, marked est=1 (dev_lines=96)" \
+  || ko "pilot-record's writing axis: an estimate that exceeds the tally wins (got: $PR_B_LINE)"
+
+# (c) no tally, repo present, clean tree: the estimate itself computes to 0
+#     (0 insertions minus cl_lines=4, floored), but it is still a GUESS, not
+#     a measurement — est=1 on that zero is the whole point (it means "we
+#     did not measure this, we guessed, and the guess is zero", not "we
+#     measured, and they wrote nothing"), so both the value and the marker
+#     are pinned, not just the zero.
+PR_C="$WORK/pr-axis-c"; rm -rf "$PR_C"; mkdir -p "$PR_C/cfg/learner" "$PR_C/repo"
+git -C "$PR_C/repo" init -q
+printf 'orig\n' > "$PR_C/repo/f.txt"
+git -C "$PR_C/repo" add f.txt
+git -C "$PR_C/repo" -c user.email=t@t -c user.name=t commit -qm init
+pr_run "$PR_C/cfg" "$PR_C/repo"
+PR_C_LINE=$(grep '^sid=S1 ' "$PR_C/cfg/learner/pilot-queue" 2>/dev/null)
+PR_C_OK=1
+case "$PR_C_LINE" in *" dev_lines=0 "*) ;; *) PR_C_OK=0 ;; esac
+case "$PR_C_LINE" in *" est=1 "*) ;; *) PR_C_OK=0 ;; esac
+[ "$PR_C_OK" = 1 ] \
+  && ok "pilot-record's writing axis: no tally with a clean repo is a guessed zero, marked est=1" \
+  || ko "pilot-record's writing axis: no tally with a clean repo is a guessed zero, marked est=1 (got: $PR_C_LINE)"
+
+# (e) tally exists, no repo to estimate against at all: the tally stands
+#     alone and is exact.
+PR_E="$WORK/pr-axis-e"; rm -rf "$PR_E"; mkdir -p "$PR_E/cfg/learner" "$PR_E/norepo"
+printf 'S1 7\n' > "$PR_E/cfg/learner/pilot-devlines"
+pr_run "$PR_E/cfg" "$PR_E/norepo"
+PR_E_LINE=$(grep '^sid=S1 ' "$PR_E/cfg/learner/pilot-queue" 2>/dev/null)
+PR_E_OK=1
+case "$PR_E_LINE" in *" dev_lines=7 "*) ;; *) PR_E_OK=0 ;; esac
+case "$PR_E_LINE" in *" est=0 "*) ;; *) PR_E_OK=0 ;; esac
+[ "$PR_E_OK" = 1 ] \
+  && ok "pilot-record's writing axis: a tally with no repo to compare against is exact" \
+  || ko "pilot-record's writing axis: a tally with no repo to compare against is exact (got: $PR_E_LINE)"
+
 for pair in "d:D" "junior:J" "JUNIOR:J" "c:C" "senior:S" "Expert:E" "wizard:"; do
   raw="${pair%%:*}"; want="${pair##*:}"
   got=$(cfgsh "learner_level $raw")
@@ -164,6 +444,427 @@ cfgsh 'learner_active "{\"level\":\"S\",\"enabled\":true}" ""' \
 cfgsh 'learner_active "{\"level\":\"S\",\"disabledPaths\":[\"/a\"]}" "/a/b"' \
   && ko "learner_active fails under a disabled path" \
   || ok "learner_active fails under a disabled path"
+
+# --- pilot-brief --------------------------------------------------------------
+PB_TMP="$WORK/pilot-brief"
+pb_reset() {
+  rm -rf "$PB_TMP"; mkdir -p "$PB_TMP/cfg/learner" "$PB_TMP/wd"
+  printf '{"pilotEnabled":true}' > "$PB_TMP/cfg/learner.json"
+}
+pb_run() {
+  printf '{"session_id":"B1","source":"%s","cwd":"%s"}' "${1:-startup}" "$PB_TMP/wd" \
+    | (cd "$PB_TMP/wd" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" sh "$ROOT/hooks/pilot-brief.sh")
+}
+# A Sessions table with N valid data rows (the row shape the floor counts:
+# `| YYYY-MM-DD | ... |`), prefixed to whatever $2 (an Index block etc.) holds.
+pb_sessions() {  # pb_sessions N [rest-of-file]
+  _pbn="$1"; shift
+  _pbrows=''
+  _pbi=1
+  while [ "$_pbi" -le "$_pbn" ]; do
+    _pbrows="${_pbrows}| 2026-09-0$_pbi | r | 2 | 2 | 2 | 2 | - |
+"
+    _pbi=$((_pbi + 1))
+  done
+  printf '# Sessions\n\n| Date | Repo | Dir | Ver | Con | Wri | Note |\n|---|---|---|---|---|---|---|\n%s\n%s' \
+    "$_pbrows" "${1:-}"
+}
+
+# 1. An empty queue and no history is silence, not a brief about nothing.
+pb_reset
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief says nothing with an empty queue and no history" \
+  || ko "pilot-brief says nothing with an empty queue and no history"
+
+# 2. A queued session with no prior drain is due immediately.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+PB_OUT=$(pb_run)
+printf '%s' "$PB_OUT" | jq -e '.hookSpecificOutput.additionalContext | test("score.md")' >/dev/null \
+  && ok "pilot-brief asks for a scoring pass when the queue is stale" \
+  || ko "pilot-brief asks for a scoring pass when the queue is stale"
+
+# 3. Within pilotJudgeIntervalHours of the last drain, it stays quiet: the whole
+#    point of batching is one subagent a day, not one per session.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf 'score=%s\n' "$(date +%s)" > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief respects pilotJudgeIntervalHours" \
+  || ko "pilot-brief respects pilotJudgeIntervalHours"
+
+# 4. Ordering. When both are due, the scorer must be named first and the brief
+#    deferred — a brief opened on a stale index quotes last week's numbers.
+#    Four Sessions rows so the floor from test set 4b below does not itself
+#    suppress the brief and mask what this test is actually checking.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+pb_sessions 4 '
+# Index
+
+- direction: 40
+' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+PB_OUT=$(pb_run)
+# The deferral message names no reference file — that is the point, the brief
+# must not be opened. So assert the scorer is asked for AND the brief is
+# explicitly deferred, AND that the scorer text comes first: a "both present,
+# either order" check would pass even if the deferral were emitted before the
+# scoring instruction, which defeats the ordering this task exists to provide.
+printf '%s' "$PB_OUT" | jq -e '.hookSpecificOutput.additionalContext
+    | test("score.md") and test("Do NOT open it") and (index("score.md") < index("Do NOT open it"))' >/dev/null \
+  && ok "pilot-brief names the scoring pass before it defers the brief" \
+  || ko "pilot-brief names the scoring pass before it defers the brief"
+
+# 5. Only startup and resume. A compaction mid-session must not re-fire either,
+#    the same guard learner-onboard.sh already applies for the same reason.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+[ -z "$(pb_run compact)" ] \
+  && ok "pilot-brief ignores a compaction" \
+  || ko "pilot-brief ignores a compaction"
+
+# 6. Opt-in.
+pb_reset
+printf '{"pilotEnabled":false}' > "$PB_TMP/cfg/learner.json"
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief is inert while pilotEnabled is false" \
+  || ko "pilot-brief is inert while pilotEnabled is false"
+
+# 7. Declined twice, never offered again unasked. Pilot is not allowed to nag.
+pb_reset
+printf '# Index\n\n- direction: 40\n' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\ndeclined=2\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief stops offering the brief after two declines" \
+  || ko "pilot-brief stops offering the brief after two declines"
+
+# 8. `declined` must gate the brief and nothing else: a dev who does not want the
+#    weekly conversation has not asked to stop being measured. A queued session
+#    stays due for scoring even while the brief is suppressed.
+pb_reset
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf '# Index\n\n- direction: 40\n' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\ndeclined=2\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+pb_run | jq -e '.hookSpecificOutput.additionalContext | test("score.md")' >/dev/null \
+  && ok "declining the brief does not suppress a due scoring pass" \
+  || ko "declining the brief does not suppress a due scoring pass"
+
+# 9. The four-session floor. rubric.md: naming anything off two or three
+#    sessions "is the fastest way to make the whole number look like
+#    guesswork" — the brief must not open on that thin a Sessions table even
+#    when every other condition (cadence elapsed, not declined) is met.
+pb_reset
+pb_sessions 3 '
+# Index
+
+- direction: 40
+' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -z "$(pb_run)" ] \
+  && ok "pilot-brief withholds itself below the four-session floor" \
+  || ko "pilot-brief withholds itself below the four-session floor"
+
+# 10. One more row clears it — pinned right against test 9 so the floor is
+#     shown to sit exactly at four, not merely "somewhere low".
+pb_reset
+pb_sessions 4 '
+# Index
+
+- direction: 40
+' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+[ -n "$(pb_run)" ] \
+  && ok "pilot-brief is due at exactly four Sessions rows" \
+  || ko "pilot-brief is due at exactly four Sessions rows"
+
+# 11. disabledPaths silences pilot-brief entirely inside a disabled repo —
+#     neither a scoring dispatch nor a brief, even with a stale queue and a
+#     due brief, since either would surface evidence gathered elsewhere into
+#     a repo the dev asked Pilot to leave alone.
+PB_DIS_REPO="$WORK/pb-disabled-repo"; rm -rf "$PB_DIS_REPO"; mkdir -p "$PB_DIS_REPO"
+git -C "$PB_DIS_REPO" init -q
+pb_reset
+pb_sessions 4 '
+# Index
+
+- direction: 40
+' > "$PB_TMP/cfg/learner/pilot.md"
+printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
+printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
+printf '{"pilotEnabled":true,"disabledPaths":["%s"]}' "$PB_DIS_REPO" > "$PB_TMP/cfg/learner.json"
+PB_OUT=$(printf '{"session_id":"B1","source":"startup","cwd":"%s"}' "$PB_DIS_REPO" \
+  | (cd "$PB_DIS_REPO" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" CLAUDE_PROJECT_DIR="$PB_DIS_REPO" sh "$ROOT/hooks/pilot-brief.sh"))
+[ -z "$PB_OUT" ] \
+  && ok "pilot-brief is silent inside a disabledPaths repo" \
+  || ko "pilot-brief is silent inside a disabledPaths repo"
+
+# --- pilot-nudge ----------------------------------------------------------
+PN_TMP="$WORK/pilot-nudge"
+pn_reset() {
+  rm -rf "$PN_TMP"; mkdir -p "$PN_TMP/cfg/learner" "$PN_TMP/wd"
+  printf '{"pilotEnabled":true}' > "$PN_TMP/cfg/learner.json"
+  rm -f "${TMPDIR:-/tmp}/claude-learner-N1.pilot-nudged"
+}
+pn_live() {  # pn_live <axis> <until>
+  printf '# Manoeuvres\n\n- live: %s | name the result you want and one constraint | until %s\n' \
+    "$1" "$2" > "$PN_TMP/cfg/learner/pilot.md"
+}
+pn_run() {  # pn_run <prompt> [session_id]
+  pn_sid="${2:-N1}"
+  printf '{"session_id":"%s","prompt":"%s","cwd":"%s"}' "$pn_sid" "$1" "$PN_TMP/wd" \
+    | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh")
+}
+# Every pn_ helper below defaults to session "N1"; pn_reset also clears that
+# session's once-per-session nudge marker so each fresh config starts unnudged,
+# same as a fresh `pn_reset` already gives a fresh pilot.md.
+pn_clear_marker() { rm -f "${TMPDIR:-/tmp}/claude-learner-${1:-N1}.pilot-nudged"; }
+
+# 1. THE constraint of this file. Exit 2 on UserPromptSubmit blocks the prompt
+#    AND ERASES IT. Destroying what the dev typed to remind them to type it
+#    better is indefensible, so assert status 0 on every path, loudest here.
+pn_reset; pn_live direction "2099-01-01"
+pn_run "fix it" >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with a live manoeuvre and a vague prompt" \
+             || ko "pilot-nudge exits 0 with a live manoeuvre and a vague prompt"
+pn_reset
+pn_run "fix it" >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with no manoeuvre" \
+             || ko "pilot-nudge exits 0 with no manoeuvre"
+pn_reset; pn_live direction "2099-01-01"
+printf '{"session_id":"N1","cwd":"%s"}' "$PN_TMP/wd" \
+  | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") >/dev/null 2>&1
+[ $? -eq 0 ] && ok "pilot-nudge exits 0 with no prompt field at all" \
+             || ko "pilot-nudge exits 0 with no prompt field at all"
+
+# 2. Silence unless a manoeuvre is live. Pilot measures passively; the nudge is
+#    the one place it speaks, and only while the dev has agreed to a manoeuvre.
+pn_reset
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge is silent with no live manoeuvre" \
+  || ko "pilot-nudge is silent with no live manoeuvre"
+
+# 3. An expired manoeuvre is not a live one.
+pn_reset; pn_live direction "2020-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge ignores an expired manoeuvre" \
+  || ko "pilot-nudge ignores an expired manoeuvre"
+
+# 4. Live and vague: speak.
+pn_reset; pn_live direction "2099-01-01"
+pn_run 'fix it' | jq -e '.hookSpecificOutput.additionalContext | test("constraint")' >/dev/null \
+  && ok "pilot-nudge reminds the dev on a vague prompt" \
+  || ko "pilot-nudge reminds the dev on a vague prompt"
+
+# 5. A specific prompt needs no reminder — a nudge on every prompt is noise,
+#    and noise is how a manoeuvre gets switched off.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'in src/http/client.py add a retry of at most three attempts, no new dependency')" ] \
+  && ok "pilot-nudge stays quiet on a specific prompt" \
+  || ko "pilot-nudge stays quiet on a specific prompt"
+
+# 6. pilotNudge is its own consent, separate from the brief's.
+pn_reset; pn_live direction "2099-01-01"
+printf '{"pilotEnabled":true,"pilotNudge":false}' > "$PN_TMP/cfg/learner.json"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge honours pilotNudge:false" \
+  || ko "pilot-nudge honours pilotNudge:false"
+
+# 7. The path/backtick branch of the vagueness heuristic, exercised UNDER the
+#    word floor so only that branch (not the word-count guard) can be keeping
+#    these quiet — the review found this branch had no discriminating test.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'check src/http/client.py')" ] \
+  && ok "pilot-nudge stays quiet on a short prompt naming a path" \
+  || ko "pilot-nudge stays quiet on a short prompt naming a path"
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'run `pytest -k foo`')" ] \
+  && ok "pilot-nudge stays quiet on a short prompt with a code span" \
+  || ko "pilot-nudge stays quiet on a short prompt with a code span"
+
+# 8. The realistic "no live manoeuvre" case: pilot.md exists, holding a settled
+#    manoeuvre's history, but the Manoeuvres block has no `- live:` line — the
+#    normal state after an expiry (spec §8). Different from "no pilot.md at
+#    all", which the earlier `[ -f ]` gate already catches. The settled line's
+#    BODY is deliberately well-formed (a clean axis, constraint, and a future
+#    until date — it would parse as a live manoeuvre if the prefix matched) so
+#    the missing `- live:` prefix is the only thing keeping this silent, not
+#    an incidental parse failure elsewhere in the line.
+pn_reset
+printf '# Manoeuvres\n\n- settled: direction | name the result you want and one constraint | until 2099-01-01\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge is silent when pilot.md holds only settled manoeuvre history" \
+  || ko "pilot-nudge is silent when pilot.md holds only settled manoeuvre history"
+
+# 9. A pipe inside the constraint text must not disable expiry, and must not
+#    make the parser misread the date either. Under malformed-is-silent, a
+#    PAST date can't discriminate the parser: the naive 3-field split and the
+#    correct one both end up silent for a past date (the naive split loses
+#    the date entirely and reads as malformed; the correct one reads it and
+#    finds it expired) — silent either way, so that assertion proves nothing
+#    about which parser ran. A date of TODAY does discriminate: the correct
+#    parser reads it, today is not past, and the hook must speak; the naive
+#    parser loses the date to the pipe and goes silent as malformed. Computed,
+#    not hardcoded, so this does not start failing tomorrow.
+PN_TODAY=$(date +%F)
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until %s\n' "$PN_TODAY" \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -n "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge speaks for a manoeuvre whose constraint contains a pipe and expires today" \
+  || ko "pilot-nudge speaks for a manoeuvre whose constraint contains a pipe and expires today"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | rule with a | pipe inside | until 2099-01-01\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -n "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge still speaks for a live manoeuvre whose constraint contains a pipe" \
+  || ko "pilot-nudge still speaks for a live manoeuvre whose constraint contains a pipe"
+
+# 10. A malformed manoeuvre is not live: fail toward silence, never toward
+#     nudging forever. Reverses the old default, which treated all three of
+#     these shapes as "never expires".
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want and one constraint\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the until field is missing entirely" \
+  || ko "pilot-nudge stays silent when the until field is missing entirely"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want | whenever\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the last field is not until-shaped" \
+  || ko "pilot-nudge stays silent when the last field is not until-shaped"
+pn_reset
+printf '# Manoeuvres\n\n- live: direction | name the result you want | until not-a-date\n' \
+  > "$PN_TMP/cfg/learner/pilot.md"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent when the until date is garbage" \
+  || ko "pilot-nudge stays silent when the until date is garbage"
+
+# 11. A question is the opposite of delegated thinking: exempt outright, even
+#     when short and otherwise vague.
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'explain what this error means?')" ] \
+  && ok "pilot-nudge exempts a prompt with a question mark" \
+  || ko "pilot-nudge exempts a prompt with a question mark"
+pn_reset; pn_live direction "2099-01-01"
+[ -z "$(pn_run 'why is CI failing')" ] \
+  && ok "pilot-nudge exempts a prompt starting with an interrogative word" \
+  || ko "pilot-nudge exempts a prompt starting with an interrogative word"
+
+# 11b. An auxiliary (is/are/does/do/can/should) is not a wh-word: a prompt
+#      starting with one, and carrying no question mark, is a vague
+#      delegation ("do the refactor"), not a question, and must still nudge.
+#      Guards against the exemption list quietly growing back to swallow it.
+pn_reset; pn_live direction "2099-01-01"
+[ -n "$(pn_run 'do the refactor')" ] \
+  && ok "pilot-nudge nudges an auxiliary-led delegation with no question mark" \
+  || ko "pilot-nudge nudges an auxiliary-led delegation with no question mark"
+
+# 12. Once per session: the nudge fires at most once, no matter how many vague
+#     prompts follow in the same session.
+pn_reset; pn_live direction "2099-01-01"
+[ -n "$(pn_run 'fix it' CAP1)" ] \
+  && ok "pilot-nudge speaks on the first vague prompt of a session" \
+  || ko "pilot-nudge speaks on the first vague prompt of a session"
+[ -z "$(pn_run 'fix it' CAP1)" ] \
+  && ok "pilot-nudge stays silent on a second vague prompt in the same session" \
+  || ko "pilot-nudge stays silent on a second vague prompt in the same session"
+rm -f "${TMPDIR:-/tmp}/claude-learner-CAP1.pilot-nudged"
+
+# 13. brief.md is explicit that only `direction` has a UserPromptSubmit
+#     mechanism — "the other three axes have no UserPromptSubmit mechanism".
+#     A live manoeuvre on verification, contradiction or writing must leave
+#     this hook silent no matter how vague the prompt is: the vagueness test
+#     is direction-only by design, not merely untested for the other three.
+pn_reset; pn_live verification "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live verification manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live verification manoeuvre, however vague the prompt"
+pn_reset; pn_live contradiction "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live contradiction manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live contradiction manoeuvre, however vague the prompt"
+pn_reset; pn_live writing "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live writing manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live writing manoeuvre, however vague the prompt"
+
+# 11. disabledPaths silences the nudge too, even with a live, unexpired,
+#     direction manoeuvre and a maximally vague prompt — the one combination
+#     that would otherwise be guaranteed to speak.
+PN_DIS_REPO="$WORK/pn-disabled-repo"; rm -rf "$PN_DIS_REPO"; mkdir -p "$PN_DIS_REPO"
+git -C "$PN_DIS_REPO" init -q
+pn_reset; pn_live direction "2099-01-01"
+printf '{"pilotEnabled":true,"disabledPaths":["%s"]}' "$PN_DIS_REPO" > "$PN_TMP/cfg/learner.json"
+PN_OUT=$(printf '{"session_id":"N1","prompt":"fix it","cwd":"%s"}' "$PN_DIS_REPO" \
+  | (cd "$PN_DIS_REPO" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" CLAUDE_PROJECT_DIR="$PN_DIS_REPO" sh "$ROOT/hooks/pilot-nudge.sh"))
+[ -z "$PN_OUT" ] \
+  && ok "pilot-nudge is silent inside a disabledPaths repo" \
+  || ko "pilot-nudge is silent inside a disabledPaths repo"
+
+# --- pilot brief protocol and mechanisms corpus -----------------------------
+# The nudge parses this line by field. If the brief writes a different shape,
+# the manoeuvre is silently inert — the worst kind of broken, because the
+# dashboard still says a manoeuvre is live.
+grep -q '^- live: [a-z]* | .* | until [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$' \
+  skills/pilot/references/brief.md \
+  && ok "brief.md states the manoeuvre line format the nudge parses" \
+  || ko "brief.md states the manoeuvre line format the nudge parses"
+
+# Round-trip the documented example through the nudge's own parser.
+BR_TMP="$WORK/brief-format"; rm -rf "$BR_TMP"; mkdir -p "$BR_TMP/cfg/learner" "$BR_TMP/wd"
+printf '{"pilotEnabled":true}' > "$BR_TMP/cfg/learner.json"
+grep -m1 '^- live: ' skills/pilot/references/brief.md \
+  | sed 's/until [0-9-]*/until 2099-01-01/' > "$BR_TMP/cfg/learner/pilot.md"
+printf '{"session_id":"R1","prompt":"fix it","cwd":"%s"}' "$BR_TMP/wd" \
+  | (cd "$BR_TMP/wd" && CLAUDE_CONFIG_DIR="$BR_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") \
+  | jq -e '.hookSpecificOutput.additionalContext | test("axis: direction")' >/dev/null \
+  && ok "the manoeuvre line documented in brief.md parses in pilot-nudge.sh" \
+  || ko "the manoeuvre line documented in brief.md parses in pilot-nudge.sh"
+
+# One mechanism per brief, and the numbers cited rather than invented. The
+# ~17%/~46% figures were traced back to a research summary, not the paper —
+# none of the three cited sources publishes either number — so the entry must
+# no longer assert them; the qualitative finding they were standing in for
+# (weakest connectivity, markedly worse recall) is what the sources actually
+# support and must survive the edit.
+if grep -q '17%' skills/pilot/references/mechanisms.md \
+   || grep -q '46%' skills/pilot/references/mechanisms.md; then
+  ko "mechanisms.md no longer cites the untraceable ~17%/~46% figures"
+else
+  ok "mechanisms.md no longer cites the untraceable ~17%/~46% figures"
+fi
+grep -qi 'weakest neural connectivity' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md keeps the qualitative connectivity finding the sources support" \
+  || ko "mechanisms.md keeps the qualitative connectivity finding the sources support"
+grep -q 'media.mit.edu' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md links its source" || ko "mechanisms.md links its source"
+grep -qF '54 subjects' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md pins the 54-subject count to sessions 1-3" \
+  || ko "mechanisms.md pins the 54-subject count to sessions 1-3"
+grep -qF '18' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md notes the fourth session's smaller subject count" \
+  || ko "mechanisms.md notes the fourth session's smaller subject count"
+grep -qi 'context-dependent' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md notes the study's own context-dependent limitation" \
+  || ko "mechanisms.md notes the study's own context-dependent limitation"
+grep -qi 'one mechanism' skills/pilot/references/brief.md \
+  && ok "brief.md limits a brief to one mechanism" \
+  || ko "brief.md limits a brief to one mechanism"
+grep -qi 'not a failure\|deferral' skills/pilot/references/brief.md \
+  && ok "brief.md treats a deferral as a deferral" \
+  || ko "brief.md treats a deferral as a deferral"
+
+# The hook-level Sessions-row floor (pilot-brief.sh) is a cheap count, not a
+# check of which axes actually cleared their own per-axis floor — brief.md
+# must still check the Index block itself before running the four movements.
+grep -qiE 'enough.*to argue from' skills/pilot/references/brief.md \
+  && ok "brief.md guards the four movements on the gating axes' own floor" \
+  || ko "brief.md guards the four movements on the gating axes' own floor"
 
 # --- learner_excluded -------------------------------------------------------
 echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
@@ -802,6 +1503,255 @@ jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPe
   && ok "the old example file is gone" \
   || ko "the old example file is gone"
 
+# --- second skill (pilot) -----------------------------------------------------
+# Two skills now ship. The installer hardcoded one path in six places; a
+# separate copy of the same path in each packaging script is how a second
+# skill ends up missing from one install path only (brew, apt, curl, plugin).
+# The mutation that shows the derived loops actually discriminate — on both
+# sides — rather than a hand-maintained list that happens to name today's two
+# skills: a skill this repo has never heard of, with no edit to install.sh or
+# uninstall.sh, must be copied in AND removed again. A hardcoded two-name
+# `SKILLS='learner pilot'` (install) or a two-name `rm -rf` (uninstall) would
+# satisfy every assertion about learner/pilot specifically while failing this
+# one, on either side.
+PROBE="$ROOT/skills/zz-probe"
+mkdir -p "$PROBE"
+printf '---\nname: zz-probe\ndescription: throwaway probe for the derived skill-copy loop, deleted immediately after.\n---\n\nprobe\n' > "$PROBE/SKILL.md"
+
+IS="$WORK/install-skills"
+rm -rf "$IS"; mkdir -p "$IS"
+CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -f "$IS/skills/pilot/SKILL.md" ] \
+  && ok "install ships the pilot skill" || ko "install ships the pilot skill"
+[ -f "$IS/skills/learner/SKILL.md" ] \
+  && ok "install still ships the learner skill" || ko "install still ships the learner skill"
+[ -f "$IS/skills/zz-probe/SKILL.md" ] \
+  && ok "install's derived skill loop copies a skill it has never been told about" \
+  || ko "install's derived skill loop copies a skill it has never been told about"
+
+# pilot now ships references/ (this task writes rubric.md and score.md) — the
+# derived copy loop must carry them, and a skill with no references/ of its own
+# (zz-probe, above) must still not fail, nor have an empty references/ invented
+# for it.
+[ -f "$IS/skills/pilot/references/rubric.md" ] && [ -f "$IS/skills/pilot/references/score.md" ] \
+  && ok "install ships the pilot skill's reference files" \
+  || ko "install ships the pilot skill's reference files"
+[ -d "$IS/skills/zz-probe/references" ] \
+  && ko "a skill with no references/ does not get one fabricated by install" \
+  || ok "install does not fail or fabricate references/ for a skill that has none"
+
+CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
+[ ! -d "$IS/skills/pilot" ] \
+  && ok "uninstall removes the pilot skill" || ko "uninstall removes the pilot skill"
+[ ! -d "$IS/skills/learner" ] \
+  && ok "uninstall still removes the learner skill" || ko "uninstall still removes the learner skill"
+[ ! -d "$IS/skills/zz-probe" ] \
+  && ok "uninstall's derived skill loop removes a skill it has never been told about" \
+  || ko "uninstall's derived skill loop removes a skill it has never been told about"
+
+rm -rf "$PROBE"
+
+# Neither packaging file has ever enumerated skills by name — both already
+# ship the whole skills/ tree as one unit, which is what makes a second skill
+# arrive in both without a code change. So the invariant to assert is that
+# shape, not a name that happens to appear in a comment today: naming
+# 'skills/pilot' literally would go red on a harmless comment rewrite and stay
+# green if "skills" were ever narrowed to "skills/learner" — the false pass
+# that would actually break shipping the second skill.
+# Anchored to the actual install/copy line, not merely "'skills' appears
+# somewhere in the file" — a bare file-wide grep would still pass reading a
+# comment that says the right thing while the code beside it was narrowed to
+# "skills/learner", which is exactly the false pass this guard exists to
+# catch. Both patterns require the exact whole-directory token on the SAME
+# line as the copy call, so "skills/learner" (no closing quote right after
+# "skills") does not match either.
+grep -qE 'pkgshare\.install.*"skills"' "$ROOT/Formula/learner.rb" \
+  && ok "the brew formula ships the skills/ tree as a unit" \
+  || ko "the brew formula ships the skills/ tree as a unit"
+grep -qE 'cp -r.*"\$ROOT/skills"' "$ROOT/packaging/deb/build.sh" \
+  && ok "the deb build ships the skills/ tree as a unit" \
+  || ko "the deb build ships the skills/ tree as a unit"
+
+# One line of forwarding, not a third regime inlined into the quiz's dispatch.
+grep -q 'pilot' "$ROOT/skills/learner/SKILL.md" \
+  && ok "the learner skill forwards pilot subcommands" \
+  || ko "the learner skill forwards pilot subcommands"
+
+# Decision 14: the mark and its profile labels stay out of every shipped file.
+if grep -rqi 'cogniscore' "$ROOT/skills" "$ROOT/hooks" "$ROOT/README.md" "$ROOT/docs"; then
+  ko "no shipped file reuses the CogniScore mark"
+else
+  ok "no shipped file reuses the CogniScore mark"
+fi
+
+# Decision 12, asserted where a reader will look rather than only in a spec
+# they will never read.
+grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
+  && ok "the pilot skill states that it is opt-in" \
+  || ko "the pilot skill states that it is opt-in"
+
+# The dispatch table's "Read" column is the path a dispatching model actually
+# follows for `pilot on`/`pilot off` — it must point at references/dashboard.md,
+# where the global-file naming lives, not at "this file, § Privacy" (which
+# never names a file at all and is what a model would land on instead).
+PSK="$ROOT/skills/pilot/SKILL.md"
+grep -qE '^\| `pilot on`.*references/dashboard\.md' "$PSK" \
+  && ok "SKILL.md routes 'pilot on' to references/dashboard.md" \
+  || ko "SKILL.md routes 'pilot on' to references/dashboard.md"
+grep -qE '^\| `pilot off`.*references/dashboard\.md' "$PSK" \
+  && ok "SKILL.md routes 'pilot off' to references/dashboard.md" \
+  || ko "SKILL.md routes 'pilot off' to references/dashboard.md"
+
+# pilot off must name the same global file pilot on does, in the page a
+# dispatching model actually reaches (dashboard.md), not just in prose no
+# dispatch path leads to.
+DASH="$ROOT/skills/pilot/references/dashboard.md"
+grep -qF 'learner.json' "$DASH" \
+  && ok "dashboard.md names the global config file" \
+  || ko "dashboard.md names the global config file"
+[ "$(grep -c 'learner\.json' "$DASH")" -ge 2 ] \
+  && ok "dashboard.md names the global config file for both pilot on and pilot off" \
+  || ko "dashboard.md names the global config file for both pilot on and pilot off"
+
+# --- pilot rubric and scorer -------------------------------------------------
+# The reference files are the scorer's whole implementation, so assert the two
+# properties that make the number defensible rather than prose that reads well.
+RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+
+# Axis names derived from the file's own "## <axis> — <question>" headings,
+# not named by hand — a fifth axis needs no edit here, only a new heading of
+# the same shape in rubric.md. Scoped to a single lowercase word before the em
+# dash so the file's other "## " heading ("The arithmetic — …", not an axis)
+# is not picked up as a fifth, spurious axis.
+RUBRIC_AXES=$(sed -n -E 's/^## ([a-z]+) — .*/\1/p' "$RUBRIC")
+
+# Lines belonging to one axis's block: from its heading up to (not including)
+# the next "## " heading, or end of file for the last axis.
+rubric_block() {
+  awk -v axis="$1" '
+    $0 ~ "^## " axis "( |$)" { found=1; next }
+    found && /^## / { exit }
+    found { print }
+  ' "$RUBRIC"
+}
+
+for A in $RUBRIC_AXES; do
+  grep -q "^## $A" "$RUBRIC" \
+    && ok "rubric.md anchors the $A axis" || ko "rubric.md anchors the $A axis"
+done
+
+# Scoped per axis block, not a whole-file count: a global count of ≥4 lines
+# matching "^N — " is satisfied just as well by one axis supplying two anchors
+# for a number while another axis has none, which is exactly the shape a
+# mutation deleting one axis's anchors while leaving the others untouched
+# would produce. Each axis block must carry exactly one anchor line for each
+# of 0-4.
+for A in $RUBRIC_AXES; do
+  BLOCK=$(rubric_block "$A")
+  BAD=0
+  for N in 0 1 2 3 4; do
+    [ "$(printf '%s\n' "$BLOCK" | grep -c "^$N — ")" -eq 1 ] || BAD=1
+  done
+  [ "$BAD" -eq 0 ] \
+    && ok "rubric.md's $A block anchors each of 0-4 exactly once" \
+    || ko "rubric.md's $A block anchors each of 0-4 exactly once"
+done
+grep -qi 'quote' "$ROOT/skills/pilot/references/score.md" \
+  && ok "score.md requires a quote behind every score" \
+  || ko "score.md requires a quote behind every score"
+grep -qi 'subagent' "$ROOT/skills/pilot/references/score.md" \
+  && ok "score.md states it must run in a subagent" \
+  || ko "score.md states it must run in a subagent"
+# A `-` floored to 0 would quietly punish short sessions, which is the most
+# likely way for this index to become meaningless.
+grep -qi 'never counted as 0\|not a zero\|never floored' "$ROOT/skills/pilot/references/rubric.md" \
+  && ok "rubric.md states that a dash is not a zero" \
+  || ko "rubric.md states that a dash is not a zero"
+
+# Moved here from Task 7: the installer's skill loop must carry the references
+# too, and this is the first task in which any of them exists to be shipped.
+# Derived from disk rather than named one by one (dashboard.md included), so a
+# reference file added or renamed later needs no matching edit to this test —
+# this loop is the deliberate substitute for enumerating them by hand.
+IR="$WORK/install-refs"; rm -rf "$IR"; mkdir -p "$IR"
+CLAUDE_CONFIG_DIR="$IR" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+for REF in "$ROOT"/skills/pilot/references/*.md; do
+  REFNAME=$(basename "$REF")
+  [ -f "$IR/skills/pilot/references/$REFNAME" ] \
+    && ok "install ships skills/pilot/references/$REFNAME" \
+    || ko "install ships skills/pilot/references/$REFNAME"
+done
+
+# --- pilot dashboard ----------------------------------------------------------
+# Task 10: dashboard.md is prose, so most of these are greps rather than
+# behavioural tests. The four below are given verbatim by the task brief.
+DASH="$ROOT/skills/pilot/references/dashboard.md"
+
+grep -qi 'not enough data yet' "$DASH" \
+  && ok "dashboard.md refuses to render a thin index" \
+  || ko "dashboard.md refuses to render a thin index"
+grep -q '~' "$DASH" \
+  && ok "dashboard.md explains the estimate marker" \
+  || ko "dashboard.md explains the estimate marker"
+# forget must not silently rewrite the scores: the dev asked to drop the
+# quotes, and a score that quietly vanishes is a different promise.
+grep -qi 'pilot-evidence.md only\|only from .*pilot-evidence\|evidence file only\|delete from .*pilot-evidence.md only' \
+  "$DASH" \
+  && ok "dashboard.md scopes forget to the evidence file" \
+  || ko "dashboard.md scopes forget to the evidence file"
+grep -qi 'say nothing\|silent' "$DASH" \
+  && ok "dashboard.md keeps learner status quiet when pilot is off" \
+  || ko "dashboard.md keeps learner status quiet when pilot is off"
+
+# rubric.md now defines six profiles (Backseat added during implementation
+# for the argues-without-reading vector). dashboard.md special-cases Backseat
+# for its remedy callout rather than restating the whole table, so pin the
+# ONE name it does repeat to rubric.md's own table instead of hand-typing it
+# twice: derive the name from rubric.md's profile rows and require dashboard.md
+# to use that same, actually-current, name. If rubric.md ever renames or drops
+# Backseat, this goes red rather than dashboard.md silently pointing at a
+# profile that no longer exists.
+RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+BACKSEAT_NAME=$(sed -nE 's/^\| [0-9]+ \| `([A-Za-z-]+)` \|.*/\1/p' "$RUBRIC" | grep -ix backseat)
+{ [ -n "$BACKSEAT_NAME" ] && grep -qF "$BACKSEAT_NAME" "$DASH"; } \
+  && ok "dashboard.md's Backseat callout names the profile rubric.md's table actually defines" \
+  || ko "dashboard.md's Backseat callout names the profile rubric.md's table actually defines"
+
+# dashboard.md must defer to rubric.md's arithmetic, not fork a second copy of
+# it: a real structural check, not a phrase match — rubric.md's profile table
+# rows look like "| N | `Name` | rule |"; dashboard.md must contain none of
+# that shape (it names Backseat in prose, never as a re-typed table row).
+if grep -qE '^\| [0-9]+ \| `[A-Za-z-]+` \|' "$DASH"; then
+  ko "dashboard.md does not re-fork rubric.md's profile-table rows"
+else
+  ok "dashboard.md does not re-fork rubric.md's profile-table rows"
+fi
+
+grep -qi 'never render a .-. in a way that reads as a low score\|reads as a low score' "$DASH" \
+  && ok "dashboard.md forbids rendering a dash as a low score" \
+  || ko "dashboard.md forbids rendering a dash as a low score"
+grep -qi 'nearest-looking profile' "$DASH" \
+  && ok "dashboard.md forbids a placeholder profile below the session floor" \
+  || ko "dashboard.md forbids a placeholder profile below the session floor"
+grep -qi 'floors are independent' "$DASH" \
+  && ok "dashboard.md renders each axis's floor independently of the others" \
+  || ko "dashboard.md renders each axis's floor independently of the others"
+grep -qi 'no quote by design' "$DASH" \
+  && ok "dashboard.md tells pilot why apart writing's designed lack of a quote from a missing one" \
+  || ko "dashboard.md tells pilot why apart writing's designed lack of a quote from a missing one"
+grep -qi 'not a silent' "$DASH" \
+  && ok "dashboard.md refuses to default a bare pilot forget to --all" \
+  || ko "dashboard.md refuses to default a bare pilot forget to --all"
+grep -qi 'confirm' "$DASH" \
+  && ok "dashboard.md confirms before pilot forget deletes anything" \
+  || ko "dashboard.md confirms before pilot forget deletes anything"
+grep -qi 'privacy paragraph' "$DASH" \
+  && ok "dashboard.md has pilot on print the privacy paragraph before flipping the switch" \
+  || ko "dashboard.md has pilot on print the privacy paragraph before flipping the switch"
+grep -qi 'pilot forget --all' "$DASH" \
+  && ok "dashboard.md's pilot off points at pilot forget --all to purge kept data" \
+  || ko "dashboard.md's pilot off points at pilot forget --all to purge kept data"
+
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
 printf '{"session_id":"%s","tool_input":{"file_path":"%s/proj/src/Baz.kt"}}' "$SID3" "$WORK" | sh "$REC"
@@ -1002,14 +1952,15 @@ jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/coach-l
   && ok "strip_wiring leaves a same-convention third-party hook outside .claude intact" \
   || ko "strip_wiring leaves a same-convention third-party hook outside .claude intact (got $(cat "$SWC"))"
 
-# Both script-removal lists in uninstall.sh must name the coach scripts, or
-# the files survive on disk even once the wiring above is stripped clean.
-[ "$(grep -c 'hooks/coach-gate\.sh' "$ROOT/uninstall.sh")" = 2 ] \
-  && ok "uninstall.sh's two removal lists both name coach-gate.sh" \
-  || ko "uninstall.sh's two removal lists both name coach-gate.sh"
-[ "$(grep -c 'hooks/coach-watch\.sh' "$ROOT/uninstall.sh")" = 2 ] \
-  && ok "uninstall.sh's two removal lists both name coach-watch.sh" \
-  || ko "uninstall.sh's two removal lists both name coach-watch.sh"
+# uninstall.sh's global removal list must name every hook this project ships,
+# or a hook survives on disk even once the wiring above is stripped clean.
+# Checked once, generically, further down (search "every hook is named in
+# uninstall.sh's global removal list") once HOOK_SH is in scope — that single
+# derived check replaced three hand-named ones here (coach-gate.sh,
+# coach-watch.sh, and later the three pilot-*.sh hooks), each of which was
+# itself the same frozen-enumeration defect this task exists to close: a
+# twelfth hook could ship, get copied and wired, and never be named here,
+# and none of the three literal checks would ever have caught it.
 
 U="$WORK/uninst"; mkdir -p "$U"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
@@ -1120,10 +2071,16 @@ grep -qF '/plugin update learner' "$UPD" \
   && ok "update.md points a plugin install at /plugin update" \
   || ko "update.md points a plugin install at /plugin update"
 
-n=$(wc -l < "$SK" | tr -d ' ')
-[ "$n" -le 120 ] \
-  && ok "SKILL.md stays under 120 lines (it is always loaded)" \
-  || ko "SKILL.md stays under 120 lines (got $n)"
+# Every skill's SKILL.md, not just learner's — derived from skills/*/SKILL.md
+# rather than a second hardcoded path, so a third skill inherits this budget
+# without anyone remembering to add a check for it.
+for sk in "$ROOT"/skills/*/SKILL.md; do
+  skn=$(basename "$(dirname "$sk")")
+  n=$(wc -l < "$sk" | tr -d ' ')
+  [ "$n" -le 120 ] \
+    && ok "$skn/SKILL.md stays under 120 lines (it is always loaded)" \
+    || ko "$skn/SKILL.md stays under 120 lines (got $n)"
+done
 
 grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"' "$SK" "$REFS"/*.md \
   && ko "skill mentions no removed config key" \
@@ -1917,6 +2874,93 @@ grep -qF 'claude -p' "$SITE_USAGE" \
   && ok "usage.html states the interactive-session limitation" \
   || ko "usage.html states the interactive-session limitation"
 
+# --- pilot docs ---------------------------------------------------------------
+# The four keys already ship in config.html's table (checked earlier, further up,
+# against LEARNER_DEFAULTS itself for their values); this pins the config page to
+# actually mentioning all four by name, the same standard the coachCadence loop
+# above holds config.html to for the coach keys.
+for k in pilotEnabled pilotCadenceDays pilotJudgeIntervalHours pilotNudge; do
+  grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
+    || ko "config.html documents $k"
+done
+
+# Anchored to the section heading, not a bare 'pilot' grep: the "learner pilot …"
+# forwarding line already in the On-demand list satisfies a loose grep before this
+# section exists at all — the same non-discriminating-grep defect the coach docs
+# comment above already names once on this branch. id="pilot" only exists once the
+# section itself does.
+grep -qE '^## Pilot' "$RM" && ok "README covers Pilot" \
+  || ko "README covers Pilot"
+grep -qF 'id="pilot"' "$SITE_USAGE" && ok "usage.html covers Pilot" \
+  || ko "usage.html covers Pilot"
+
+grep -qF 'learner pilot on' "$RM" \
+  && ok "README shows how to turn Pilot on" \
+  || ko "README shows how to turn Pilot on"
+
+# The one thing a reader must not be able to miss, in both places a dev actually
+# reads before flipping the switch (brief for task 11) — not just one of them.
+for f in "$RM" "$SITE_USAGE"; do
+  n=$(basename "$f")
+  grep -qiE 'off by default|opt-in' "$f" \
+    && ok "$n states Pilot is opt-in / off by default" \
+    || ko "$n states Pilot is opt-in / off by default"
+  grep -qF 'disabledPaths' "$f" \
+    && ok "$n says disabledPaths is honoured for Pilot" \
+    || ko "$n says disabledPaths is honoured for Pilot"
+  grep -qF 'pilot forget' "$f" \
+    && ok "$n points at pilot forget to purge kept quotes" \
+    || ko "$n points at pilot forget to purge kept quotes"
+  grep -qiF 'not a measure of intelligence' "$f" \
+    && ok "$n disclaims Pilot is not a measure of intelligence" \
+    || ko "$n disclaims Pilot is not a measure of intelligence"
+  grep -qiF 'cognitive health' "$f" \
+    && ok "$n disclaims Pilot is not a measure of cognitive health" \
+    || ko "$n disclaims Pilot is not a measure of cognitive health"
+done
+
+# The four axes, as the same markup shape SKILL.md's own dispatch table uses
+# (`<dt><code>axis</code></dt>`) — fixed by the locked spec (§4.2), so hardcoded
+# here the same way the level letters D/J/C/S/E are hardcoded below, rather than
+# derived from a file that has no single canonical list to parse.
+for axis in direction verification contradiction writing; do
+  grep -qF "<dt><code>$axis</code></dt>" "$SITE_USAGE" \
+    && ok "usage.html documents the $axis axis" \
+    || ko "usage.html documents the $axis axis"
+done
+
+grep -qi 'weekly brief' "$SITE_USAGE" \
+  && ok "usage.html covers the weekly brief" \
+  || ko "usage.html covers the weekly brief"
+
+grep -qi 'manoeuvre' "$SITE_USAGE" \
+  && ok "usage.html covers the counter-manoeuvres" \
+  || ko "usage.html covers the counter-manoeuvres"
+
+# Pilot's own subcommands. Not derived from skills/pilot/SKILL.md's Dispatch table
+# the way the learner subcommand loop above is: that table's first row is the bare
+# `pilot` invocation itself, so parsing it the same way would check for the
+# nonsensical "pilot pilot" and corrupt the list. Hardcoded instead, against the
+# six named subcommands in that table.
+for sub in on off brief score why forget; do
+  grep -qE "pilot ${sub}([[:space:][:punct:]]|\$)" "$SITE_USAGE" \
+    && ok "usage.html documents the 'pilot $sub' subcommand" \
+    || ko "usage.html documents the 'pilot $sub' subcommand"
+done
+
+# The six profile names, derived from skills/pilot/references/rubric.md's own
+# numbered table rather than hardcoded — a profile renamed or added there turns
+# this red automatically instead of leaving the site's list stale, the same
+# reasoning as the hook-count and LEARNER_DEFAULTS derivations elsewhere in this
+# file.
+PROFILES=$(grep -E '^\| [0-9]+ \|' "$ROOT/skills/pilot/references/rubric.md" \
+  | grep -oE '`[^`]+`' | tr -d '`')
+for p in $PROFILES; do
+  grep -qF "$p" "$SITE_USAGE" \
+    && ok "usage.html names the $p profile" \
+    || ko "usage.html names the $p profile"
+done
+
 # --- hook count drift guard ---------------------------------------------------
 # Five prose spots (README twice, index.html, safety.html, install.html) each
 # state how many hook files ship, and none of them turned red when coach-gate.sh
@@ -1935,6 +2979,7 @@ case "$hook_n" in
   8) hook_word=eight ;;
   9) hook_word=nine ;;
   10) hook_word=ten ;;
+  11) hook_word=eleven ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
@@ -1944,6 +2989,8 @@ case "$wired_n" in
   6) wired_word=six ;;
   7) wired_word=seven ;;
   8) wired_word=eight ;;
+  9) wired_word=nine ;;
+  10) wired_word=ten ;;
   *) wired_word='__no-word-mapped__' ;;
 esac
 
@@ -1970,13 +3017,38 @@ grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
   && ok "index.html's hook count matches the $hook_n files on disk" \
   || ko "index.html's hook count matches the $hook_n files on disk"
 
-grep -qiF "the $hook_word hook files, the skill" "$SITE_SAFETY" \
+grep -qiF "the $hook_word hook files, the skills" "$SITE_SAFETY" \
   && ok "safety.html's hook count matches the $hook_n files on disk" \
   || ko "safety.html's hook count matches the $hook_n files on disk"
 
 grep -qiF "$hook_word hook files ship and $wired_word are wired" "$SITE_INSTALL" \
   && ok "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)" \
   || ko "install.html's ship/wired counts match disk ($hook_n ship, $wired_n wired)"
+
+# The pilot skill ships its own directory, and its runtime data files are as
+# privacy-sensitive as anything the install table lists — both belong in the
+# "what lands on disk" inventory, not just the learner skill and its own data.
+grep -qF 'skills/pilot/' "$SITE_INSTALL" \
+  && ok "install.html's table lists skills/pilot/" \
+  || ko "install.html's table lists skills/pilot/"
+for f in pilot-queue pilot.md pilot-evidence.md pilot-stamps pilot-devlines; do
+  grep -qF "learner/$f" "$SITE_INSTALL" \
+    && ok "install.html's table lists \$CFG/learner/$f" \
+    || ko "install.html's table lists \$CFG/learner/$f"
+done
+
+# On a feature this privacy-sensitive (Pilot reads every prompt typed), the page
+# covering data and uninstall must say so, name where its data lives, and say
+# how to purge it — not leave a reader to infer it from the quiz's own section.
+grep -qF 'id="pilot"' "$SITE_SAFETY" \
+  && ok "safety.html covers Pilot's data" \
+  || ko "safety.html covers Pilot's data"
+grep -qF 'pilot-evidence.md' "$SITE_SAFETY" \
+  && ok "safety.html names where Pilot's data lives" \
+  || ko "safety.html names where Pilot's data lives"
+grep -qF 'pilot forget' "$SITE_SAFETY" \
+  && ok "safety.html points at pilot forget to purge kept quotes" \
+  || ko "safety.html points at pilot forget to purge kept quotes"
 
 grep -qF -- '--project' "$SITE_SAFETY" \
   && ok "safety.html documents the legacy cleanup flag" \
@@ -2117,9 +3189,17 @@ grep -qiF 'copyleft' "$RM" \
 # messages, so scanning itself could never pass, and it is neither shipped nor
 # documentation. design/ is excluded too: those plans record what was decided at
 # the time, and rewriting them would falsify the record.
-LIC_SCAN="README.md docs/ hooks/learner-config.sh hooks/learner-onboard.sh
-hooks/learner-record-edit.sh hooks/learner-quiz.sh hooks/learner-cleanup.sh
-hooks/learner-update-check.sh install.sh uninstall.sh bootstrap.sh
+#
+# HOOK_SH is derived from hooks/*.sh rather than named one by one: a
+# hand-maintained list here covered only the original six learner-*.sh hooks
+# and silently stopped scanning coach-gate.sh, coach-watch.sh and the three
+# pilot-*.sh hooks once those shipped — the licence and SPDX guards below
+# never actually looked at the files this branch added. A new hook needs no
+# edit to either list that follows.
+HOOK_SH=$(cd "$ROOT/hooks" && ls -- *.sh | sort)
+LIC_SCAN="README.md docs/"
+for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN hooks/$hf"; done
+LIC_SCAN="$LIC_SCAN install.sh uninstall.sh bootstrap.sh
 Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh
 packaging/apt-repo/assemble-site.sh"
 # shellcheck disable=SC2086  # word splitting is how the path list is passed
@@ -2132,10 +3212,11 @@ fi
 # install.sh copies the hooks into the user's config directory, so they leave
 # this repository and land somewhere with no LICENSE beside them. A one-line
 # SPDX tag is what tells a reader over there what they are holding.
-for f in hooks/learner-config.sh hooks/learner-onboard.sh hooks/learner-record-edit.sh \
-         hooks/learner-quiz.sh hooks/learner-cleanup.sh hooks/learner-update-check.sh \
-         install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb \
-         scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh; do
+SPDX_SCAN=""
+for hf in $HOOK_SH; do SPDX_SCAN="$SPDX_SCAN hooks/$hf"; done
+SPDX_SCAN="$SPDX_SCAN install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb
+scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh"
+for f in $SPDX_SCAN; do
   grep -qF 'SPDX-License-Identifier: GPL-3.0-or-later' "$ROOT/$f" \
     && ok "$f carries an SPDX licence tag" \
     || ko "$f carries an SPDX licence tag"
@@ -2311,6 +3392,12 @@ jq -e . "$PLUGIN_HOOKS" >/dev/null 2>&1 \
   && ok "plugin.json names the plugin learner" \
   || ko "plugin.json names the plugin learner"
 
+# Two skills ship under this plugin now; the description should not describe
+# only the older one.
+jq -r '.description' "$PLUGIN_JSON" | grep -qi 'pilot\|delegat' \
+  && ok "plugin.json's description mentions the pilot skill, not just the quiz loop" \
+  || ko "plugin.json's description mentions the pilot skill, not just the quiz loop"
+
 [ "$(jq -r '.plugins[0].name' "$MARKETPLACE_JSON")" = "learner" ] \
   && [ "$(jq -r '.plugins[0].source' "$MARKETPLACE_JSON")" = "./" ] \
   && ok "marketplace.json lists learner with source ./" \
@@ -2332,10 +3419,10 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "5" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "5" ]; } \
-  && ok "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 5 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "8" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "8" ]; } \
+  && ok "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -2882,6 +3969,55 @@ printf '%s' "$out2" | grep -q 'the watcher has stopped' \
   || ko "polls-per-period guard clamps to 1 (got '$out2')"
 echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
+# The writing axis is only exact if the watcher's own measurement outlives the
+# session. Its TMPDIR state does not: learner-cleanup.sh deletes it at the same
+# SessionEnd that pilot-record.sh runs at, in parallel.
+CW_TMP="$WORK/coach-devlines"
+rm -rf "$CW_TMP"; mkdir -p "$CW_TMP/cfg/learner" "$CW_TMP/repo"
+git -C "$CW_TMP/repo" init -q
+printf 'a\nb\nc\n' > "$CW_TMP/repo/f.txt"
+git -C "$CW_TMP/repo" add f.txt
+git -C "$CW_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
+printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW_TMP/cfg/learner.json"
+printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
+(cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
+  sh "$ROOT/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
+if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
+   && grep -q '^CW1 5$' "$CW_TMP/cfg/learner/pilot-devlines"; then
+  ok "coach-watch persists the dev's line count for the writing axis"
+else
+  ko "coach-watch persists the dev's line count for the writing axis"
+fi
+
+# The tally must be added-only, not added-plus-removed: coach_delta (which
+# drives the console line above, correctly) counts both sides of a hunk, but
+# rubric.md's writing axis compares dev_lines against cl_lines, and cl_lines
+# (hooks/pilot-record.sh) counts added lines only. Persisting the +/- count
+# here would let an ordinary edit-in-place count twice and a pure deletion
+# count as writing at all. Two cycles: the first (no prior baseline for the
+# file) establishes one, unable by itself to discriminate the two counts —
+# the second cycle edits one line in place (c -> C, one add, one remove) and
+# drops another (z, a pure removal) against that baseline, so the two counts
+# genuinely diverge (+/- total: 3; added-only: 1) and only the added-only
+# count may appear in what gets persisted for that second cycle.
+CW2_TMP="$WORK/coach-devlines-added-only"
+rm -rf "$CW2_TMP"; mkdir -p "$CW2_TMP/cfg/learner" "$CW2_TMP/repo"
+git -C "$CW2_TMP/repo" init -q
+printf 'a\nb\nc\nd\ne\n' > "$CW2_TMP/repo/f.txt"
+git -C "$CW2_TMP/repo" add f.txt
+git -C "$CW2_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
+printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW2_TMP/cfg/learner.json"
+printf 'a\nb\nc\nd\ne\nz\n' > "$CW2_TMP/repo/f.txt"
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$ROOT/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+printf 'a\nb\nC\nd\ne\n' > "$CW2_TMP/repo/f.txt"
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$ROOT/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+CW2_LAST=$(grep '^CW2 ' "$CW2_TMP/cfg/learner/pilot-devlines" 2>/dev/null | tail -1)
+[ "$CW2_LAST" = "CW2 1" ] \
+  && ok "coach-watch's writing tally counts only added lines, never the removed side of an edit or a pure deletion" \
+  || ko "coach-watch's writing tally counts only added lines (got: $CW2_LAST)"
+
 # --- coach arming and cleanup ----------------------------------------------
 onboard() { printf '{"session_id":"%s"}' "$1" | sh "$ONB"; }
 
@@ -2924,13 +4060,15 @@ touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
       "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
       "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
       "$TMPDIR/claude-learner-${SID_X}.coach-last" \
-      "$TMPDIR/claude-learner-${SID_X}.edits"
+      "$TMPDIR/claude-learner-${SID_X}.edits" \
+      "$TMPDIR/claude-learner-${SID_X}.pilot-nudged"
 printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
 { [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
-  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ]; } \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.pilot-nudged" ]; } \
   && ok "cleanup removes the coach scratch files" || ko "cleanup removes the coach scratch files"
 
 # Both install paths must be wired, or half the users get half the feature.
@@ -2947,6 +4085,71 @@ grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
 grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
+
+# --- pilot wiring -------------------------------------------------------------
+# Wiring drift is the failure mode that silently disables a whole feature, so
+# assert both manifests hold the same three, and the timeout that the
+# SessionEnd budget depends on.
+for H in pilot-record pilot-brief pilot-nudge; do
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+    && ok "hooks.json wires $H" || ko "hooks.json wires $H"
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/settings.snippet.json" >/dev/null \
+    && ok "settings.snippet.json wires $H" || ko "settings.snippet.json wires $H"
+done
+
+# SessionEnd hooks share 1.5s unless the wired timeout raises the budget.
+# pilot-record.sh reads a whole transcript; at the default it would be killed.
+jq -e '.hooks.SessionEnd[].hooks[] | select(.command | test("pilot-record")) | .timeout >= 15' \
+  "$ROOT/hooks/hooks.json" >/dev/null \
+  && ok "pilot-record is wired with a raised SessionEnd budget" \
+  || ko "pilot-record is wired with a raised SessionEnd budget"
+
+# UserPromptSubmit is a new event for this repo; a typo in the key is silent.
+jq -e '.hooks.UserPromptSubmit | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+  && ok "hooks.json declares the UserPromptSubmit event" \
+  || ko "hooks.json declares the UserPromptSubmit event"
+
+# Every hook is named in uninstall.sh's global removal list — one loop over
+# HOOK_SH (already derived above for the licence guards) rather than a
+# hand-named check per script. Three literal checks used to live here and at
+# uninstall.sh's other coach-gate.sh/coach-watch.sh assertion (one hand-named
+# entry per script, added one at a time): that is the exact defect this task
+# closes, relocated into the test suite — a twelfth hook could ship, get
+# copied by install.sh and wired in both manifests, and never be added here,
+# and the suite would stay green while the file survived every uninstall.
+#
+# Only the GLOBAL list ($CFG_DIR/hooks/...) is asserted, deliberately not the
+# legacy --project list: that list is frozen on purpose (see its own comment)
+# and does not name every current hook — learner-update-check.sh postdates
+# that layout and never belonged in it, so a "named in both lists" assertion
+# would be false about a file that is correctly absent.
+for hf in $HOOK_SH; do
+  grep -qF '$CFG_DIR/hooks/'"$hf" "$ROOT/uninstall.sh" \
+    && ok "uninstall.sh's global removal list names $hf" \
+    || ko "uninstall.sh's global removal list names $hf"
+done
+
+# Reinstall must not double-wire, and uninstall must leave nothing behind.
+IW="$WORK/install-pilot"
+rm -rf "$IW"; mkdir -p "$IW"
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ "$(jq '[.. | strings] | map(select(test("pilot-record"))) | length' "$IW/settings.json")" = "1" ] \
+  && ok "reinstall does not double-wire pilot-record" \
+  || ko "reinstall does not double-wire pilot-record"
+[ -f "$IW/hooks/pilot-record.sh" ] && [ -f "$IW/hooks/pilot-brief.sh" ] && [ -f "$IW/hooks/pilot-nudge.sh" ] \
+  && ok "install copies all three pilot hook scripts" \
+  || ko "install copies all three pilot hook scripts"
+CLAUDE_CONFIG_DIR="$IW" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
+if [ -f "$IW/settings.json" ] \
+   && jq -e '[.. | strings] | map(select(test("pilot-"))) | length > 0' "$IW/settings.json" >/dev/null; then
+  ko "uninstall strips the pilot wiring"
+else
+  ok "uninstall strips the pilot wiring"
+fi
+[ ! -f "$IW/hooks/pilot-record.sh" ] && [ ! -f "$IW/hooks/pilot-brief.sh" ] && [ ! -f "$IW/hooks/pilot-nudge.sh" ] \
+  && ok "uninstall removes the pilot scripts" \
+  || ko "uninstall removes the pilot scripts"
 
 # --- coach off stops a running watcher (Finding 3) --------------------------
 # The real loop used to read CFG and check learner_coach_active exactly once,

@@ -3,7 +3,8 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-onboard.sh\"", "timeout": 10 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-onboard.sh\"", "timeout": 10 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pilot-brief.sh\"", "timeout": 10 }
         ]
       }
     ],
@@ -33,7 +34,15 @@
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-cleanup.sh\"", "timeout": 10 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-cleanup.sh\"", "timeout": 10 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pilot-record.sh\"", "timeout": 15 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pilot-nudge.sh\"", "timeout": 10 }
         ]
       }
     ]

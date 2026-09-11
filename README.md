@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Eight POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
+Eleven POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
 files, and `Stop` blocks once per turn to ask one question —
 `code`, `architecture`, or `fill` (Claude cuts `// LEARNER-TODO` holes in a real function for
@@ -63,6 +63,34 @@ Coach mode needs an interactive Claude Code session: the watcher runs as a `Moni
 does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still
 applies everywhere, since it is an ordinary hook.
 
+## Pilot — a delegation score, read from the transcript
+
+Pilot is a separate, **opt-in** skill that scores how much of the thinking on a task you
+handed to Claude versus did yourself — direction, verification, contradiction and how much
+of the code you actually wrote — rolled into a rolling index and a profile you watch move
+over weeks. It never asks you a question to produce that score: everything comes from the
+sessions you already had, read straight from the transcript, never from a quiz written to
+test you.
+
+```
+learner pilot on
+```
+
+Pilot is **off by default** (`pilotEnabled: false`) and fully **local**: it reads every
+prompt you have typed, in every repository — including ones where the automatic quiz above
+is switched off — and that is not something a tool should do without being asked first. The
+transcript itself is referenced by path and never copied.
+
+- **Contained.** `disabledPaths` is honoured for Pilot too — a repository listed there is
+  never read, exactly as it already isn't for the quiz.
+- **Reversible.** The quotes kept as evidence are capped at 200 characters each, and
+  `learner pilot forget --all` purges every one of them, any time.
+
+Pilot measures a habit, not you: **it is not a measure of intelligence and not a measure of
+cognitive health.** It scores how much thinking gets handed over, nothing else — full
+reference, including the four axes, the weekly brief and the privacy paragraph, on
+[the site](https://tykok.github.io/learning-with-claude/usage.html#pilot).
+
 ## Requirements
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
@@ -94,7 +122,7 @@ claude plugin marketplace add Tykok/learning-with-claude
 claude plugin install learner
 ```
 
-Installs and enables the skill and its hooks natively — no `~/.claude` file copying, no
+Installs and enables the skills and their hooks natively — no `~/.claude` file copying, no
 `learner-install` step. Claude Code manages updates itself (`/plugin update learner`); run
 `learner update` and it will tell you the same thing rather than trying to curl a second,
 traditional install on top. Already installed via curl, clone, Homebrew, or apt? Run
@@ -168,7 +196,7 @@ cd learning-with-claude
 - `--dry-run` — print what would be written; write nothing.
 - `--yes` (`-y`) — never prompt; fill in anything not passed with its default.
 
-The installer is idempotent: re-running re-copies the hooks and the skill and re-merges the
+The installer is idempotent: re-running re-copies the hooks and the skills and re-merges the
 hook wiring into `settings.json` without duplicating entries, and it never overwrites an
 existing config. **It writes nothing into any repository** — every path it touches sits under
 `$CLAUDE_CONFIG_DIR` (default `~/.claude`), and every hook command it wires into
@@ -223,7 +251,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `hooks/*.sh` glob covers all eight shipped hook files, including `learner-config.sh`. CI
+The `hooks/*.sh` glob covers all eleven shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step.

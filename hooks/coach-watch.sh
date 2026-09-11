@@ -116,6 +116,31 @@ coach_delta() {
   printf '%s' "$_cdn"
 }
 
+# Added-only lines changed since the baseline, for one repo-relative path —
+# Pilot's writing-axis tally, deliberately narrower than coach_delta above.
+# coach_delta counts BOTH sides of a hunk (`^[+-]`), which is right for
+# coach's own purpose (how much of this file changed, to decide whether a
+# review is due) but wrong as a count of what the dev WROTE: a modified line
+# counts twice under it, and a pure deletion counts as writing at all. Pilot
+# persists this count instead, so an ordinary refactor under coach mode does
+# not inflate dev_lines against rubric.md's writing thresholds.
+coach_delta_added() {
+  _cwr="$1"
+  _cwa="$ROOT/$_cwr"
+  _cwb="$BASEDIR/$(coach_key "$_cwr")"
+  if [ -f "$_cwb" ] && [ -f "$_cwa" ]; then
+    _cwn=$(diff -u "$_cwb" "$_cwa" 2>/dev/null | grep -Ec '^[+]([^+-]|$)')
+  elif [ -f "$_cwa" ]; then
+    # No baseline: the whole file is new, so the whole file is added.
+    _cwn=$(grep -c '' "$_cwa" 2>/dev/null)
+  else
+    # Baseline only: the file was deleted. Deleting code is not writing it.
+    _cwn=0
+  fi
+  case "$_cwn" in ''|*[!0-9]*) _cwn=0 ;; esac
+  printf '%s' "$_cwn"
+}
+
 # "<delta>\t<rel>" per file with a non-zero delta.
 coach_material() {
   coach_candidates | while IFS= read -r _cmr; do
@@ -266,6 +291,14 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
 
   _ccn=$(printf '%s\n' "$_ccm" | grep -c '')
   _ccl=$(printf '%s\n' "$_ccm" | awk -F'\t' '{s += $1} END {print s + 0}')
+  # Pilot's tally: added-only lines, recomputed per file with coach_delta_added
+  # rather than reused from _ccl above — _ccl stays exactly what it was, for
+  # coach's own display and trigger thresholds, which is correct there.
+  _ccw=$(printf '%s\n' "$_ccm" | cut -f2 | while IFS= read -r _ccwf; do
+    [ -n "$_ccwf" ] || continue
+    coach_delta_added "$_ccwf"
+    printf '\n'
+  done | awk '{s += $1} END {print s + 0}')
   _ccnow=$(date +%s)
   _cclast=$(coach_read_int "$LASTF" 0)
   _ccelapsed=$(( (_ccnow - _cclast) / 60 ))
@@ -281,6 +314,21 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
   fi
 
   _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
+
+  # Persist what this cycle measured, durably. pilot-record.sh needs it at
+  # SessionEnd, and it cannot read this watcher's TMPDIR state: hooks for one
+  # event run in parallel and learner-cleanup.sh deletes those files at the
+  # same event. Best-effort — a coach cycle must never fail over Pilot's
+  # bookkeeping, so every failure here is swallowed.
+  #
+  # $_ccw, not $_ccl: the writing axis compares against cl_lines, which
+  # `hooks/pilot-record.sh` counts as added lines only (and so does its git-
+  # estimate fallback) — persisting $_ccl's added-AND-removed count here would
+  # compare two different units and double-tax an ordinary edited line.
+  if pilot_enabled "$CFG" 2>/dev/null; then
+    mkdir -p "$LEARNER_CFG_DIR/learner" 2>/dev/null \
+      && printf '%s %s\n' "$SID" "$_ccw" >> "$LEARNER_CFG_DIR/learner/pilot-devlines" 2>/dev/null
+  fi
 
   # Same contract as the quiz trigger: parameters and a pointer to the protocol,
   # never the protocol itself. Rendered in the console, so it stays one screen.

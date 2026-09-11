@@ -17,10 +17,12 @@
 #   learner_int RAW FALLBACK FLOOR  positive integer from config, or FALLBACK
 #   learner_coach_active CFG ROOT   true when the coach regime is on here
 #   learner_coach_work_minutes N CFG  length in minutes of work block N (1-based)
+#   pilot_enabled CFG               true when Pilot may read this session
+#   pilot_int RAW FALLBACK FLOOR    positive integer from config, or FALLBACK
 
 LEARNER_CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachCadence":"pomodoro","coachWorkMinutes":25,"coachWorkGrowthMinutes":5,"coachWorkMaxMinutes":45,"coachChallengeMinutes":8,"coachIdleCycles":2,"coachPollSeconds":45,"coachLines":40,"coachFiles":3,"coachEveryMinutes":0,"coachCooldownMinutes":5}'
+LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachCadence":"pomodoro","coachWorkMinutes":25,"coachWorkGrowthMinutes":5,"coachWorkMaxMinutes":45,"coachChallengeMinutes":8,"coachIdleCycles":2,"coachPollSeconds":45,"coachLines":40,"coachFiles":3,"coachEveryMinutes":0,"coachCooldownMinutes":5,"pilotEnabled":false,"pilotCadenceDays":7,"pilotJudgeIntervalHours":24,"pilotNudge":true}'
 
 # A JSON object from a file, or {} when the file is missing, unreadable or not an object.
 _learner_read_json() {
@@ -190,6 +192,26 @@ learner_int() {
   while [ ${#_lir} -gt 1 ] && [ "${_lir#0}" != "$_lir" ]; do _lir=${_lir#0}; done
   [ "$_lir" -lt "$_lil" ] && { printf '%s' "$_lif"; return 0; }
   printf '%s' "$_lir"
+}
+
+# Pilot's master switch. Compared to the literal string "true" rather than
+# tested for truthiness: this switch gates reading every prompt the dev has
+# typed, so a config typo must fail closed, not open. This is a text
+# comparison, not a JSON-type check: jq -r renders a JSON string the same way
+# it renders a JSON boolean, so {"pilotEnabled":"true"} (a string) enables
+# Pilot exactly like {"pilotEnabled":true} (a boolean) does. Only a value
+# whose raw text is anything other than "true" is rejected.
+pilot_enabled() {
+  _lpe="$1"
+  command -v jq >/dev/null 2>&1 || return 1
+  [ "$(printf '%s' "$_lpe" | jq -r '.pilotEnabled')" = "true" ] || return 1
+  return 0
+}
+
+# pilot_int RAW FALLBACK FLOOR — same contract as learner_int. Kept under its
+# own name so Pilot's cadence call sites do not read as coach's.
+pilot_int() {
+  learner_int "$@"
 }
 
 # The coach regime is the learner regime plus one switch: everything that

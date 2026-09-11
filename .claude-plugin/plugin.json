@@ -1,7 +1,7 @@
 {
   "name": "learner",
-  "description": "Turns Claude Code into a learning loop: quizzes you on your own diffs, tracks weak spots per developer.",
-  "version": "0.2.0",
+  "description": "Turns Claude Code into a learning loop: quizzes you on your own diffs, tracks weak spots per developer, and (opt-in) scores how much of the thinking on a task you delegate versus do yourself.",
+  "version": "0.3.0",
   "author": {
     "name": "Tykok",
     "url": "https://github.com/Tykok"

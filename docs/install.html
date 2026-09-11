@@ -85,7 +85,7 @@
 <pre><code>claude plugin marketplace add Tykok/learning-with-claude
 claude plugin install learner</code></pre>
 
-  <p>Installs and enables the skill and its hooks natively — no <code>~/.claude</code> file
+  <p>Installs and enables the skills and their hooks natively — no <code>~/.claude</code> file
   copying, no <code>learner-install</code> step. Claude Code manages updates itself
   (<code>/plugin update learner</code>); run <code>learner update</code> and it will tell you
   the same thing rather than trying to curl a second, traditional install on top. Already
@@ -165,7 +165,7 @@ cd learning-with-claude
     not passed.</li>
   </ul>
 
-  <p>The installer is idempotent: re-running re-copies the hooks and the skill and
+  <p>The installer is idempotent: re-running re-copies the hooks and the skills and
   re-merges the hook wiring without duplicating entries, and it never overwrites a config
   you already have. <strong>It writes nothing into any repository.</strong> Every path it
   touches is under <code>$CLAUDE_CONFIG_DIR</code> (default <code>~/.claude</code>), and
@@ -220,6 +220,8 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>update.md</code>, <code>data.md</code></td></tr>
       <tr><td><code>$CFG/skills/learner/VERSION</code></td><td>The installed version string; re-copied unconditionally on every install/re-install, so it always matches what's on disk</td></tr>
       <tr><td><code>$CFG/skills/learner/INSTALL_ORIGIN</code></td><td>How this install got here — <code>curl</code>, <code>brew</code> or <code>apt</code>; re-stamped on every install/re-install</td></tr>
+      <tr><td><code>$CFG/skills/pilot/SKILL.md</code></td><td>The <code>pilot</code> skill: dispatch, the four axes, the privacy paragraph</td></tr>
+      <tr><td><code>$CFG/skills/pilot/references/</code></td><td>The protocols: <code>rubric.md</code>, <code>score.md</code>, <code>brief.md</code>, <code>dashboard.md</code>, <code>mechanisms.md</code></td></tr>
       <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced-only, never run on its own</td></tr>
       <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
       <tr><td><code>$CFG/hooks/learner-update-check.sh</code></td><td><code>SessionStart</code> (second entry) — notifies once a day when a newer version is out; no <code>jq</code> dependency</td></tr>
@@ -228,24 +230,36 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/learner-quiz.sh</code></td><td><code>Stop</code> — the quiz trigger, and the <code>LEARNER-TODO</code> guardrail</td></tr>
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/hooks/coach-watch.sh</code></td><td>No static entry — armed as a <code>Monitor</code> by <code>learner-onboard.sh</code> at session start, when coach mode is on; runs the review cadence</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-record.sh</code></td><td><code>SessionEnd</code> (second entry, <code>timeout</code> 15) — turns one finished transcript into one line of delegation counters, when Pilot is enabled</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> (third entry) — decides whether a scoring pass, a weekly brief, or neither is due</td></tr>
+      <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
       <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
       <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
       <tr><td><code>$CFG/learner/export.json</code></td><td>Which Notion database <code>learner export</code> pushes to, and when it last ran. Created on the first export, not by the installer</td></tr>
+      <tr><td><code>$CFG/learner/pilot-queue</code></td><td>One line per finished session awaiting a scoring pass, written by <code>pilot-record.sh</code>; truncated once drained. Only when Pilot is enabled</td></tr>
+      <tr><td><code>$CFG/learner/pilot.md</code></td><td>The Pilot dashboard: <code>Sessions</code>, <code>Index</code> and <code>Manoeuvres</code> blocks. Written by a scoring subagent, never by the installer</td></tr>
+      <tr><td><code>$CFG/learner/pilot-evidence.md</code></td><td>The quotes behind each numeric score, capped at 200 characters each and fully purgeable with <code>pilot forget</code></td></tr>
+      <tr><td><code>$CFG/learner/pilot-stamps</code></td><td><code>score=</code>/<code>brief=</code>/<code>declined=</code> timestamps that pace the scoring pass and the weekly brief</td></tr>
+      <tr><td><code>$CFG/learner/pilot-devlines</code></td><td>Per-session line tallies from the coach watcher, consumed and truncated by the scoring pass</td></tr>
     </tbody>
   </table>
   </div>
 
-  <p>Eight hook files ship and six are wired, into <code>SessionStart</code> (twice —
-  <code>learner-onboard.sh</code> and <code>learner-update-check.sh</code> both fire
-  there), <code>PreToolUse</code> (<code>coach-gate.sh</code>),
-  <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>. Two ship
-  unwired: <code>learner-config.sh</code> is sourced-only, and Claude Code never
-  invokes it directly; <code>coach-watch.sh</code> is never a static entry either —
+  <p>Eleven hook files ship and nine are wired, into <code>SessionStart</code>
+  (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
+  and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
+  (<code>coach-gate.sh</code>), <code>PostToolUse</code>, <code>Stop</code>,
+  <code>SessionEnd</code> (twice — <code>learner-cleanup.sh</code> and
+  <code>pilot-record.sh</code>, the latter at a raised <code>timeout</code> of 15
+  since it reads a whole transcript) and <code>UserPromptSubmit</code>
+  (<code>pilot-nudge.sh</code>). Two ship unwired: <code>learner-config.sh</code> is
+  sourced-only, and Claude Code never invokes it directly; and
+  <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
-  only once coach mode is on. Six of the other seven source
+  only once coach mode is on. Nine of the other ten source
   <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
   which needs none of it.</p>
 
@@ -288,7 +302,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>One skill and eight POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and eleven POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

@@ -27,20 +27,15 @@ language the dev is using in this conversation. There is no language setting.
 | `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | `references/update.md` |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
+| `pilot …` | Invoke the `pilot` skill and hand it the rest of the line | — |
 | `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | — |
 | *(empty)* | Same as `config` with no pairs: show current settings | this file, § Config |
 
 A bare config instruction with no subcommand (`level=S`, `disable`) is `config` shorthand.
 
-**Invoked by the Stop hook.** The hook blocks with a trigger line of the form
-`🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`.
-When you see it, read `references/hook-quiz.md` and follow it with those values. Do not
-treat the trigger as the protocol — it is only parameters.
+**Invoked by the Stop hook.** The hook blocks with a trigger line of the form `🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`. When you see it, read `references/hook-quiz.md` and follow it with those values. Do not treat the trigger as the protocol — it is only parameters.
 
-**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with
-`🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it,
-read `references/coach.md` and follow it with those values. As with the quiz trigger, the line is
-parameters, not the protocol.
+**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with `🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it, read `references/coach.md` and follow it with those values. As with the quiz trigger, the line is parameters, not the protocol.
 
 ## Levels
 
@@ -83,6 +78,10 @@ Two layers, later wins key by key:
 | `coachFiles` | int ≥ 1 | `3` | Changed files that trigger one — `threshold` only |
 | `coachEveryMinutes` | int ≥ 0 | `0` | Elapsed-time trigger, `0` = off — `threshold` only |
 | `coachCooldownMinutes` | int ≥ 0 | `5` | Floor between two reviews — `threshold` only |
+| `pilotEnabled` | bool | `false` | Master switch for the `pilot` skill; global only, never per-repo |
+| `pilotCadenceDays` | int ≥ 1 | `7` | Days between weekly briefs |
+| `pilotJudgeIntervalHours` | int ≥ 1 | `24` | Hours between scoring-queue drains |
+| `pilotNudge` | bool | `true` | Whether `pilot-nudge.sh` reminds on a live `direction` manoeuvre |
 
 Styles: `code` = what a changed function does; `architecture` (alias `archi`) = which
 module/layer it lives in and why; `fill` = interactive fill-in exercise in the real
@@ -96,9 +95,9 @@ integer at or above the floor in the table above), write it, then confirm with
 `jq -e . <file> >/dev/null && echo OK`. Reject invalid values and re-ask instead of
 writing them. `coachWorkMaxMinutes` below `coachWorkMinutes` clamps to `coachWorkMinutes`
 rather than being rejected — the intent of that pair is unambiguous. `config` alone edits
-the global file; `config project …`, `off` and `on`
-edit `<repo>/.claude/learner.local.json` and add that path to the repo's `.gitignore`
-if it is missing. Those are the only writes into a repo.
+the global file; `config project …`, `off` and `on` edit `<repo>/.claude/learner.local.json`
+and add that path to the repo's `.gitignore` if it is missing. Those are the only writes
+into a repo.
 
 ## Status
 
@@ -107,14 +106,15 @@ Read-only: no quiz, no config write, no data-file update.
 1. Level and version: `jq -r '.level // "not set"' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json"`
    (a project override wins if present), and
    `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/learner/VERSION" 2>/dev/null` — unless this
-   skill's own base directory (visible in your context when it loaded) contains `/plugins/`,
+   skill's base directory (visible in context when it loaded) contains `/plugins/`,
    in which case report the version as `plugin-managed` instead: a plugin install never
-   creates that file, and Claude Code's own `/plugin` command is the source of truth for which
-   version is installed.
+   creates that file, and Claude Code's own `/plugin` command is the source of truth here.
 2. Open weak spots: read the `To improve` sections of the recap (see
    `references/data.md` for paths). If nothing is recorded, say so and suggest `learner quiz`.
 3. Print one line for the level and version, then one line for coach status — on/off, the
    current cycle if a coach session is running, and the delegated globs read from
-   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then a handful of
-   bullets: broad competency themes grouped by domain, skipping anything already under
-   `Mastered`. Summarise; never dump the file. No tables, no history.
+   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then, if
+   `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
+   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a
+   handful of bullets: broad competency themes grouped by domain, skipping anything already
+   under `Mastered`. Summarise; never dump the file. No tables, no history.
