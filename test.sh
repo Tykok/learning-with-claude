@@ -685,6 +685,39 @@ pn_reset; pn_live direction "2099-01-01"
   || ko "pilot-nudge stays silent on a second vague prompt in the same session"
 rm -f "${TMPDIR:-/tmp}/claude-learner-CAP1.pilot-nudged"
 
+# --- pilot brief protocol and mechanisms corpus -----------------------------
+# The nudge parses this line by field. If the brief writes a different shape,
+# the manoeuvre is silently inert — the worst kind of broken, because the
+# dashboard still says a manoeuvre is live.
+grep -q '^- live: [a-z]* | .* | until [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$' \
+  skills/pilot/references/brief.md \
+  && ok "brief.md states the manoeuvre line format the nudge parses" \
+  || ko "brief.md states the manoeuvre line format the nudge parses"
+
+# Round-trip the documented example through the nudge's own parser.
+BR_TMP="$WORK/brief-format"; rm -rf "$BR_TMP"; mkdir -p "$BR_TMP/cfg/learner" "$BR_TMP/wd"
+printf '{"pilotEnabled":true}' > "$BR_TMP/cfg/learner.json"
+grep -m1 '^- live: ' skills/pilot/references/brief.md \
+  | sed 's/until [0-9-]*/until 2099-01-01/' > "$BR_TMP/cfg/learner/pilot.md"
+printf '{"session_id":"R1","prompt":"fix it","cwd":"%s"}' "$BR_TMP/wd" \
+  | (cd "$BR_TMP/wd" && CLAUDE_CONFIG_DIR="$BR_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") \
+  | jq -e '.hookSpecificOutput.additionalContext | test("axis: direction")' >/dev/null \
+  && ok "the manoeuvre line documented in brief.md parses in pilot-nudge.sh" \
+  || ko "the manoeuvre line documented in brief.md parses in pilot-nudge.sh"
+
+# One mechanism per brief, and the numbers cited rather than invented.
+grep -q '17%' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md cites the recall figure it argues from" \
+  || ko "mechanisms.md cites the recall figure it argues from"
+grep -q 'media.mit.edu' skills/pilot/references/mechanisms.md \
+  && ok "mechanisms.md links its source" || ko "mechanisms.md links its source"
+grep -qi 'one mechanism' skills/pilot/references/brief.md \
+  && ok "brief.md limits a brief to one mechanism" \
+  || ko "brief.md limits a brief to one mechanism"
+grep -qi 'not a failure\|deferral' skills/pilot/references/brief.md \
+  && ok "brief.md treats a deferral as a deferral" \
+  || ko "brief.md treats a deferral as a deferral"
+
 # --- learner_excluded -------------------------------------------------------
 echo '{"level":"C","untrackGlobs":["*.md","*.json"]}' > "$GCFG"
 rm -f "$PCFG"
