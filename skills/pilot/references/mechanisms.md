@@ -15,10 +15,9 @@ than no corpus, because the developer it is quoted at can and will check the lin
 ## Cognitive debt
 
 **What it does:** MIT Media Lab's *Your Brain on ChatGPT: Accumulation of Cognitive Debt*
-study followed 54 subjects writing essays under three conditions (LLM-only, search-engine,
-brain-only) while recording EEG. The LLM-only group showed the weakest neural connectivity
-of the three, and at 24 hours recalled ~17% of their own essay's content, against ~46% for
-the brain-only group — the debt is the gap between producing text and retaining it.
+study measured 54 subjects with EEG: LLM writers showed the weakest neural connectivity,
+and recalled ~17% of their own text at 24h, against ~46% unaided. The debt is the gap
+between producing text and retaining it.
 
 **Observable:** `cl_lines` far above `dev_lines` on the `writing` axis.
 
@@ -30,10 +29,9 @@ involved at all.
 
 ## Order of entry
 
-**What it does:** The same study, same 54 subjects: participants who wrote unaided first
-and only brought in the LLM afterward (for a revision pass) retained the material better
-than participants who opened the LLM first on that same task. The order tools enter a task
-in matters as much as whether they enter it at all.
+**What it does:** The same study also found that writing unaided first, then bringing in
+the LLM, led to better retention than opening the LLM first. Order of entry matters as
+much as whether the tool is used at all.
 
 **Observable:** when in the session Claude was opened relative to the dev's own first pass
 at the problem — not a counter this repo currently records per-prompt, so this one is read
@@ -43,7 +41,7 @@ Claude, or did the first prompt open cold on the problem).
 **Counter-move:** brain-first — never open Claude on a problem you have not first tried to
 state or sketch yourself, even badly.
 
-**Source:** [MIT Media Lab, *Your Brain on ChatGPT*](https://www.media.mit.edu/publications/your-brain-on-chatgpt/) — same study as cognitive debt, above.
+**Source:** [MIT Media Lab, *Your Brain on ChatGPT*](https://www.media.mit.edu/publications/your-brain-on-chatgpt/) — same study as cognitive debt, above; only the order-of-entry finding itself is stated here, not the session design behind it.
 
 ## Metacognitive laziness
 

@@ -22,7 +22,12 @@ Read `pilot.md`'s `Manoeuvres` block before doing anything else.
   movement 4 negotiate a new one.
 - **A `- live:` line present, not yet expired** — never add a second one (see House rules).
   Run movements 1–3 if there is anything worth saying; skip movement 4, and say the current
-  manoeuvre is still running until its date instead of proposing a new one.
+  manoeuvre is still running until its date instead of proposing a new one. A check-in with
+  nothing worth saying is still a completed brief, not a no-op: stamp it exactly as "A
+  completed brief resets the streak" describes below (`brief=<epoch seconds>` and
+  `declined=0`) rather than leaving it due again at the next session start. A brief that
+  keeps coming back because it had nothing to report is the mildest form of the nagging
+  these house rules exist to forbid.
 
 Retiring a manoeuvre always means **editing that line in place**, never leaving it and
 appending a new `- live:` line below it — see why in the format section below.
