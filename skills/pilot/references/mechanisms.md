@@ -21,9 +21,7 @@ between producing text and retaining it.
 
 **Observable:** `cl_lines` far above `dev_lines` on the `writing` axis.
 
-**Counter-move:** write the first draft yourself, then let Claude critique it — the debt
-described above is specifically about who wrote first, not about whether Claude is
-involved at all.
+**Counter-move:** write the first draft yourself, then let Claude critique it.
 
 **Source:** [MIT Media Lab, *Your Brain on ChatGPT*](https://www.media.mit.edu/publications/your-brain-on-chatgpt/) · [brainonllm.com](https://www.brainonllm.com/) · [a documented discussion of the study's limitations](https://www.transparencycoalition.ai/news/learn-about-the-this-is-your-brain-on-chatgpt-study-results-limitations-risks-and-more)
 
