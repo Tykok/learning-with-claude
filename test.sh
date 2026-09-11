@@ -1499,10 +1499,87 @@ grep -qi 'never counted as 0\|not a zero\|never floored' "$ROOT/skills/pilot/ref
 
 # Moved here from Task 7: the installer's skill loop must carry the references
 # too, and this is the first task in which any of them exists to be shipped.
+# Derived from disk rather than named one by one (dashboard.md included), so a
+# reference file added or renamed later needs no matching edit to this test —
+# this loop is the deliberate substitute for enumerating them by hand.
 IR="$WORK/install-refs"; rm -rf "$IR"; mkdir -p "$IR"
 CLAUDE_CONFIG_DIR="$IR" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
-[ -f "$IR/skills/pilot/references/rubric.md" ] \
-  && ok "install ships the pilot references" || ko "install ships the pilot references"
+for REF in "$ROOT"/skills/pilot/references/*.md; do
+  REFNAME=$(basename "$REF")
+  [ -f "$IR/skills/pilot/references/$REFNAME" ] \
+    && ok "install ships skills/pilot/references/$REFNAME" \
+    || ko "install ships skills/pilot/references/$REFNAME"
+done
+
+# --- pilot dashboard ----------------------------------------------------------
+# Task 10: dashboard.md is prose, so most of these are greps rather than
+# behavioural tests. The four below are given verbatim by the task brief.
+DASH="$ROOT/skills/pilot/references/dashboard.md"
+
+grep -qi 'not enough data yet' "$DASH" \
+  && ok "dashboard.md refuses to render a thin index" \
+  || ko "dashboard.md refuses to render a thin index"
+grep -q '~' "$DASH" \
+  && ok "dashboard.md explains the estimate marker" \
+  || ko "dashboard.md explains the estimate marker"
+# forget must not silently rewrite the scores: the dev asked to drop the
+# quotes, and a score that quietly vanishes is a different promise.
+grep -qi 'pilot-evidence.md only\|only from .*pilot-evidence\|evidence file only\|delete from .*pilot-evidence.md only' \
+  "$DASH" \
+  && ok "dashboard.md scopes forget to the evidence file" \
+  || ko "dashboard.md scopes forget to the evidence file"
+grep -qi 'say nothing\|silent' "$DASH" \
+  && ok "dashboard.md keeps learner status quiet when pilot is off" \
+  || ko "dashboard.md keeps learner status quiet when pilot is off"
+
+# rubric.md now defines six profiles (Backseat added during implementation
+# for the argues-without-reading vector). dashboard.md special-cases Backseat
+# for its remedy callout rather than restating the whole table, so pin the
+# ONE name it does repeat to rubric.md's own table instead of hand-typing it
+# twice: derive the name from rubric.md's profile rows and require dashboard.md
+# to use that same, actually-current, name. If rubric.md ever renames or drops
+# Backseat, this goes red rather than dashboard.md silently pointing at a
+# profile that no longer exists.
+RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+BACKSEAT_NAME=$(sed -nE 's/^\| [0-9]+ \| `([A-Za-z-]+)` \|.*/\1/p' "$RUBRIC" | grep -ix backseat)
+{ [ -n "$BACKSEAT_NAME" ] && grep -qF "$BACKSEAT_NAME" "$DASH"; } \
+  && ok "dashboard.md's Backseat callout names the profile rubric.md's table actually defines" \
+  || ko "dashboard.md's Backseat callout names the profile rubric.md's table actually defines"
+
+# dashboard.md must defer to rubric.md's arithmetic, not fork a second copy of
+# it: a real structural check, not a phrase match — rubric.md's profile table
+# rows look like "| N | `Name` | rule |"; dashboard.md must contain none of
+# that shape (it names Backseat in prose, never as a re-typed table row).
+if grep -qE '^\| [0-9]+ \| `[A-Za-z-]+` \|' "$DASH"; then
+  ko "dashboard.md does not re-fork rubric.md's profile-table rows"
+else
+  ok "dashboard.md does not re-fork rubric.md's profile-table rows"
+fi
+
+grep -qi 'never render a .-. in a way that reads as a low score\|reads as a low score' "$DASH" \
+  && ok "dashboard.md forbids rendering a dash as a low score" \
+  || ko "dashboard.md forbids rendering a dash as a low score"
+grep -qi 'nearest-looking profile' "$DASH" \
+  && ok "dashboard.md forbids a placeholder profile below the session floor" \
+  || ko "dashboard.md forbids a placeholder profile below the session floor"
+grep -qi 'floors are independent' "$DASH" \
+  && ok "dashboard.md renders each axis's floor independently of the others" \
+  || ko "dashboard.md renders each axis's floor independently of the others"
+grep -qi 'no quote by design' "$DASH" \
+  && ok "dashboard.md tells pilot why apart writing's designed lack of a quote from a missing one" \
+  || ko "dashboard.md tells pilot why apart writing's designed lack of a quote from a missing one"
+grep -qi 'not a silent' "$DASH" \
+  && ok "dashboard.md refuses to default a bare pilot forget to --all" \
+  || ko "dashboard.md refuses to default a bare pilot forget to --all"
+grep -qi 'confirm' "$DASH" \
+  && ok "dashboard.md confirms before pilot forget deletes anything" \
+  || ko "dashboard.md confirms before pilot forget deletes anything"
+grep -qi 'privacy paragraph' "$DASH" \
+  && ok "dashboard.md has pilot on print the privacy paragraph before flipping the switch" \
+  || ko "dashboard.md has pilot on print the privacy paragraph before flipping the switch"
+grep -qi 'pilot forget --all' "$DASH" \
+  && ok "dashboard.md's pilot off points at pilot forget --all to purge kept data" \
+  || ko "dashboard.md's pilot off points at pilot forget --all to purge kept data"
 
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
