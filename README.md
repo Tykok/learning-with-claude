@@ -63,6 +63,31 @@ Coach mode needs an interactive Claude Code session: the watcher runs as a `Moni
 does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still
 applies everywhere, since it is an ordinary hook.
 
+## Pilot — a delegation score, read from the transcript
+
+Pilot is a separate, **opt-in** skill that scores how much of the thinking on a task you
+handed to Claude versus did yourself — direction, verification, contradiction and how much
+of the code you actually wrote — rolled into a rolling index and a profile you watch move
+over weeks. It never asks you a question to produce that score: everything comes from the
+sessions you already had, read straight from the transcript, never from a quiz written to
+test you.
+
+```
+learner pilot on
+```
+
+Pilot is **off by default** (`pilotEnabled: false`) and fully **local**: it reads every
+prompt you have typed, in every repository — including ones where the automatic quiz above
+is switched off — and that is not something a tool should do without being asked first.
+`disabledPaths` is honoured exactly as it is for the quiz, the transcript is referenced by
+path and never copied, and the quotes kept as evidence are capped at 200 characters and
+fully purgeable at any time with `learner pilot forget --all`.
+
+Pilot measures a habit, not you: **it is not a measure of intelligence and not a measure of
+cognitive health.** It scores how much thinking gets handed over, nothing else — full
+reference, including the four axes, the weekly brief and the privacy paragraph, on
+[the site](https://tykok.github.io/learning-with-claude/usage.html#pilot).
+
 ## Requirements
 
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
