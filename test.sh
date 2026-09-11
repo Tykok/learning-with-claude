@@ -1348,12 +1348,16 @@ CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
   && ok "install's derived skill loop copies a skill it has never been told about" \
   || ko "install's derived skill loop copies a skill it has never been told about"
 
-# A skill directory with a SKILL.md and no references/ yet (pilot's own case
-# until a later task writes references/rubric.md and friends) must not break
-# the install.
-[ -d "$IS/skills/pilot/references" ] \
-  && ko "pilot ships no references/ yet (installer should not have invented one)" \
-  || ok "install does not fail or fabricate references/ for a skill that has none yet"
+# pilot now ships references/ (this task writes rubric.md and score.md) — the
+# derived copy loop must carry them, and a skill with no references/ of its own
+# (zz-probe, above) must still not fail, nor have an empty references/ invented
+# for it.
+[ -f "$IS/skills/pilot/references/rubric.md" ] && [ -f "$IS/skills/pilot/references/score.md" ] \
+  && ok "install ships the pilot skill's reference files" \
+  || ko "install ships the pilot skill's reference files"
+[ -d "$IS/skills/zz-probe/references" ] \
+  && ko "a skill with no references/ does not get one fabricated by install" \
+  || ok "install does not fail or fabricate references/ for a skill that has none"
 
 CLAUDE_CONFIG_DIR="$IS" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
 [ ! -d "$IS/skills/pilot" ] \
@@ -1404,6 +1408,37 @@ fi
 grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
   && ok "the pilot skill states that it is opt-in" \
   || ko "the pilot skill states that it is opt-in"
+
+# --- pilot rubric and scorer -------------------------------------------------
+# The reference files are the scorer's whole implementation, so assert the two
+# properties that make the number defensible rather than prose that reads well.
+for A in direction verification contradiction writing; do
+  grep -q "^## $A" "$ROOT/skills/pilot/references/rubric.md" \
+    && ok "rubric.md anchors the $A axis" || ko "rubric.md anchors the $A axis"
+done
+for N in 0 1 2 3 4; do
+  [ "$(grep -c "^$N — " "$ROOT/skills/pilot/references/rubric.md")" -ge 4 ] \
+    && ok "rubric.md defines anchor $N for all four axes" \
+    || ko "rubric.md defines anchor $N for all four axes"
+done
+grep -qi 'quote' "$ROOT/skills/pilot/references/score.md" \
+  && ok "score.md requires a quote behind every score" \
+  || ko "score.md requires a quote behind every score"
+grep -qi 'subagent' "$ROOT/skills/pilot/references/score.md" \
+  && ok "score.md states it must run in a subagent" \
+  || ko "score.md states it must run in a subagent"
+# A `-` floored to 0 would quietly punish short sessions, which is the most
+# likely way for this index to become meaningless.
+grep -qi 'never counted as 0\|not a zero\|never floored' "$ROOT/skills/pilot/references/rubric.md" \
+  && ok "rubric.md states that a dash is not a zero" \
+  || ko "rubric.md states that a dash is not a zero"
+
+# Moved here from Task 7: the installer's skill loop must carry the references
+# too, and this is the first task in which any of them exists to be shipped.
+IR="$WORK/install-refs"; rm -rf "$IR"; mkdir -p "$IR"
+CLAUDE_CONFIG_DIR="$IR" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -f "$IR/skills/pilot/references/rubric.md" ] \
+  && ok "install ships the pilot references" || ko "install ships the pilot references"
 
 # --- cleanup hook -----------------------------------------------------------
 SID3=cln1
