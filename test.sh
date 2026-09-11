@@ -1412,14 +1412,45 @@ grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
 # --- pilot rubric and scorer -------------------------------------------------
 # The reference files are the scorer's whole implementation, so assert the two
 # properties that make the number defensible rather than prose that reads well.
-for A in direction verification contradiction writing; do
-  grep -q "^## $A" "$ROOT/skills/pilot/references/rubric.md" \
+RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+
+# Axis names derived from the file's own "## <axis> — <question>" headings,
+# not named by hand — a fifth axis needs no edit here, only a new heading of
+# the same shape in rubric.md. Scoped to a single lowercase word before the em
+# dash so the file's other "## " heading ("The arithmetic — …", not an axis)
+# is not picked up as a fifth, spurious axis.
+RUBRIC_AXES=$(sed -n -E 's/^## ([a-z]+) — .*/\1/p' "$RUBRIC")
+
+# Lines belonging to one axis's block: from its heading up to (not including)
+# the next "## " heading, or end of file for the last axis.
+rubric_block() {
+  awk -v axis="$1" '
+    $0 ~ "^## " axis "( |$)" { found=1; next }
+    found && /^## / { exit }
+    found { print }
+  ' "$RUBRIC"
+}
+
+for A in $RUBRIC_AXES; do
+  grep -q "^## $A" "$RUBRIC" \
     && ok "rubric.md anchors the $A axis" || ko "rubric.md anchors the $A axis"
 done
-for N in 0 1 2 3 4; do
-  [ "$(grep -c "^$N — " "$ROOT/skills/pilot/references/rubric.md")" -ge 4 ] \
-    && ok "rubric.md defines anchor $N for all four axes" \
-    || ko "rubric.md defines anchor $N for all four axes"
+
+# Scoped per axis block, not a whole-file count: a global count of ≥4 lines
+# matching "^N — " is satisfied just as well by one axis supplying two anchors
+# for a number while another axis has none, which is exactly the shape a
+# mutation deleting one axis's anchors while leaving the others untouched
+# would produce. Each axis block must carry exactly one anchor line for each
+# of 0-4.
+for A in $RUBRIC_AXES; do
+  BLOCK=$(rubric_block "$A")
+  BAD=0
+  for N in 0 1 2 3 4; do
+    [ "$(printf '%s\n' "$BLOCK" | grep -c "^$N — ")" -eq 1 ] || BAD=1
+  done
+  [ "$BAD" -eq 0 ] \
+    && ok "rubric.md's $A block anchors each of 0-4 exactly once" \
+    || ko "rubric.md's $A block anchors each of 0-4 exactly once"
 done
 grep -qi 'quote' "$ROOT/skills/pilot/references/score.md" \
   && ok "score.md requires a quote behind every score" \

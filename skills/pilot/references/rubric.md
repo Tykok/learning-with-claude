@@ -27,7 +27,7 @@ answer, not a failure to find evidence.
 0 — no reference to any content of any output anywhere in the session
 1 — a general reaction only, with nothing named from the output ("looks good", "hmm", "ok next")
 2 — exactly one concrete thing named from the output: a function, a file, a line, a variable, a branch of the logic
-3 — at least two concrete things named from the output, and at least one of them shows the dev followed the control flow (traced a call across files, or through a conditional) rather than read one isolated line
+3 — at least two concrete things named from the output, and at least one reference names two or more files or functions in the same causal chain (a caller and what it calls, a definition and where it is used)
 4 — the dev names something the output got wrong or left out, and the transcript shows they found it by reading the output, not by Claude volunteering it first
 - — not assessable (no output for the dev to react to, or no reaction of any kind survives the strip described in `hooks/pilot-record.sh` §3.1 — e.g. a single-prompt session)
 
@@ -37,7 +37,7 @@ answer, not a failure to find evidence.
 1 — exactly one doubt voiced with no argument behind it ("hmm, weird", "are you sure?" with no follow-up reason)
 2 — exactly one argued objection: a doubt plus a stated reason ("that's wrong because X")
 3 — at least two argued objections, and at least one of them changed the solution (Claude's next message reflects the correction)
-4 — at least two argued objections, and at least one corrects a factual error of Claude's — a wrong claim about the code, the tool, or the library, not a style or taste disagreement
+4 — at least two argued objections, and at least one is conceded: Claude's own later message accepts the correction rather than defending or ignoring it
 - — not assessable (nothing in the session gives the dev an opening to object — e.g. a single-prompt session with no output to react to yet)
 
 ## writing — does the dev write code themselves?
@@ -50,8 +50,7 @@ match, so no session satisfies two rows at once.
 - — dev_lines is `-` (est=`-`: no repo existed to measure against for this session)
 - — dev_lines is 0 and cl_lines is 0 (nothing was written by either side this session)
 0 — dev_lines is 0 and cl_lines is above 50
-4 — cl_lines is 0 and dev_lines is above 0 (all the writing was the dev's; nothing of Claude's to compare it to)
-4 — dev_lines exceeds cl_lines (dev_lines / cl_lines > 1.00)
+4 — dev_lines exceeds cl_lines (dev_lines / cl_lines > 1.00), which also covers cl_lines being 0 while dev_lines is above 0 — all the writing was the dev's, nothing of Claude's to compare it to
 3 — dev_lines is between 40% and 100% of cl_lines, inclusive of both ends
 2 — dev_lines is at least 10% and under 40% of cl_lines
 1 — dev_lines is under 10% of cl_lines (this also covers dev_lines = 0 with cl_lines at or below 50, which row 0 does not claim)
@@ -79,23 +78,37 @@ profile needs more sessions — naming a profile off two or three sessions is th
 to make the whole number look like guesswork. Once all three floors are met, apply these
 rows top to bottom against the three indices; the first that matches is the profile:
 
-| Profile | Rule |
-|---------|------|
-| `Pilot` | direction ≥ 70, verification ≥ 70, and contradiction ≥ 70 |
-| `Co-pilot` | verification ≥ 50 and contradiction ≥ 50 |
-| `Observer` | verification ≥ 50 and contradiction < 50 |
-| `Passenger` | verification < 50, contradiction < 50, and direction ≥ 25 |
-| `Cargo` | direction < 25 and contradiction < 25 |
+| # | Profile | Rule |
+|---|---------|------|
+| 1 | `Pilot` | direction ≥ 70 and verification ≥ 70 and contradiction ≥ 70 |
+| 2 | `Co-pilot` | verification ≥ 50 and contradiction ≥ 50 |
+| 3 | `Observer` | verification ≥ 50 |
+| 4 | `Backseat` | contradiction ≥ 50 |
+| 5 | `Cargo` | direction < 25 and contradiction < 25 |
+| 6 | `Passenger` | everything else |
+
+Row 6 carries **no condition**. That is the property that closes the table rather than an
+accident of writing it down casually: rows 1–5 cover every vector where `verification ≥ 50`
+or `contradiction ≥ 50` or (`direction < 25` and `contradiction < 25`), and row 6 catches
+every vector that reaches it — which, by the time a vector has failed rows 1–4, is
+guaranteed to have `verification < 50` and `contradiction < 50` already (that is what
+falling through rows 2–4 means), so rows 3 and 4 above can be read as the single conditions
+they are written as without silently losing the second half of their old two-condition
+form. Do not add a condition to row 6 to make it look more deliberate — a condition there
+reopens exactly the gap this shape closes. If a future edit narrows row 5 or splits row 6,
+re-derive that every one of the 0–100³ vectors still lands somewhere, rather than trusting
+that it still does.
+
+`Backseat` is new and distinct from `Passenger`: it is a dev who argues with the output
+(`contradiction ≥ 50`) without reading it closely (`verification < 50`, since row 3 already
+claimed everything at or above that). That combination — objecting on instinct or on a
+vague sense that something's off, without the concrete naming that `verification` scores —
+is the most actionable vector in the whole table, because the fix is narrow and obvious: the
+`verification` manoeuvre (write down what you expect before reading the diff), not a general
+exhortation to "pay more attention". Folding it into `Passenger` would bury a dev who is
+already halfway to driving under a label built for one who is not engaging at all.
 
 `writing` never gates the profile and never appears in the table above: a dev who delegates
 every line typed but sets the target, reads the diff and argues with it is still driving.
 `writing` is reported on the dashboard as its own index, on its own floor of 4 assessable
 sessions, alongside the profile — never folded into it.
-
-These five rows are the whole table (spec §4.4); they are not five arms of one partition.
-One vector is arithmetically possible but has no row that claims it: verification < 50 and
-contradiction ≥ 50 (frequent argued objections from a dev who rarely names anything concrete
-from the output). If a real profile ever lands there, do not guess a row for it — say so
-plainly on the dashboard ("no profile rule matches this vector yet") and flag it rather than
-silently picking the nearest row, so the gap gets fixed in the rubric instead of papered over
-in one dev's dashboard.
