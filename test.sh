@@ -2703,6 +2703,93 @@ grep -qF 'claude -p' "$SITE_USAGE" \
   && ok "usage.html states the interactive-session limitation" \
   || ko "usage.html states the interactive-session limitation"
 
+# --- pilot docs ---------------------------------------------------------------
+# The four keys already ship in config.html's table (checked earlier, further up,
+# against LEARNER_DEFAULTS itself for their values); this pins the config page to
+# actually mentioning all four by name, the same standard the coachCadence loop
+# above holds config.html to for the coach keys.
+for k in pilotEnabled pilotCadenceDays pilotJudgeIntervalHours pilotNudge; do
+  grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
+    || ko "config.html documents $k"
+done
+
+# Anchored to the section heading, not a bare 'pilot' grep: the "learner pilot …"
+# forwarding line already in the On-demand list satisfies a loose grep before this
+# section exists at all — the same non-discriminating-grep defect the coach docs
+# comment above already names once on this branch. id="pilot" only exists once the
+# section itself does.
+grep -qE '^## Pilot' "$RM" && ok "README covers Pilot" \
+  || ko "README covers Pilot"
+grep -qF 'id="pilot"' "$SITE_USAGE" && ok "usage.html covers Pilot" \
+  || ko "usage.html covers Pilot"
+
+grep -qF 'learner pilot on' "$RM" \
+  && ok "README shows how to turn Pilot on" \
+  || ko "README shows how to turn Pilot on"
+
+# The one thing a reader must not be able to miss, in both places a dev actually
+# reads before flipping the switch (brief for task 11) — not just one of them.
+for f in "$RM" "$SITE_USAGE"; do
+  n=$(basename "$f")
+  grep -qiE 'off by default|opt-in' "$f" \
+    && ok "$n states Pilot is opt-in / off by default" \
+    || ko "$n states Pilot is opt-in / off by default"
+  grep -qF 'disabledPaths' "$f" \
+    && ok "$n says disabledPaths is honoured for Pilot" \
+    || ko "$n says disabledPaths is honoured for Pilot"
+  grep -qF 'pilot forget' "$f" \
+    && ok "$n points at pilot forget to purge kept quotes" \
+    || ko "$n points at pilot forget to purge kept quotes"
+  grep -qiF 'not a measure of intelligence' "$f" \
+    && ok "$n disclaims Pilot is not a measure of intelligence" \
+    || ko "$n disclaims Pilot is not a measure of intelligence"
+  grep -qiF 'cognitive health' "$f" \
+    && ok "$n disclaims Pilot is not a measure of cognitive health" \
+    || ko "$n disclaims Pilot is not a measure of cognitive health"
+done
+
+# The four axes, as the same markup shape SKILL.md's own dispatch table uses
+# (`<dt><code>axis</code></dt>`) — fixed by the locked spec (§4.2), so hardcoded
+# here the same way the level letters D/J/C/S/E are hardcoded below, rather than
+# derived from a file that has no single canonical list to parse.
+for axis in direction verification contradiction writing; do
+  grep -qF "<dt><code>$axis</code></dt>" "$SITE_USAGE" \
+    && ok "usage.html documents the $axis axis" \
+    || ko "usage.html documents the $axis axis"
+done
+
+grep -qi 'weekly brief' "$SITE_USAGE" \
+  && ok "usage.html covers the weekly brief" \
+  || ko "usage.html covers the weekly brief"
+
+grep -qi 'manoeuvre' "$SITE_USAGE" \
+  && ok "usage.html covers the counter-manoeuvres" \
+  || ko "usage.html covers the counter-manoeuvres"
+
+# Pilot's own subcommands. Not derived from skills/pilot/SKILL.md's Dispatch table
+# the way the learner subcommand loop above is: that table's first row is the bare
+# `pilot` invocation itself, so parsing it the same way would check for the
+# nonsensical "pilot pilot" and corrupt the list. Hardcoded instead, against the
+# six named subcommands in that table.
+for sub in on off brief score why forget; do
+  grep -qE "pilot ${sub}([[:space:][:punct:]]|\$)" "$SITE_USAGE" \
+    && ok "usage.html documents the 'pilot $sub' subcommand" \
+    || ko "usage.html documents the 'pilot $sub' subcommand"
+done
+
+# The six profile names, derived from skills/pilot/references/rubric.md's own
+# numbered table rather than hardcoded — a profile renamed or added there turns
+# this red automatically instead of leaving the site's list stale, the same
+# reasoning as the hook-count and LEARNER_DEFAULTS derivations elsewhere in this
+# file.
+PROFILES=$(grep -E '^\| [0-9]+ \|' "$ROOT/skills/pilot/references/rubric.md" \
+  | grep -oE '`[^`]+`' | tr -d '`')
+for p in $PROFILES; do
+  grep -qF "$p" "$SITE_USAGE" \
+    && ok "usage.html names the $p profile" \
+    || ko "usage.html names the $p profile"
+done
+
 # --- hook count drift guard ---------------------------------------------------
 # Five prose spots (README twice, index.html, safety.html, install.html) each
 # state how many hook files ship, and none of them turned red when coach-gate.sh
