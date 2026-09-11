@@ -41,6 +41,16 @@
   <p class="lede">The three shapes a question can take, and what you can ask Learner
   for directly.</p>
 
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">On this page</p>
+    <ol>
+      <li><a href="#styles">The three question styles</a></li>
+      <li><a href="#commands">On demand</a></li>
+      <li><a href="#coach">Coach mode — you write, Claude challenges</a></li>
+      <li><a href="#pilot">Pilot — a delegation score, read from the transcript</a></li>
+    </ol>
+  </nav>
+
   <h2 id="styles">The three question styles</h2>
 
   <dl>
@@ -142,6 +152,80 @@
   a cloud session. The write refusal above still applies everywhere, because it is an ordinary
   hook — so a non-interactive session with coach mode on gets the denials without ever
   receiving a review.</p>
+
+  <h2 id="pilot">Pilot — a delegation score, read from the transcript</h2>
+
+  <p>Pilot is a separate, <strong>opt-in</strong> skill, <strong>off by default</strong>
+  (<code>pilotEnabled: false</code>), that scores how much of the thinking on a task you
+  handed to Claude versus did yourself. It never asks you a question to produce that
+  score — everything it reports comes from the sessions you already had, read straight from
+  the transcript, never from a prompt written to test you.</p>
+
+  <p>Four axes, each scored 0–4 per session and rolled into a 0–100 rolling index:</p>
+
+  <dl>
+    <dt><code>direction</code></dt>
+    <dd>Did you set the target and the constraints, or ask for "something that works"?</dd>
+    <dt><code>verification</code></dt>
+    <dd>Did you read what came back — evidenced by naming something concrete from it: a
+    function, a line, a branch of the logic?</dd>
+    <dt><code>contradiction</code></dt>
+    <dd>Did you ever object, correct, or ask why?</dd>
+    <dt><code>writing</code></dt>
+    <dd>Did you write any of the code yourself? Exact under <a href="#coach">coach
+    mode</a>, where the watcher already measures your lines; estimated otherwise, since git
+    alone cannot say who typed what.</dd>
+  </dl>
+
+  <p>The three axes above (not <code>writing</code>, which never gates it) settle into one
+  of six profiles once each has enough assessable sessions behind it — <code>Pilot</code>,
+  <code>Co-pilot</code>, <code>Observer</code>, <code>Backseat</code>, <code>Cargo</code>,
+  <code>Passenger</code> — but no profile is named off two or three sessions: until the
+  floor is met, the dashboard shows the axes it does have and says so instead of guessing.</p>
+
+  <p><strong>Pilot measures a habit, not you: it is not a measure of intelligence and not a
+  measure of cognitive health.</strong> A score is a model reading a transcript against a
+  written rubric, the same instrument that scores the exercises above — a defensible signal
+  about a pattern in how a task got delegated, not a clinical or cognitive claim about the
+  person who delegated it.</p>
+
+  <p>Once a day, if sessions are waiting, a subagent judges them against the rubric and
+  writes the result to your dashboard — never inside the session being judged. Every axis
+  score carries one supporting quote from the transcript; a score with no quote to show for
+  it is recorded as not-assessable, never as a zero. Once a week (<code>pilotCadenceDays</code>
+  by default), Claude opens a <strong>weekly brief</strong> after answering your first
+  request of that session, never instead of it: the facts with no adjectives, one question
+  about what pushed you there that week, one mechanism from the advice corpus that matches
+  your weakest axis, and one counter-manoeuvre negotiated with an expiry — never two live
+  manoeuvres at once, never a lecture, and "not now" defers it without penalty.</p>
+
+  <dl>
+    <dt><code>pilot</code> <em>(bare)</em></dt>
+    <dd>Renders the dashboard: index per axis, profile (once there is enough data), and the
+    active manoeuvre, if any.</dd>
+    <dt><code>pilot on</code> / <code>pilot off</code></dt>
+    <dd>Prints the privacy paragraph below in full, then flips <code>pilotEnabled</code>.
+    Reachable as <code>learner pilot on</code> too.</dd>
+    <dt><code>pilot brief</code></dt>
+    <dd>Runs the weekly brief right now, off-cadence.</dd>
+    <dt><code>pilot score</code></dt>
+    <dd>Drains the scoring queue right now, off-cadence.</dd>
+    <dt><code>pilot why &lt;date&gt;</code></dt>
+    <dd>Shows the quotes behind that row's scores.</dd>
+    <dt><code>pilot forget [--all|--before &lt;date&gt;]</code></dt>
+    <dd>Purges stored quotes — every one, or every one before a date.</dd>
+  </dl>
+
+  <p><strong>Privacy — read this before turning it on.</strong> Pilot reads every prompt
+  you have typed, in every repository, including ones where the automatic quiz above is
+  switched off — that is exactly why it defaults to off and stays opt-in rather than a
+  setting you would stumble into. <code>disabledPaths</code> is honoured exactly as it is
+  for the quiz, so a repository listed there is never read for Pilot either. Everything
+  stays local: the transcript is referenced by path and never copied, and the judgement
+  that turns a session into scores runs in a subagent on this machine — nothing about it
+  leaves that Claude Code itself was not already sending. The quotes kept as evidence are
+  capped at 200 characters each and fully purgeable at any time with
+  <code>pilot forget --all</code>.</p>
 
   <p class="next">Next: <a href="config.html">Configuration</a> — every setting
   Learner reads.</p>
