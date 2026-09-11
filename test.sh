@@ -685,6 +685,24 @@ pn_reset; pn_live direction "2099-01-01"
   || ko "pilot-nudge stays silent on a second vague prompt in the same session"
 rm -f "${TMPDIR:-/tmp}/claude-learner-CAP1.pilot-nudged"
 
+# 13. brief.md is explicit that only `direction` has a UserPromptSubmit
+#     mechanism — "the other three axes have no UserPromptSubmit mechanism".
+#     A live manoeuvre on verification, contradiction or writing must leave
+#     this hook silent no matter how vague the prompt is: the vagueness test
+#     is direction-only by design, not merely untested for the other three.
+pn_reset; pn_live verification "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live verification manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live verification manoeuvre, however vague the prompt"
+pn_reset; pn_live contradiction "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live contradiction manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live contradiction manoeuvre, however vague the prompt"
+pn_reset; pn_live writing "2099-01-01"
+[ -z "$(pn_run 'fix it')" ] \
+  && ok "pilot-nudge stays silent for a live writing manoeuvre, however vague the prompt" \
+  || ko "pilot-nudge stays silent for a live writing manoeuvre, however vague the prompt"
+
 # --- pilot brief protocol and mechanisms corpus -----------------------------
 # The nudge parses this line by field. If the brief writes a different shape,
 # the manoeuvre is silently inert — the worst kind of broken, because the
