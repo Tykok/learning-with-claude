@@ -1590,6 +1590,29 @@ grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
   && ok "the pilot skill states that it is opt-in" \
   || ko "the pilot skill states that it is opt-in"
 
+# The dispatch table's "Read" column is the path a dispatching model actually
+# follows for `pilot on`/`pilot off` — it must point at references/dashboard.md,
+# where the global-file naming lives, not at "this file, § Privacy" (which
+# never names a file at all and is what a model would land on instead).
+PSK="$ROOT/skills/pilot/SKILL.md"
+grep -qE '^\| `pilot on`.*references/dashboard\.md' "$PSK" \
+  && ok "SKILL.md routes 'pilot on' to references/dashboard.md" \
+  || ko "SKILL.md routes 'pilot on' to references/dashboard.md"
+grep -qE '^\| `pilot off`.*references/dashboard\.md' "$PSK" \
+  && ok "SKILL.md routes 'pilot off' to references/dashboard.md" \
+  || ko "SKILL.md routes 'pilot off' to references/dashboard.md"
+
+# pilot off must name the same global file pilot on does, in the page a
+# dispatching model actually reaches (dashboard.md), not just in prose no
+# dispatch path leads to.
+DASH="$ROOT/skills/pilot/references/dashboard.md"
+grep -qF 'learner.json' "$DASH" \
+  && ok "dashboard.md names the global config file" \
+  || ko "dashboard.md names the global config file"
+[ "$(grep -c 'learner\.json' "$DASH")" -ge 2 ] \
+  && ok "dashboard.md names the global config file for both pilot on and pilot off" \
+  || ko "dashboard.md names the global config file for both pilot on and pilot off"
+
 # --- pilot rubric and scorer -------------------------------------------------
 # The reference files are the scorer's whole implementation, so assert the two
 # properties that make the number defensible rather than prose that reads well.

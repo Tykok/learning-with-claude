@@ -34,8 +34,8 @@ directly, or via `learner pilot …` from the `learner` skill.
 | Subcommand | Does | Read |
 |------------|------|------|
 | `pilot` *(bare)* | Render the dashboard: index per axis, profile, active manoeuvre | `references/dashboard.md` |
-| `pilot on` | Print the privacy paragraph above once, then set `pilotEnabled: true` | this file, § Privacy |
-| `pilot off` | Set `pilotEnabled: false`; stop reading anything | this file, § Privacy |
+| `pilot on` | Print the privacy paragraph above once, then set `pilotEnabled: true` in the global config, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json` | `references/dashboard.md` |
+| `pilot off` | Set `pilotEnabled: false` in that same global config file; stop reading anything | `references/dashboard.md` |
 | `pilot brief` | Run the weekly brief now, off-cadence | `references/brief.md` |
 | `pilot score` | Drain the scoring queue now, off-cadence | `references/score.md` |
 | `pilot why <date>` | Show the quotes behind that row's scores | `references/dashboard.md` |

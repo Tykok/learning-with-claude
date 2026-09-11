@@ -64,9 +64,11 @@ Render, in this order, and stop — no other section, no elaboration:
    would bury the one case where it is actually this concrete. (Every profile still gets the
    plain-language gloss above; it is only the extra remedy line that stays exclusive to
    `Backseat`.)
-3. **The live manoeuvre.** Read `pilot.md`'s `## Manoeuvres` block for the first
-   `- live: axis | constraint | until YYYY-MM-DD` line, same parse `pilot-nudge.sh` uses.
-   Render axis, constraint and the expiry date on one line. No `- live:` line, or one past
+3. **The live manoeuvre.** Read `pilot.md` for the first line anywhere in the file that
+   starts `- live: axis | constraint | until YYYY-MM-DD` — same whole-file scan
+   `pilot-nudge.sh` uses, not scoped to the `## Manoeuvres` block, even though that is the
+   only place such a line is ever written. Render axis, constraint and the expiry date on
+   one line. No `- live:` line, or one past
    its `until` date: render "no active manoeuvre" — an expired line is `brief.md`'s to
    retire (rewritten to `- settled:` with a verdict), never this file's to silently treat as
    current or to edit.
@@ -173,7 +175,9 @@ whichever repo happened to be open when the dev flipped it, while they believe i
 everywhere. Never flip the key first and explain afterward: the paragraph is what makes
 turning it on informed consent rather than a default the dev stumbled into.
 
-**`pilot off`** sets `pilotEnabled` back to `false` and says two things, plainly: the data
-already collected is kept, not deleted, and it can be purged with `pilot forget --all` if
-the dev wants it gone. Turning Pilot off stops it reading new sessions; it does not, on its
-own, touch anything already written to `pilot.md` or `pilot-evidence.md`.
+**`pilot off`** sets `pilotEnabled` back to `false` in that same global config file,
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json` — never the per-repo
+`<repo>/.claude/learner.local.json` — and says two things, plainly: the data already
+collected is kept, not deleted, and it can be purged with `pilot forget --all` if the dev
+wants it gone. Turning Pilot off stops it reading new sessions; it does not, on its own,
+touch anything already written to `pilot.md` or `pilot-evidence.md`.

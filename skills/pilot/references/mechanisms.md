@@ -16,14 +16,16 @@ than no corpus, because the developer it is quoted at can and will check the lin
 
 **What it does:** MIT Media Lab's *Your Brain on ChatGPT: Accumulation of Cognitive Debt*
 study measured 54 subjects with EEG across its first three sessions (the fourth, which the
-"Order of entry" entry below rests on, had 18): LLM writers showed the weakest neural connectivity, and were markedly less able to quote from an essay just minutes after writing
-it than participants who had written unaided. No source in this corpus publishes a
-percentage-of-text-retained figure for this finding, at 24 hours or otherwise, so none is
-given here — a widely-repeated pair of round-number figures for it was traced back to a
-research summary rather than to the paper itself, and is not repeated. The debt is the gap
-between producing text and retaining it. The study's own stated limitation is that its
-findings are context-dependent, on essay writing in an educational setting — worth naming
-plainly here, since this entry is applied to code, a different task in a different setting.
+"Order of entry" entry below rests on, had 18): LLM writers showed the
+weakest neural connectivity, and were markedly less able to quote from an essay just minutes
+after writing it than participants who had written unaided. No source in this corpus
+publishes a percentage-of-text-retained figure for this finding, at 24 hours or otherwise,
+so none is given here — a widely-repeated pair of round-number figures for it was traced
+back to a research summary rather than to the paper itself, and is not repeated. The debt is
+the gap between producing text and retaining it. The study's own stated limitation is that
+its findings are context-dependent, on essay writing in an educational setting — worth
+naming plainly here, since this entry is applied to code, a different task in a different
+setting.
 
 **Observable:** `cl_lines` far above `dev_lines` on the `writing` axis.
 
@@ -48,7 +50,7 @@ itself (e.g. "I pasted the error in before looking at it myself").
 **Counter-move:** brain-first — never open Claude on a problem you have not first tried to
 state or sketch yourself, even badly.
 
-**Source:** [MIT Media Lab, *Your Brain on ChatGPT*](https://www.media.mit.edu/publications/your-brain-on-chatgpt/) — same study as cognitive debt, above; only the order-of-entry finding itself is stated here, not the session design behind it.
+**Source:** [MIT Media Lab, *Your Brain on ChatGPT*](https://www.media.mit.edu/publications/your-brain-on-chatgpt/) — same study as Cognitive debt, above, which already covers the session counts and the limitation; only the order-of-entry finding itself is stated here, not repeated from there.
 
 ## Metacognitive laziness
 
