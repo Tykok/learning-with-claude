@@ -11,9 +11,7 @@ that hands the dev a number and a lecture instead of making them think.
 
 ## First: is there enough to argue from?
 
-`hooks/pilot-brief.sh` will not offer this brief until `pilot.md`'s `Sessions` table holds
-at least four rows — but that hook-level floor is a cheap row count, not a check of which
-axes actually cleared their own floor. Before doing anything else, read `pilot.md`'s
+This is the very first thing to check, before the manoeuvre check below. Read `pilot.md`'s
 `## Index` block. If any of `direction`, `verification` or `contradiction` — the three
 gating axes, per `rubric.md`'s profile table — still reads "not enough data yet" (fewer
 than 4 assessable sessions in that axis's own rolling window), say so plainly: there is not
@@ -21,11 +19,25 @@ enough evidence yet to argue from on at least one of the axes this conversation 
 stop here. Do not run the four movements below on that thin a foundation. `rubric.md` is
 explicit about why: naming anything off two or three sessions "is the fastest way to make
 the whole number look like guesswork," and that reasoning applies to opening this
-conversation at all, not only to naming a profile inside it.
+conversation at all, not only to naming a profile inside it. `hooks/pilot-brief.sh` will
+not offer this brief until `pilot.md`'s `Sessions` table holds at least four rows, but that
+hook-level floor is a cheap row count, not a check of which axes actually cleared their own
+floor — so this history is normal, not rare: any set of four Sessions rows that includes a
+short, mostly-`-` session can land here.
+
+**This is a completed brief, not a deferral.** It ran, and it reported honestly that there
+is not enough to argue from yet — that is a short but genuine answer, the opposite of the
+dev saying "not now." Stamp it exactly like any other completed brief (see "A completed
+brief resets the streak" below): `brief=<epoch seconds>` **and** `declined=0` into
+`pilot-stamps`. Do **not** treat this as a deferral and increment `declined` instead —
+skipping the stamp here would leave `LAST_BRIEF` stale in `pilot-brief.sh`'s own eyes and
+re-offer this same thin brief at every subsequent session start, which is precisely the
+nagging this whole file exists to rule out (see "the mildest form of the nagging" below).
 
 ## Before the four movements: check for a manoeuvre already in force
 
-Read `pilot.md`'s `Manoeuvres` block before doing anything else.
+Next, after the floor check above and before running any of the four movements, read
+`pilot.md`'s `Manoeuvres` block.
 
 - **No `- live:` line present** — proceed straight to the four movements below.
 - **A `- live:` line present, past its `until` date** — its run is over. Movement 1 below
