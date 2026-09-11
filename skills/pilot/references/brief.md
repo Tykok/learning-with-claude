@@ -9,6 +9,20 @@ The score (`pilot.md`'s `Index` block) is the diagnostic. This conversation is t
 Everything below exists to keep it from becoming the thing it is trying to prevent: a tool
 that hands the dev a number and a lecture instead of making them think.
 
+## First: is there enough to argue from?
+
+`hooks/pilot-brief.sh` will not offer this brief until `pilot.md`'s `Sessions` table holds
+at least four rows — but that hook-level floor is a cheap row count, not a check of which
+axes actually cleared their own floor. Before doing anything else, read `pilot.md`'s
+`## Index` block. If any of `direction`, `verification` or `contradiction` — the three
+gating axes, per `rubric.md`'s profile table — still reads "not enough data yet" (fewer
+than 4 assessable sessions in that axis's own rolling window), say so plainly: there is not
+enough evidence yet to argue from on at least one of the axes this conversation needs, and
+stop here. Do not run the four movements below on that thin a foundation. `rubric.md` is
+explicit about why: naming anything off two or three sessions "is the fastest way to make
+the whole number look like guesswork," and that reasoning applies to opening this
+conversation at all, not only to naming a profile inside it.
+
 ## Before the four movements: check for a manoeuvre already in force
 
 Read `pilot.md`'s `Manoeuvres` block before doing anything else.
@@ -91,8 +105,9 @@ session, and `writing` rides the existing `coach-gate.sh` machinery instead of a
 
 ## The manoeuvre line format — state this exactly, it is parsed
 
-`hooks/pilot-nudge.sh` reads the **first** line in `pilot.md`'s `Manoeuvres` block that
-starts with `- live: `, and parses it by splitting on pipes:
+`hooks/pilot-nudge.sh` reads the **first** line in `pilot.md` — anywhere in the file, not
+scoped to the `Manoeuvres` block, since the hook does a plain line scan with no notion of
+sections — that starts with `- live: `, and parses it by splitting on pipes:
 
 ```
 - live: direction | name the result you want and one constraint | until 2026-09-24

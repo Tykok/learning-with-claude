@@ -41,6 +41,16 @@
   <p class="lede">What a <code>fill</code> exercise does to your files, what stops it
   leaving them broken, and how to remove Learner entirely.</p>
 
+  <nav class="toc" aria-labelledby="toc-title">
+    <p class="toc-title" id="toc-title">On this page</p>
+    <ol>
+      <li><a href="#guardrail">The guardrail</a></li>
+      <li><a href="#material">What counts as quiz material</a></li>
+      <li><a href="#pilot">Pilot's data</a></li>
+      <li><a href="#uninstall">Uninstall</a></li>
+    </ol>
+  </nav>
+
   <h2 id="guardrail">The guardrail</h2>
 
   <p>A <code>fill</code> exercise deliberately breaks a file you care about, and a
@@ -121,6 +131,25 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   <p>Then minus your own <code>untrackGlobs</code> on top of that floor. The globs are
   matched with shell pattern matching and split on whitespace internally, so
   <strong>a glob containing a space is not supported</strong>.</p>
+
+  <h2 id="pilot">Pilot's data</h2>
+
+  <p><a href="usage.html#pilot">Pilot</a> is opt-in and off by default
+  (<code>pilotEnabled: false</code>), because on it reads every prompt you type, in every
+  repository. <code>disabledPaths</code> is honoured for it exactly as it is for the quiz
+  above: a repository listed there is never read for Pilot either, and nothing it writes —
+  a queue line, a scored row, a kept quote — is ever produced from inside one.</p>
+
+  <p>Everything it keeps lives under <code>$CFG/learner/</code>, alongside <code>memory.md</code>
+  and <code>recap.md</code>: <code>pilot-queue</code> (sessions not yet scored),
+  <code>pilot.md</code> (the dashboard: sessions, index, manoeuvres), <code>pilot-evidence.md</code>
+  (the quotes behind each score, capped at 200 characters each), <code>pilot-stamps</code> and
+  <code>pilot-devlines</code> (internal pacing and tallying state). <code>pilot forget
+  [--all|--before &lt;date&gt;]</code> purges the kept quotes at any time, without touching the
+  scores in <code>pilot.md</code>. <code>./uninstall.sh --purge</code> (or
+  <code>learner-uninstall --purge</code>) deletes all of it, along with the rest of
+  <code>$CFG/learner/</code>; the plain form leaves it in place, same as it leaves your quiz
+  progress.</p>
 
   <h2 id="uninstall">Uninstall</h2>
 

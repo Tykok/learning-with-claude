@@ -15,9 +15,15 @@ than no corpus, because the developer it is quoted at can and will check the lin
 ## Cognitive debt
 
 **What it does:** MIT Media Lab's *Your Brain on ChatGPT: Accumulation of Cognitive Debt*
-study measured 54 subjects with EEG: LLM writers showed the weakest neural connectivity,
-and recalled ~17% of their own text at 24h, against ~46% unaided. The debt is the gap
-between producing text and retaining it.
+study measured 54 subjects with EEG across its first three sessions (the fourth, which the
+"Order of entry" entry below rests on, had 18): LLM writers showed the weakest neural connectivity, and were markedly less able to quote from an essay just minutes after writing
+it than participants who had written unaided. No source in this corpus publishes a
+percentage-of-text-retained figure for this finding, at 24 hours or otherwise, so none is
+given here — a widely-repeated pair of round-number figures for it was traced back to a
+research summary rather than to the paper itself, and is not repeated. The debt is the gap
+between producing text and retaining it. The study's own stated limitation is that its
+findings are context-dependent, on essay writing in an educational setting — worth naming
+plainly here, since this entry is applied to code, a different task in a different setting.
 
 **Observable:** `cl_lines` far above `dev_lines` on the `writing` axis.
 
@@ -31,10 +37,13 @@ between producing text and retaining it.
 the LLM, led to better retention than opening the LLM first. Order of entry matters as
 much as whether the tool is used at all.
 
-**Observable:** when in the session Claude was opened relative to the dev's own first pass
-at the problem — not a counter this repo currently records per-prompt, so this one is read
-from the transcript's shape (was there dev-authored reasoning before the first prompt to
-Claude, or did the first prompt open cold on the problem).
+**Observable:** none — this is the one entry in this corpus with nothing `references/brief.md`
+can detect. The brief runs against `pilot.md` and `pilot-evidence.md` only; neither records
+when in a session Claude was opened relative to the dev's own first pass at the problem, and
+the brief never re-reads a raw transcript to check. So this entry is never picked by matching
+a weakest axis the way every other one here is — it surfaces only as context alongside the
+Cognitive debt entry above, when the dev's own answer in movement 2 volunteers the order
+itself (e.g. "I pasted the error in before looking at it myself").
 
 **Counter-move:** brain-first — never open Claude on a problem you have not first tried to
 state or sketch yourself, even badly.

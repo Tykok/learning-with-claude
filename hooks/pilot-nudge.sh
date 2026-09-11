@@ -21,6 +21,13 @@ CFG=$(learner_config) || exit 0
 pilot_enabled "$CFG" || exit 0
 [ "$(printf '%s' "$CFG" | jq -r '.pilotNudge')" = "false" ] && exit 0
 
+# disabledPaths is a privacy setting, honoured for Pilot exactly as it is for
+# pilot-record.sh: a repo listed there gets no classification of its prompts,
+# no marker file, and no reminder spoken into it. Empty ROOT (not a repo) is
+# not a disabled path and must not gate anything below.
+ROOT=$(learner_repo_root)
+if [ -n "$ROOT" ] && learner_path_disabled "$ROOT" "$CFG"; then exit 0; fi
+
 PMD="$LEARNER_CFG_DIR/learner/pilot.md"
 [ -f "$PMD" ] || exit 0
 

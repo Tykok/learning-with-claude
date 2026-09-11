@@ -29,9 +29,13 @@ output of `hooks/pilot-record.sh` and are trusted as given, even if a hand count
 transcript would differ slightly; recomputing them here is exactly the kind of judgement
 call that must stay reproducible in one place, not two.
 
-If a line's `jsonl` path does not exist or cannot be read, score every axis on that session
-`-` and note "transcript unavailable" in the Sessions row rather than skipping the line
-silently — the row must still exist and still count toward "how many sessions were scored."
+If a line's `jsonl` path does not exist or cannot be read, score `direction`, `verification`
+and `contradiction` on that session `-` and note "transcript unavailable" in the Sessions
+row rather than skipping the line silently — the row must still exist and still count
+toward "how many sessions were scored." `writing` is not part of this fallback: §3 scores
+it from the queue line's own counters, which are present and trustworthy whether or not the
+transcript can be read, so score it normally even on a row otherwise marked "transcript
+unavailable."
 
 ## 2. Score the three judged axes against `rubric.md`
 
@@ -81,8 +85,10 @@ session, oldest first, appended after the existing rows (never re-sorted, never 
 
 ## 5. Append the quotes to `pilot-evidence.md`, grouped by date
 
-Under a `## <date>` heading (reuse the heading if today's date already has one from an
-earlier session scored in this same run), list each numeric score's quote as one line:
+Under a `## <date>` heading — the session's date, from the queue line, the same date
+already copied into that session's `Sessions` row in §4 (reuse the heading if an earlier
+session scored in this same run already produced one for that date) — list each numeric
+score's quote as one line:
 `<repo> — <axis>: "<quote>"`. Sessions or axes scored `-` contribute no line here — there is
 no quote to keep. This file is what answers `pilot why <date>` and what `pilot forget`
 purges; write nothing here you would not want surfaced back to the dev verbatim, since that
@@ -90,11 +96,12 @@ is exactly what happens.
 
 ## 6. Recompute the `Index` block
 
-For each of `direction`, `verification`, `contradiction`, `writing`: take that axis's
-assessable scores from the last 10 rows of the (now-updated) `Sessions` table, in order —
-skipping `-` entirely, per `rubric.md`'s arithmetic. Fewer than 4 assessable scores in that
-window renders the axis as `—` with "not enough data yet". Otherwise: mean × 25, rounded to
-the nearest integer.
+For each of `direction`, `verification`, `contradiction`, `writing`: walk the (now-updated)
+`Sessions` table from the most recent row backward and collect that axis's last 10
+**assessable** scores — a row scored `-` on that axis is skipped entirely and does not
+consume one of the 10 slots, per `rubric.md`'s arithmetic (a window of 10 assessable scores,
+not 10 rows). Fewer than 4 assessable scores found this way renders the axis as `—` with
+"not enough data yet". Otherwise: mean × 25, rounded to the nearest integer.
 
 Then the profile, only once `direction`, `verification` and `contradiction` each clear the
 4-assessable floor: apply `rubric.md`'s profile table top to bottom and write the first
@@ -107,12 +114,17 @@ Rewrite the whole `## Index` block (it is a computed summary, not an append-only
 ## 7. Stamp, then truncate — in that order, not the reverse
 
 Once `pilot.md` and `pilot-evidence.md` are written and saved: write `score=<epoch seconds>`
-into `$CFG/learner/pilot-stamps` (append or replace the existing `score=` line), **then**
-truncate `pilot-queue` to empty. If anything above fails partway, `pilot-queue` must still
-hold every line that did not make it into `pilot.md` — the next session start is what
-retries a failed drain, and it can only do that if the queue was never truncated ahead of a
-completed write. Never truncate first "to be safe"; that is the one order that loses data
-silently.
+into `$CFG/learner/pilot-stamps` (append or replace **only** the existing `score=` line —
+that file also holds `brief=` and `declined=` lines that a full rewrite of it would silently
+reset; resetting `declined` mid-decline-streak reopens the brief for a dev who already said
+no twice, which is exactly the nagging the house rules in `references/brief.md` forbid),
+**then** truncate `pilot-queue` to empty, and truncate `$CFG/learner/pilot-devlines` to empty
+alongside it — every line in it belongs to a session that has just been drained into
+`pilot.md`, and nothing prunes that file otherwise. If anything above fails partway,
+`pilot-queue` must still hold every line that did not make it into `pilot.md` — the next
+session start is what retries a failed drain, and it can only do that if the queue was never
+truncated ahead of a completed write. Never truncate first "to be safe"; that is the one
+order that loses data silently.
 
 ## 8. Report back in one line
 
