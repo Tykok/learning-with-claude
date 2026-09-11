@@ -78,10 +78,13 @@ learner pilot on
 
 Pilot is **off by default** (`pilotEnabled: false`) and fully **local**: it reads every
 prompt you have typed, in every repository — including ones where the automatic quiz above
-is switched off — and that is not something a tool should do without being asked first.
-`disabledPaths` is honoured exactly as it is for the quiz, the transcript is referenced by
-path and never copied, and the quotes kept as evidence are capped at 200 characters and
-fully purgeable at any time with `learner pilot forget --all`.
+is switched off — and that is not something a tool should do without being asked first. The
+transcript itself is referenced by path and never copied.
+
+- **Contained.** `disabledPaths` is honoured for Pilot too — a repository listed there is
+  never read, exactly as it already isn't for the quiz.
+- **Reversible.** The quotes kept as evidence are capped at 200 characters each, and
+  `learner pilot forget --all` purges every one of them, any time.
 
 Pilot measures a habit, not you: **it is not a measure of intelligence and not a measure of
 cognitive health.** It scores how much thinking gets handed over, nothing else — full
