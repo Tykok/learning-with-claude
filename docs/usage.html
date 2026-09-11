@@ -174,7 +174,8 @@
     <dt><code>writing</code></dt>
     <dd>Did you write any of the code yourself? Exact under <a href="#coach">coach
     mode</a>, where the watcher already measures your lines; estimated otherwise, since git
-    alone cannot say who typed what.</dd>
+    alone cannot say who typed what; and, for a session held outside any git repository at
+    all, not scored rather than guessed at zero — a dash, not a low score.</dd>
   </dl>
 
   <p>The three axes above (not <code>writing</code>, which never gates it) settle into one
@@ -219,13 +220,18 @@
   <p><strong>Privacy — read this before turning it on.</strong> Pilot reads every prompt
   you have typed, in every repository, including ones where the automatic quiz above is
   switched off — that is exactly why it defaults to off and stays opt-in rather than a
-  setting you would stumble into. <code>disabledPaths</code> is honoured exactly as it is
-  for the quiz, so a repository listed there is never read for Pilot either. Everything
-  stays local: the transcript is referenced by path and never copied, and the judgement
-  that turns a session into scores runs in a subagent on this machine — nothing about it
-  leaves that Claude Code itself was not already sending. The quotes kept as evidence are
-  capped at 200 characters each and fully purgeable at any time with
-  <code>pilot forget --all</code>.</p>
+  setting you would stumble into. Everything stays local: the transcript is referenced by
+  path and never copied, and the judgement that turns a session into scores runs in a
+  subagent on this machine — nothing about it leaves that Claude Code itself was not
+  already sending.</p>
+
+  <ul>
+    <li><strong>Contained.</strong> <code>disabledPaths</code> is honoured exactly as it is
+    for the quiz, so a repository listed there is never read for Pilot either.</li>
+    <li><strong>Reversible.</strong> The quotes kept as evidence are capped at 200
+    characters each, and <code>pilot forget --all</code> purges every one of them, any
+    time.</li>
+  </ul>
 
   <p class="next">Next: <a href="config.html">Configuration</a> — every setting
   Learner reads.</p>
