@@ -64,6 +64,16 @@ if [ "$UNTIL_N" -lt "$TODAY" ]; then exit 0; fi
 
 PROMPT=$(printf '%s' "$DATA" | jq -r '.prompt // ""' 2>/dev/null)
 
+# skills/pilot/references/brief.md is explicit: "The other three axes have no
+# UserPromptSubmit mechanism" — verification and contradiction are self-checks
+# the dev carries into the session, and writing rides the existing
+# coach-gate.sh machinery instead of anything here. So a live manoeuvre on any
+# axis but direction gets no reminder from this hook at all, on any prompt,
+# however vague. Do NOT generalise the vagueness test below to the other three
+# axes to "fix" this exit — that reopens exactly the gap brief.md documents
+# closed, it does not close one.
+[ "$AXIS" = "direction" ] || exit 0
+
 # The direction manoeuvre is the only one that reacts to the prompt itself, so
 # it is the only one that needs a vagueness test. Deliberately crude and
 # documented as such: short, no code span, no path, no question. A question is
