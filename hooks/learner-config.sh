@@ -196,7 +196,11 @@ learner_int() {
 
 # Pilot's master switch. Compared to the literal string "true" rather than
 # tested for truthiness: this switch gates reading every prompt the dev has
-# typed, so a config typo must fail closed, not open.
+# typed, so a config typo must fail closed, not open. This is a text
+# comparison, not a JSON-type check: jq -r renders a JSON string the same way
+# it renders a JSON boolean, so {"pilotEnabled":"true"} (a string) enables
+# Pilot exactly like {"pilotEnabled":true} (a boolean) does. Only a value
+# whose raw text is anything other than "true" is rejected.
 pilot_enabled() {
   _lpe="$1"
   command -v jq >/dev/null 2>&1 || return 1

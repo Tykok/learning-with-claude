@@ -172,10 +172,13 @@
     <dt><code>contradiction</code></dt>
     <dd>Did you ever object, correct, or ask why?</dd>
     <dt><code>writing</code></dt>
-    <dd>Did you write any of the code yourself? Exact under <a href="#coach">coach
-    mode</a>, where the watcher already measures your lines; estimated otherwise, since git
-    alone cannot say who typed what; and, for a session held outside any git repository at
-    all, not scored rather than guessed at zero — a dash, not a low score.</dd>
+    <dd>Did you write any of the code yourself? Exact when the session's <a href="#coach">
+    coach</a> tally covers everything a plain git diff still finds in the working tree;
+    estimated from that diff otherwise — including under coach mode itself, on the block a
+    watcher cycle never got to measure, since a tally alone is a lower bound, not a
+    guaranteed total, and git alone cannot say who typed what beyond it; and, for a session
+    held outside any git repository at all, not scored rather than guessed at zero — a dash,
+    not a low score.</dd>
   </dl>
 
   <p>The three axes above (not <code>writing</code>, which never gates it) settle into one

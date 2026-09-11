@@ -44,6 +44,16 @@ Render, in this order, and stop — no other section, no elaboration:
    and never a name at all until every one of the three gating axes clears its floor
    independently.
 
+   **Whatever profile is rendered, follow the name with one short plain-language gloss of
+   what it means** — a sentence, not a value judgment, e.g. `Cargo` — direction and pushback
+   are both low this window; `Pilot` — direction, verification and pushback all clear the
+   bar. `rubric.md`'s profile names are terse labels by design, and `Cargo` in particular is
+   the one inanimate word in an otherwise role-shaped table, landing bare on a dev with
+   nothing beside it to say it names a pattern and not a verdict on them — README.md's own
+   line that "Pilot measures a habit, not you" only holds if every rendered profile carries
+   that context, not just the one below with a remedy attached. Every profile gets this
+   gloss; only `Backseat` additionally gets the remedy line that follows.
+
    **When the rendered profile is `Backseat`, add one more line naming its remedy.**
    `rubric.md` calls this the most actionable row in the table — a dev who argues with the
    output (`contradiction` ≥ 50) without having read it closely first (`verification` < 50)
@@ -51,7 +61,9 @@ Render, in this order, and stop — no other section, no elaboration:
    `verification` manoeuvre (write down what you expect the diff to contain before opening
    it) by name. No other profile gets an appended remedy line here — `Backseat` is singled
    out because its fix is this legible; a generic "here's what to do" under every profile
-   would bury the one case where it is actually this concrete.
+   would bury the one case where it is actually this concrete. (Every profile still gets the
+   plain-language gloss above; it is only the extra remedy line that stays exclusive to
+   `Backseat`.)
 3. **The live manoeuvre.** Read `pilot.md`'s `## Manoeuvres` block for the first
    `- live: axis | constraint | until YYYY-MM-DD` line, same parse `pilot-nudge.sh` uses.
    Render axis, constraint and the expiry date on one line. No `- live:` line, or one past
@@ -104,8 +116,10 @@ day with two sessions has two sets of quotes).
 - **`writing` is the one axis with no quote by design, not by omission.** `rubric.md` scores
   it from `dev_lines` against `cl_lines`, arithmetic on numbers already computed
   deterministically, never a judgement call — so it never carries a quote even when it is a
-  clean number. Render it as `writing: <score>~? — computed from dev_lines vs cl_lines, not
-  a judged quote` (no `~` if `est=0`) rather than reporting it the same way as a missing
+  clean number. Render it as `writing: <score> — computed from dev_lines vs cl_lines, not a
+  judged quote`, with `~` appended to `<score>` if estimated (`est=1` on the queue line) and
+  nothing appended if exact (`est=0`) — same marker and meaning as the `Sessions` table's
+  `Wri` column, never a literal `?` — rather than reporting it the same way as a missing
   quote on `direction`, `verification` or `contradiction`: one is arithmetic that was never
   going to have a quote, the other is a judgement that could not find one, and conflating
   them would make `pilot why` lie about why a row has no quote.
@@ -151,9 +165,13 @@ itself to a dev who has not opted in. Silent means silent — say nothing at all
 
 **`pilot on`** prints the privacy paragraph from `skills/pilot/SKILL.md`'s `## Privacy —
 read before turning it on` section, in full, once — before flipping anything. Only after
-that is `pilotEnabled` set to `true`. Never flip the key first and explain afterward: the
-paragraph is what makes turning it on informed consent rather than a default the dev
-stumbled into.
+that is `pilotEnabled` set to `true` **in the global config file**,
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json` — never in the per-repo
+`<repo>/.claude/learner.local.json`. Pilot's design is a machine-wide switch, not a
+per-repository one; writing it to the repo-local override would silently narrow it to
+whichever repo happened to be open when the dev flipped it, while they believe it is on
+everywhere. Never flip the key first and explain afterward: the paragraph is what makes
+turning it on informed consent rather than a default the dev stumbled into.
 
 **`pilot off`** sets `pilotEnabled` back to `false` and says two things, plainly: the data
 already collected is kept, not deleted, and it can be purged with `pilot forget --all` if

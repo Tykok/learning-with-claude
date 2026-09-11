@@ -220,6 +220,8 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>update.md</code>, <code>data.md</code></td></tr>
       <tr><td><code>$CFG/skills/learner/VERSION</code></td><td>The installed version string; re-copied unconditionally on every install/re-install, so it always matches what's on disk</td></tr>
       <tr><td><code>$CFG/skills/learner/INSTALL_ORIGIN</code></td><td>How this install got here — <code>curl</code>, <code>brew</code> or <code>apt</code>; re-stamped on every install/re-install</td></tr>
+      <tr><td><code>$CFG/skills/pilot/SKILL.md</code></td><td>The <code>pilot</code> skill: dispatch, the four axes, the privacy paragraph</td></tr>
+      <tr><td><code>$CFG/skills/pilot/references/</code></td><td>The protocols: <code>rubric.md</code>, <code>score.md</code>, <code>brief.md</code>, <code>dashboard.md</code>, <code>mechanisms.md</code></td></tr>
       <tr><td><code>$CFG/hooks/learner-config.sh</code></td><td>Shared config resolution — sourced-only, never run on its own</td></tr>
       <tr><td><code>$CFG/hooks/learner-onboard.sh</code></td><td><code>SessionStart</code> — reports a broken install and nothing else</td></tr>
       <tr><td><code>$CFG/hooks/learner-update-check.sh</code></td><td><code>SessionStart</code> (second entry) — notifies once a day when a newer version is out; no <code>jq</code> dependency</td></tr>
@@ -237,6 +239,11 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/learner/memory.md</code></td><td>Open weak spots — the only file read to choose a question. Created by the skill on first use, not by the installer</td></tr>
       <tr><td><code>$CFG/learner/recap.md</code></td><td>Readable dashboard: to improve, mastered, session history. Also created on first use</td></tr>
       <tr><td><code>$CFG/learner/export.json</code></td><td>Which Notion database <code>learner export</code> pushes to, and when it last ran. Created on the first export, not by the installer</td></tr>
+      <tr><td><code>$CFG/learner/pilot-queue</code></td><td>One line per finished session awaiting a scoring pass, written by <code>pilot-record.sh</code>; truncated once drained. Only when Pilot is enabled</td></tr>
+      <tr><td><code>$CFG/learner/pilot.md</code></td><td>The Pilot dashboard: <code>Sessions</code>, <code>Index</code> and <code>Manoeuvres</code> blocks. Written by a scoring subagent, never by the installer</td></tr>
+      <tr><td><code>$CFG/learner/pilot-evidence.md</code></td><td>The quotes behind each numeric score, capped at 200 characters each and fully purgeable with <code>pilot forget</code></td></tr>
+      <tr><td><code>$CFG/learner/pilot-stamps</code></td><td><code>score=</code>/<code>brief=</code>/<code>declined=</code> timestamps that pace the scoring pass and the weekly brief</td></tr>
+      <tr><td><code>$CFG/learner/pilot-devlines</code></td><td>Per-session line tallies from the coach watcher, consumed and truncated by the scoring pass</td></tr>
     </tbody>
   </table>
   </div>
