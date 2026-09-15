@@ -11,7 +11,7 @@ once they demonstrate it. The level-up counterpart to `quiz`.
 
 ## Gather context
 
-1. Load config the same way as `../learner/SKILL.md` § Config.
+1. Load config as `../learner/references/config.md` describes.
 2. Read `memory.md` (open weak spots) and the recap's `To improve` section plus its
    `Session history` — see `../learner/references/data.md` for paths.
 

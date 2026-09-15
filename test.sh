@@ -1677,7 +1677,8 @@ grep -qF '🤖' "$SKILLMD" \
 grep -qF 'references/agent-salvo.md' "$SKILLMD" \
   && ok "SKILL.md points at the salvo protocol" || ko "SKILL.md points at the salvo protocol"
 for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
-  grep -qF "$k" "$SKILLMD" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+  grep -qF "$k" "$SKILLMD" "$ROOT/skills/learner/references/config.md" \
+    && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 grep -qiF 'salvo' "$ROOT/skills/learner/references/coach.md" \
   && ok "coach.md states which channel wins when both land" \
@@ -2574,7 +2575,7 @@ grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md "$PLUG"/skills/
   || ok "skill uses the new data paths, not the old per-project names"
 
 for k in level enabled questionStyles synthesisFrequency blanksPerExercise untrackGlobs disabledPaths; do
-  grep -q "$k" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+  grep -q "$k" "$SK" "$REFS/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 for l in D J C S E; do
@@ -4769,7 +4770,7 @@ CO="$PLUG/skills/coach/references/coach.md"
 for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
          coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
          coachEveryMinutes coachCooldownMinutes; do
-  grep -q "\`$k\`" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+  grep -q "\`$k\`" "$SK" "$REFS/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 # The dispatch table must route every subcommand the skill claims to accept.
