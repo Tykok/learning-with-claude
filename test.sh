@@ -994,6 +994,46 @@ WCFG=$(cfgsh 'learner_config')
 [ "$(wm 1)" = "8" ] && ok "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)" \
   || ko "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)"
 
+# --- agent salvo: config resolution ------------------------------------------
+sactive() { cfgsh 'learner_salvo_active "$(learner_config)" "$(learner_repo_root)" && echo on || echo off'; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvo')" = "true" ] \
+  && ok "agentSalvo defaults to true" || ko "agentSalvo defaults to true"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvoQuestions')" = "2" ] \
+  && ok "agentSalvoQuestions defaults to 2" || ko "agentSalvoQuestions defaults to 2"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvoFill')" = "true" ] \
+  && ok "agentSalvoFill defaults to true" || ko "agentSalvoFill defaults to true"
+
+[ "$(sactive)" = "on" ] \
+  && ok "the salvo is active with a level set and agentSalvo defaulted" \
+  || ko "the salvo is active with a level set and agentSalvo defaulted"
+
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "agentSalvo=false switches the salvo off" || ko "agentSalvo=false switches the salvo off"
+
+echo '{"level":"S","enabled":false}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "enabled=false switches the salvo off too" || ko "enabled=false switches the salvo off too"
+
+echo '{"agentSalvo":true}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "no level means no salvo" || ko "no level means no salvo"
+
+# agentSalvoQuestions accepts 0 (exercise-only), so its floor is 0, not 1.
+echo '{"level":"S","agentSalvoQuestions":0}' > "$GCFG"
+[ "$(cfgsh 'learner_int "$(learner_config | jq -r .agentSalvoQuestions)" 2 0')" = "0" ] \
+  && ok "agentSalvoQuestions=0 survives learner_int with floor 0" \
+  || ko "agentSalvoQuestions=0 survives learner_int with floor 0"
+
+echo '{"level":"S","agentSalvoQuestions":"many"}' > "$GCFG"
+[ "$(cfgsh 'learner_int "$(learner_config | jq -r .agentSalvoQuestions)" 2 0')" = "2" ] \
+  && ok "a non-numeric agentSalvoQuestions falls back to 2" \
+  || ko "a non-numeric agentSalvoQuestions falls back to 2"
+
+echo '{"level":"S"}' > "$GCFG"
+
 # --- docs/config.html: threshold-only prose count matches its table --------
 # Counted dynamically rather than hard-coded, so a table row added or removed
 # later turns this red instead of leaving stale prose silently wrong again.

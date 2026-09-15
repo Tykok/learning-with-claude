@@ -19,10 +19,11 @@
 #   learner_coach_work_minutes N CFG  length in minutes of work block N (1-based)
 #   pilot_enabled CFG               true when Pilot may read this session
 #   pilot_int RAW FALLBACK FLOOR    positive integer from config, or FALLBACK
+#   learner_salvo_active CFG ROOT   true when the agent salvo may run here
 
 LEARNER_CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachCadence":"pomodoro","coachWorkMinutes":25,"coachWorkGrowthMinutes":5,"coachWorkMaxMinutes":45,"coachChallengeMinutes":8,"coachIdleCycles":2,"coachPollSeconds":45,"coachLines":40,"coachFiles":3,"coachEveryMinutes":0,"coachCooldownMinutes":5,"pilotEnabled":false,"pilotCadenceDays":7,"pilotJudgeIntervalHours":24,"pilotNudge":true}'
+LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachCadence":"pomodoro","coachWorkMinutes":25,"coachWorkGrowthMinutes":5,"coachWorkMaxMinutes":45,"coachChallengeMinutes":8,"coachIdleCycles":2,"coachPollSeconds":45,"coachLines":40,"coachFiles":3,"coachEveryMinutes":0,"coachCooldownMinutes":5,"pilotEnabled":false,"pilotCadenceDays":7,"pilotJudgeIntervalHours":24,"pilotNudge":true,"agentSalvo":true,"agentSalvoQuestions":2,"agentSalvoFill":true}'
 
 # A JSON object from a file, or {} when the file is missing, unreadable or not an object.
 _learner_read_json() {
@@ -241,4 +242,17 @@ learner_coach_work_minutes() {
   [ "$_lcwv" -gt "$_lcwmax" ] && _lcwv=$_lcwmax
   [ "$_lcwv" -lt "$_lcwbase" ] && _lcwv=$_lcwbase
   printf '%s' "$_lcwv"
+}
+
+# learner_salvo_active CFG ROOT — true when the agent salvo may run here. The
+# salvo is the learner regime plus one switch, exactly like the coach: anything
+# that silences the quiz (no level, enabled:false, a disabledPaths prefix)
+# silences the salvo too. A malformed `agentSalvo` reads as off rather than on:
+# a default-true key whose value is garbage should go quiet, not louder.
+learner_salvo_active() {
+  _lsacfg="$1"
+  _lsaroot="$2"
+  learner_active "$_lsacfg" "$_lsaroot" || return 1
+  [ "$(printf '%s' "$_lsacfg" | jq -r '.agentSalvo')" = "true" ] || return 1
+  return 0
 }
