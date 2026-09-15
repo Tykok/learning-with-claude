@@ -1510,6 +1510,113 @@ tend "$SIDN"
 [ ! -f "$(agents "$SIDN")" ] \
   && ok "--end with no batch in flight is a no-op" || ko "--end with no batch in flight is a no-op"
 
+# --- agent salvo: the Stop-hook branch ---------------------------------------
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDS1=salvoq1
+tstart "$SIDS1" "Port the mapper to the new DTO"
+out=$(quiz "$SIDS1")
+reason=$(echo "$out" | jq -r '.reason')
+echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+  && ok "the salvo blocks with an agent in flight and no edits pending" \
+  || ko "the salvo blocks with an agent in flight and no edits pending"
+printf '%s' "$reason" | grep -qF '🤖 Learner salvo' \
+  && ok "the salvo trigger is distinguishable from the quiz trigger" \
+  || ko "the salvo trigger is distinguishable from the quiz trigger"
+printf '%s' "$reason" | grep -qF 'references/agent-salvo.md' \
+  && ok "the salvo trigger points at its own protocol" \
+  || ko "the salvo trigger points at its own protocol"
+printf '%s' "$reason" | grep -qF 'agent 1/1' \
+  && ok "the salvo trigger carries its rank in the batch" \
+  || ko "the salvo trigger carries its rank in the batch"
+printf '%s' "$reason" | grep -qF 'level: S' \
+  && ok "the salvo trigger carries the canonical level letter" \
+  || ko "the salvo trigger carries the canonical level letter"
+printf '%s' "$reason" | grep -qF 'questions: 2' \
+  && ok "the salvo trigger carries the question count" \
+  || ko "the salvo trigger carries the question count"
+printf '%s' "$reason" | grep -qF 'coach: off' \
+  && ok "the salvo trigger states the coach regime" \
+  || ko "the salvo trigger states the coach regime"
+printf '%s' "$reason" | grep -qF 'Port the mapper to the new DTO' \
+  && ok "the salvo trigger carries the delegated task" \
+  || ko "the salvo trigger carries the delegated task"
+lines=$(printf '%s\n' "$reason" | wc -l | tr -d ' ')
+[ "$lines" -le 3 ] \
+  && ok "the salvo reason stays within 3 lines" || ko "the salvo reason stays within 3 lines (got $lines)"
+printf '%s' "$reason" | grep -qiE 'memory\.md|spaced repetition|preparation agent' \
+  && ko "the salvo reason carries no protocol prose" \
+  || ok "the salvo reason carries no protocol prose"
+
+# One salvo per dispatched agent, then the quiz takes over.
+SIDS2=salvoq2
+tstart "$SIDS2" "A"; tstart "$SIDS2" "B"; tstart "$SIDS2" "C"
+n=0
+for i in 1 2 3 4; do
+  printf '%s' "$(quiz "$SIDS2" | jq -r '.reason // ""')" | grep -qF '🤖' && n=$((n + 1))
+done
+[ "$n" = "3" ] \
+  && ok "three dispatched agents earn exactly three salvos" \
+  || ko "three dispatched agents earn exactly three salvos (got $n)"
+
+# No agent in flight, no salvo — even with a stale dispatched counter.
+SIDS3=salvoq3
+tstart "$SIDS3" "A"; tstart "$SIDS3" "B"; tstart "$SIDS3" "C"
+tend "$SIDS3"; tend "$SIDS3"; tend "$SIDS3"
+echo 3 > "$(dispatched "$SIDS3")"   # stale on purpose
+printf '%s' "$(quiz "$SIDS3" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "an empty in-flight list serves no salvo" || ok "an empty in-flight list serves no salvo"
+
+# The salvo consumes pending edits, exactly as the quiz does.
+SIDS4=salvoq4
+rec "$SIDS4" "$WORK/proj/src/Salvo.kt"
+tstart "$SIDS4" "Some delegation"
+printf '%s' "$(quiz "$SIDS4" | jq -r '.reason')" | grep -qF 'Salvo.kt' \
+  && ok "the salvo trigger carries the pending edits" || ko "the salvo trigger carries the pending edits"
+[ -s "$(edits "$SIDS4")" ] \
+  && ko "the salvo consumes the pending edits" || ok "the salvo consumes the pending edits"
+
+# The coach regime reaches the trigger and turns the exercise off downstream.
+SIDS5=salvoq5
+echo '{"level":"S","coach":true}' > "$GCFG"
+tstart "$SIDS5" "Delegated slice"
+printf '%s' "$(quiz "$SIDS5" | jq -r '.reason')" | grep -qF 'coach: on' \
+  && ok "coach mode is announced on the salvo trigger" || ko "coach mode is announced on the salvo trigger"
+
+# Nothing to ask: no questions and no exercise means fall through, not an empty block.
+SIDS6=salvoq6
+echo '{"level":"S","coach":true,"agentSalvoQuestions":0}' > "$GCFG"
+tstart "$SIDS6" "Delegated slice"
+printf '%s' "$(quiz "$SIDS6" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "a salvo with no questions and no exercise does not block" \
+  || ok "a salvo with no questions and no exercise does not block"
+
+# A malformed count must never reach the trigger as an empty field.
+SIDS7=salvoq7
+echo '{"level":"S","agentSalvoQuestions":"many"}' > "$GCFG"
+tstart "$SIDS7" "Delegated slice"
+printf '%s' "$(quiz "$SIDS7" | jq -r '.reason')" | grep -qF 'questions: 2' \
+  && ok "a malformed agentSalvoQuestions falls back to 2 on the trigger" \
+  || ko "a malformed agentSalvoQuestions falls back to 2 on the trigger"
+
+# The guardrail still outranks everything.
+SIDS8=salvoq8
+echo '{"level":"S"}' > "$GCFG"
+mkdir -p "$WORK/proj/src"   # earlier tests only record paths; the file must really exist here
+printf 'fun f() {\n  // LEARNER-TODO: the body\n}\n' > "$WORK/proj/src/Hole.kt"
+tstart "$SIDS8" "Delegated slice"
+printf '%s' "$(quiz "$SIDS8" | jq -r '.reason')" | grep -qF 'LEARNER-TODO' \
+  && ok "the LEARNER-TODO guardrail still outranks a pending salvo" \
+  || ko "the LEARNER-TODO guardrail still outranks a pending salvo"
+rm -f "$WORK/proj/src/Hole.kt"
+
+# The quiz still works when nothing is in flight.
+SIDS9=salvoq9
+rec "$SIDS9" "$WORK/proj/src/Plain.kt"
+printf '%s' "$(quiz "$SIDS9" | jq -r '.reason')" | grep -qF '🎓 Learner (' \
+  && ok "the quiz trigger is untouched when no agent is in flight" \
+  || ko "the quiz trigger is untouched when no agent is in flight"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
