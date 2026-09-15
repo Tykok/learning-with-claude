@@ -77,6 +77,12 @@ elsewhere — both wanting the same turn. Do not stack them: finish the coach ch
 already in — get the dev's answer, update `memory.md`/`recap.md` for it — before opening the
 quiz question, never both at once.
 
+The same holds for an agent salvo (`🤖`): a coach challenge already open finishes first — get
+the answer, update `memory.md`/`recap.md` — and only then does the salvo's first question open.
+`references/agent-salvo.md` states this from the other side. A salvo also never cuts a `fill`
+exercise while the coach regime is on: its trigger carries `coach: on` precisely so it knows,
+and `hooks/coach-gate.sh` would refuse the write anyway.
+
 ## On the idle line
 
 `🧑‍🏫 Coach — no tracked changes for N work blocks; the watcher has stopped.` means the watcher

@@ -1,5 +1,5 @@
 ---
-description: Learning mode — the hub of the `learner` skills: dispatch table, the five levels, and every config key. Also the entry point for the Stop hook's 🎓 Learner trigger line, and for `learner config`, `learner off`/`on` and `learner help`. Use for "learner", "mode apprentissage", "learner config", "learner off", "learner on", "learner help", "level=S", or any bare Learner setting change.
+description: Learning mode — the hub of the `learner` skills: dispatch table, the five levels, and every config key. Also the entry point for the Stop hook's 🎓 Learner trigger line and for the agent salvo's trigger line while a subagent is in flight, and for `learner config`, `learner off`/`on` and `learner help`. Use for "learner", "mode apprentissage", "learner config", "learner off", "learner on", "learner help", "level=S", or any bare Learner setting change.
 allowed-tools: Read, Write, Edit, Grep, Bash
 ---
 
@@ -46,6 +46,11 @@ A bare config instruction with no subcommand (`level=S`, `disable`) is `config` 
 read the `coach` skill and follow it with those values. As with the quiz trigger, the line is
 parameters, not the protocol.
 
+**Invoked by the agent salvo.** While a subagent is in flight, the Stop hook blocks with
+`🤖 Learner salvo (level: S, questions: 2, blanks: 2, styles: auto, agent 2/3, coach: off) — task: … — files: …`.
+Read `references/agent-salvo.md` and follow it with those values. As with the other two
+triggers, the line is parameters, not the protocol.
+
 ## Levels
 
 The canonical value is the letter. Accept the full word and any case as an alias.
@@ -91,6 +96,9 @@ Two layers, later wins key by key:
 | `pilotCadenceDays` | int ≥ 1 | `7` | Days between weekly briefs |
 | `pilotJudgeIntervalHours` | int ≥ 1 | `24` | Hours between scoring-queue drains |
 | `pilotNudge` | bool | `true` | Whether `pilot-nudge.sh` reminds on a live `direction` manoeuvre |
+| `agentSalvo` | bool | `true` | Salvo of questions while a subagent is in flight |
+| `agentSalvoQuestions` | int ≥ 0 | `2` | Questions in a salvo, before the exercise |
+| `agentSalvoFill` | bool | `true` | Cut a `fill` exercise at the end of a salvo |
 
 Styles: `code` = what a changed function does; `architecture` (alias `archi`) = which
 module/layer it lives in and why; `fill` = interactive fill-in exercise in the real
@@ -100,7 +108,9 @@ To edit: read the target file, merge the new values over the existing ones, vali
 (`level` in the five letters; `enabled` boolean; `questionStyles` `"auto"` or a subset;
 `synthesisFrequency` one of the four words; ints ≥ 1; the two glob keys arrays of
 non-empty strings; `coach` boolean; `coachCadence` one of the two words; every `coach*`
-integer at or above the floor in the table above), write it, then confirm with
+integer at or above the floor in the table above; `agentSalvo` and `agentSalvoFill`
+booleans; `agentSalvoQuestions` an integer ≥ 0 — the floor is **0**, not 1 like every
+other integer key, because an exercise-only salvo is a legitimate setting), write it, then confirm with
 `jq -e . <file> >/dev/null && echo OK`. Reject invalid values and re-ask instead of
 writing them. `coachWorkMaxMinutes` below `coachWorkMinutes` clamps to `coachWorkMinutes`
 rather than being rejected — the intent of that pair is unambiguous. `config` alone edits
