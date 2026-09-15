@@ -3463,13 +3463,16 @@ grep -qiF 'salvo' "$RM" \
   && ok "README covers the agent salvo" || ko "README covers the agent salvo"
 
 # --- hook count drift guard ---------------------------------------------------
-# Five prose spots (README twice, index.html, safety.html, install.html) each
-# state how many hook files ship, and none of them turned red when coach-gate.sh
-# and coach-watch.sh joined the original six — "six" quietly went stale in all
-# five at once. Ground truth is read from the filesystem and from
+# Prose spots across README and docs/*.html each state how many hook files
+# ship, and none of them turned red when coach-gate.sh and coach-watch.sh
+# joined the original six — "six" quietly went stale everywhere at once, and
+# it happened again with a ninth hook: config.html and usage.html's shared
+# footer sentence, and index.html's stat-badge number, were never checked and
+# went stale to "eight" while README/index.html's own prose/safety.html/
+# install.html were fixed. Ground truth is read from the filesystem and from
 # hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
 # above (test.sh:1837-1854) and the threshold-only prose-count check further up
-# (search "docs/config.html: threshold-only prose count"), so a ninth hook (or
+# (search "docs/config.html: threshold-only prose count"), so a tenth hook (or
 # a wiring change) turns every stale copy red automatically instead of leaving
 # a plausible-sounding number wrong forever.
 hook_files=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | sort)
@@ -3522,9 +3525,27 @@ grep -qiF "covers all $hook_word shipped hook files" "$RM" \
   && ok "README's hooks/*.sh gloss matches the $hook_n files on disk" \
   || ko "README's hooks/*.sh gloss matches the $hook_n files on disk"
 
-grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
-  && ok "index.html's hook count matches the $hook_n files on disk" \
-  || ko "index.html's hook count matches the $hook_n files on disk"
+# The "One skill and N POSIX <code>sh</code> hooks that quiz you…" sentence is
+# shared footer boilerplate copy-pasted onto every docs page, not just
+# index.html's — checked on whichever pages actually carry it, so a page that
+# drops the footer someday does not silently stop being checked, and a page
+# that keeps it can never again go stale unnoticed the way config.html and
+# usage.html just did.
+for docf in "$ROOT"/docs/*.html; do
+  grep -qF 'POSIX <code>sh</code> hooks that quiz you' "$docf" || continue
+  grep -qiF "$hook_word POSIX <code>sh</code> hooks that quiz you" "$docf" \
+    && ok "$(basename "$docf")'s footer hook count matches the $hook_n files on disk" \
+    || ko "$(basename "$docf")'s footer hook count matches the $hook_n files on disk"
+done
+
+# index.html's stat-band badge states the same count as a bare digit, in a
+# different sentence entirely from the footer above — checked separately
+# because a fix to one does not imply the other is fixed.
+badge_n=$(grep -oE '<b>[0-9]+</b><span>POSIX <code>sh</code> hook files</span>' "$SITE" \
+  | grep -oE '[0-9]+')
+[ "$badge_n" = "$hook_n" ] \
+  && ok "index.html's stat badge matches the $hook_n files on disk" \
+  || ko "index.html's stat badge matches the $hook_n files on disk"
 
 grep -qiF "the $hook_word hook files, the skills" "$SITE_SAFETY" \
   && ok "safety.html's hook count matches the $hook_n files on disk" \
