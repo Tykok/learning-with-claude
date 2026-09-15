@@ -1407,6 +1407,68 @@ out=$(quiz "no-edits-sid")
 [ -z "$out" ] && ok "quiz silent when nothing was edited" \
              || ko "quiz silent when nothing was edited"
 
+# --- agent salvo: tracker ----------------------------------------------------
+TRACK="$ROOT/hooks/learner-agent-track.sh"
+agents()     { echo "$TMPDIR/claude-learner-$1.agents"; }
+dispatched() { echo "$TMPDIR/claude-learner-$1.agents-dispatched"; }
+served()     { echo "$TMPDIR/claude-learner-$1.agents-served"; }
+# $1 session id, $2 description
+tstart() { printf '{"session_id":"%s","tool_name":"Task","tool_input":{"description":"%s"}}' \
+             "$1" "$2" | sh "$TRACK" --start; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDA=salvo1
+out=$(tstart "$SIDA" "Refactor the repository layer")
+[ -z "$out" ] \
+  && ok "--start writes nothing to stdout" || ko "--start writes nothing to stdout"
+[ "$(grep -c . "$(agents "$SIDA")")" = "1" ] \
+  && ok "--start records one in-flight agent" || ko "--start records one in-flight agent"
+[ "$(cat "$(dispatched "$SIDA")")" = "1" ] \
+  && ok "--start increments the dispatched counter" || ko "--start increments the dispatched counter"
+grep -qF 'Refactor the repository layer' "$(agents "$SIDA")" \
+  && ok "--start keeps the task description" || ko "--start keeps the task description"
+
+# The anti-recursion contract: the salvo's own preparation agent must not arm a salvo.
+SIDP=salvo2
+tstart "$SIDP" "learner-prep: cut a fill exercise in Foo.kt"
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "a learner-prep: dispatch is never recorded" || ko "a learner-prep: dispatch is never recorded"
+tstart "$SIDP" "   learner-prep: leading spaces still count"
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "leading whitespace does not defeat the learner-prep: contract" \
+  || ko "leading whitespace does not defeat the learner-prep: contract"
+
+# One agent is always one line, whatever the description contains.
+SIDM=salvo3
+printf '{"session_id":"%s","tool_input":{"description":"two\\nlines\\tand a tab"}}' "$SIDM" \
+  | sh "$TRACK" --start
+[ "$(grep -c . "$(agents "$SIDM")")" = "1" ] \
+  && ok "a multi-line description still records exactly one agent" \
+  || ko "a multi-line description still records exactly one agent"
+
+# Every off switch.
+SIDX=salvo4
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "agentSalvo=false makes --start a no-op" || ko "agentSalvo=false makes --start a no-op"
+echo '{"level":"S","enabled":false}' > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "enabled=false makes --start a no-op" || ko "enabled=false makes --start a no-op"
+printf '{"level":"S","disabledPaths":["%s"]}' "$WORK/proj" > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "a disabledPaths prefix makes --start a no-op" || ko "a disabledPaths prefix makes --start a no-op"
+
+# An unknown flag, or none, is a no-op rather than a crash.
+echo '{"level":"S"}' > "$GCFG"
+SIDF=salvo5
+printf '{"session_id":"%s","tool_input":{"description":"x"}}' "$SIDF" | sh "$TRACK" >/dev/null 2>&1
+[ ! -f "$(agents "$SIDF")" ] \
+  && ok "the tracker with no flag is a no-op" || ko "the tracker with no flag is a no-op"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
