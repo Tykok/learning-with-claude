@@ -1469,6 +1469,47 @@ printf '{"session_id":"%s","tool_input":{"description":"x"}}' "$SIDF" | sh "$TRA
 [ ! -f "$(agents "$SIDF")" ] \
   && ok "the tracker with no flag is a no-op" || ko "the tracker with no flag is a no-op"
 
+# $1 session id
+tend() { printf '{"session_id":"%s","tool_name":"Task"}' "$1" | sh "$TRACK" --end; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDE=salvo6
+tstart "$SIDE" "Agent one"; tstart "$SIDE" "Agent two"; tstart "$SIDE" "Agent three"
+[ "$(grep -c . "$(agents "$SIDE")")" = "3" ] \
+  && ok "three dispatches are three in-flight lines" || ko "three dispatches are three in-flight lines"
+
+tend "$SIDE"
+[ "$(grep -c . "$(agents "$SIDE")")" = "2" ] \
+  && ok "--end removes exactly one in-flight line" || ko "--end removes exactly one in-flight line"
+grep -qF 'Agent one' "$(agents "$SIDE")" \
+  && ko "--end removes the oldest line first (FIFO)" || ok "--end removes the oldest line first (FIFO)"
+[ "$(cat "$(dispatched "$SIDE")")" = "3" ] \
+  && ok "--end leaves the dispatched counter alone while agents remain" \
+  || ko "--end leaves the dispatched counter alone while agents remain"
+
+echo 2 > "$(served "$SIDE")"
+tend "$SIDE"; tend "$SIDE"
+{ [ ! -f "$(agents "$SIDE")" ] && [ ! -f "$(dispatched "$SIDE")" ] && [ ! -f "$(served "$SIDE")" ]; } \
+  && ok "the last --end deletes all three batch files" \
+  || ko "the last --end deletes all three batch files"
+
+# A dev who switches the key off mid-flight must not be left with frozen counters.
+SIDD=salvo7
+tstart "$SIDD" "In flight when the key flips"
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+tend "$SIDD"
+[ ! -f "$(agents "$SIDD")" ] \
+  && ok "--end drains the counters even with agentSalvo=false" \
+  || ko "--end drains the counters even with agentSalvo=false"
+
+# An --end with nothing in flight is harmless.
+echo '{"level":"S"}' > "$GCFG"
+SIDN=salvo8
+tend "$SIDN"
+[ ! -f "$(agents "$SIDN")" ] \
+  && ok "--end with no batch in flight is a no-op" || ko "--end with no batch in flight is a no-op"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
