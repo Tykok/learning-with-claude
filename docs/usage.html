@@ -49,6 +49,7 @@
       <li><a href="#coach">Coach mode — you write, Claude challenges</a></li>
       <li><a href="#pilot">Pilot — a delegation score, read from the transcript</a></li>
       <li><a href="#sync">Sync — carry your record between machines</a></li>
+      <li><a href="#salvo">Agent salvo — questions while the subagents work</a></li>
     </ol>
   </nav>
 
@@ -275,6 +276,39 @@
   needs <code>gh</code>, authenticated (<code>gh auth login</code>). Worth making a habit:
   <code>learner sync push</code> before you switch machines, so the record you left behind is
   the one you pick back up.</p>
+
+  <h2 id="salvo">Agent salvo — questions while the subagents work</h2>
+
+  <p>When Claude hands work to subagents, the main conversation would otherwise go quiet. It
+  owes you a short burst instead, once per dispatched agent: two questions — about the
+  delegation itself, the branch diff, the code those agents are about to touch, or an open weak
+  spot — then one fill-in exercise cut in your own code. Three agents dispatched at once earn
+  three salvos, served one per turn as you answer. The moment the last agent returns, the
+  unserved ones are dropped: the queue never trails into work that has resumed.</p>
+
+  <p>The exercise is cut by a dedicated agent launched while you answer the questions, so it is
+  ready when you get to it. You will see it start with a description beginning
+  <code>learner-prep:</code> — that prefix is a contract, not a label: the salvo deliberately
+  does not count its own preparation agent as an agent to quiz you about.</p>
+
+  <p>In coach mode the salvo is questions only. Cutting the exercise needs a write, and
+  <code>coach-gate.sh</code> denies it — the barrier is not weakened for the learner's
+  convenience.</p>
+
+  <p>One limitation, stated where you will hit it: if your client runs subagents synchronously,
+  the salvo lands just after the result instead of during the wait. The questions are still
+  asked; only the overlap is lost. No hook fires when a subagent <em>starts</em>, so there is no
+  mechanism that does better.</p>
+
+  <dl>
+    <dt><code>learner config agentSalvo=false</code></dt>
+    <dd>Turns the salvo off. On is the default: it costs nothing in a session that dispatches
+    no agent.</dd>
+    <dt><code>learner config agentSalvoQuestions=1</code></dt>
+    <dd>Questions per salvo, before the exercise. <code>0</code> means exercise only.</dd>
+    <dt><code>learner config agentSalvoFill=false</code></dt>
+    <dd>Questions only, no exercise.</dd>
+  </dl>
 
   <p class="next">Next: <a href="config.html">Configuration</a> — every setting
   Learner reads.</p>

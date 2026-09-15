@@ -121,6 +121,21 @@ view, not a restore path; the gist carries the raw state.
 
 Requires `gh`, authenticated (`gh auth login`). Habit worth keeping: `learner sync push` before
 you switch machines, so the record you left behind is the one you pick back up.
+## Agent salvo — questions while the subagents work
+
+When Claude hands work to subagents, the main conversation would otherwise go quiet. Instead it
+owes you a short burst per dispatched agent: two questions about the delegation, the diff and
+your open weak spots, then one fill-in exercise cut in your own code by a dedicated agent while
+you answer. Three agents dispatched at once earn three salvos, served one per turn; the moment
+the last agent returns, the rest are dropped.
+
+    learner config agentSalvo=false     # off
+    learner config agentSalvoQuestions=1
+    learner config agentSalvoFill=false # questions only
+
+In coach mode the salvo is questions-only: the exercise would need a write, and the coach gate
+denies it. If your client runs subagents synchronously, the salvo lands just after the result
+instead of during the wait — the questions are still asked.
 
 ## Requirements
 

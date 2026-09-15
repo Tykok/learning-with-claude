@@ -3450,6 +3450,17 @@ for p in $PROFILES; do
     && ok "usage.html names the $p profile" \
     || ko "usage.html names the $p profile"
 done
+# --- agent salvo docs --------------------------------------------------------
+grep -qF 'id="salvo"' "$SITE_USAGE" \
+  && ok "usage.html covers the agent salvo" || ko "usage.html covers the agent salvo"
+grep -qF 'learner-prep:' "$SITE_USAGE" \
+  && ok "usage.html names the learner-prep: contract the dev will see" \
+  || ko "usage.html names the learner-prep: contract the dev will see"
+for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
+  grep -qF "$k" "$SITE_CONFIG" && ok "config.html documents $k" || ko "config.html documents $k"
+done
+grep -qiF 'salvo' "$RM" \
+  && ok "README covers the agent salvo" || ko "README covers the agent salvo"
 
 # --- hook count drift guard ---------------------------------------------------
 # Five prose spots (README twice, index.html, safety.html, install.html) each
