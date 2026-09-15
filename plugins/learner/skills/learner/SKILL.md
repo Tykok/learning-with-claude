@@ -34,7 +34,7 @@ to the skill that holds the protocol.
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | `references/config.md` |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | `references/config.md` |
 | `pilot …` | Invoke the `pilot` skill and hand it the rest of the line | — |
-| `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | — |
+| `help` (or `-h`, `--help`) | Print this dispatch table + the parameter table, then stop | `references/config.md` |
 | *(empty)* | Same as `config` with no pairs: show current settings | `references/config.md` |
 
 A bare config instruction with no subcommand (`level=S`, `disable`) is `config` shorthand.

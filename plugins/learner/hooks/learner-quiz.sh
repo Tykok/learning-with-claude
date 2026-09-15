@@ -132,45 +132,74 @@ AGENTS="$TMPD/claude-learner-${SID}.agents"
 DISPATCHED="$TMPD/claude-learner-${SID}.agents-dispatched"
 SERVED="$TMPD/claude-learner-${SID}.agents-served"
 
+# A crashed or `claude --resume`d session can leave $AGENTS holding lines for
+# agents that died with it: SessionEnd may never fire and no PostToolUse ever
+# arrives, yet --resume reuses the same session id, so the resumed session
+# would otherwise find a batch that will never drain — salvos served for
+# phantom work, "task:" quoting a dead delegation, and "agent N/M" growing
+# without bound as later dispatches append to it. A named staleness bound, not
+# a bare number: 4 hours comfortably outlives any real Task call.
+AGENT_STALE_SECONDS=14400
+
 if learner_salvo_active "$CFG" "$ROOT" && [ -s "$AGENTS" ]; then
-  # grep -c rather than wc -l: a last line with no trailing newline still counts.
-  INFLIGHT=$(grep -c . "$AGENTS" 2>/dev/null); case "$INFLIGHT" in ''|*[!0-9]*) INFLIGHT=0 ;; esac
-  ND=$(cat "$DISPATCHED" 2>/dev/null); case "$ND" in ''|*[!0-9]*) ND=0 ;; esac
-  NS=$(cat "$SERVED" 2>/dev/null); case "$NS" in ''|*[!0-9]*) NS=0 ;; esac
+  NOW=$(date +%s)
+  # A line whose epoch (field 1) is not all digits counts as fresh, never as
+  # stale: dropping a line we cannot date would lose a real in-flight agent,
+  # which this feature must never do.
+  INFLIGHT=$(awk -F'\t' -v now="$NOW" -v max="$AGENT_STALE_SECONDS" '
+    $1 !~ /^[0-9]+$/ || (now - $1) <= max { n++ }
+    END { print n + 0 }
+  ' "$AGENTS")
+  case "$INFLIGHT" in ''|*[!0-9]*) INFLIGHT=0 ;; esac
 
-  QN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.agentSalvoQuestions // empty')" 2 0)
-  FILL=$(printf '%s' "$CFG" | jq -r '.agentSalvoFill')
-  COACH=off
-  learner_coach_active "$CFG" "$ROOT" && COACH=on
+  if [ "$INFLIGHT" -eq 0 ]; then
+    # Nothing left in flight once staleness is accounted for: the batch is
+    # over and its three files die together, exactly as a normal --end leaves
+    # them, so the next dispatch starts a fresh batch instead of grafting onto
+    # a phantom one.
+    rm -f "$AGENTS" "$DISPATCHED" "$SERVED"
+  else
+    # grep -c rather than wc -l: a last line with no trailing newline still
+    # counts, and $DISPATCHED is append-only for the same reason $AGENTS is —
+    # a plain read/increment/overwrite loses increments when several --start
+    # calls land at once (a parallel batch of Task dispatches).
+    ND=$(grep -c . "$DISPATCHED" 2>/dev/null); case "$ND" in ''|*[!0-9]*) ND=0 ;; esac
+    NS=$(cat "$SERVED" 2>/dev/null); case "$NS" in ''|*[!0-9]*) NS=0 ;; esac
 
-  # No questions AND no exercise is an empty salvo. Don't spend the turn's one
-  # block on it — the quiz below may still have something to ask.
-  EMPTY=0
-  if [ "$QN" -eq 0 ]; then
-    if [ "$FILL" != "true" ] || [ "$COACH" = "on" ]; then EMPTY=1; fi
-  fi
+    QN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.agentSalvoQuestions // empty')" 2 0)
+    FILL=$(printf '%s' "$CFG" | jq -r '.agentSalvoFill')
+    COACH=off
+    learner_coach_active "$CFG" "$ROOT" && COACH=on
 
-  if [ "$INFLIGHT" -gt 0 ] && [ "$NS" -lt "$ND" ] && [ "$EMPTY" -eq 0 ]; then
-    NS=$((NS + 1)); echo "$NS" > "$SERVED"
-    # The most recent dispatch is the delegation the dev just watched Claude make.
-    TASK=$(tail -n 1 "$AGENTS" | cut -f2-)
-    SFILES=''
-    [ -s "$STATE" ] && SFILES=$(sort -u "$STATE" | head -n 20 | tr '\n' ' ')
+    # No questions AND no exercise is an empty salvo. Don't spend the turn's
+    # one block on it — the quiz below may still have something to ask.
+    EMPTY=0
+    if [ "$QN" -eq 0 ]; then
+      if [ "$FILL" != "true" ] || [ "$COACH" = "on" ]; then EMPTY=1; fi
+    fi
 
-    SREASON="🤖 Learner salvo (level: $LEVEL, questions: $QN, blanks: $BLANKS, styles: $STYLES, agent $NS/$ND, coach: $COACH) — task: $TASK — files: $SFILES
+    if [ "$INFLIGHT" -gt 0 ] && [ "$NS" -lt "$ND" ] && [ "$EMPTY" -eq 0 ]; then
+      NS=$((NS + 1)); echo "$NS" > "$SERVED"
+      # The most recent dispatch is the delegation the dev just watched Claude make.
+      TASK=$(tail -n 1 "$AGENTS" | cut -f2-)
+      SFILES=''
+      [ -s "$STATE" ] && SFILES=$(sort -u "$STATE" | head -n 20 | tr '\n' ' ')
+
+      SREASON="🤖 Learner salvo (level: $LEVEL, questions: $QN, blanks: $BLANKS, styles: $STYLES, agent $NS/$ND, coach: $COACH) — task: $TASK — files: $SFILES
 Invoke the \`learner\` skill and follow references/agent-salvo.md. Ask ONE question at a time, then wait for the dev's answer."
 
-    # Same batch discipline as the quiz: one channel per batch of edits, never two.
-    : > "$STATE"
+      # Same batch discipline as the quiz: one channel per batch of edits, never two.
+      : > "$STATE"
 
-    jq -n --arg r "$SREASON" '{decision:"block", reason:$r}'
-    exit 0
+      jq -n --arg r "$SREASON" '{decision:"block", reason:$r}'
+      exit 0
+    fi
   fi
 fi
 
+# --- 3) Quiz trigger --------------------------------------------------------
 [ -s "$STATE" ] || exit 0
 
-# --- 3) Quiz trigger --------------------------------------------------------
 EVERY=$(learner_synthesis_n "$(printf '%s' "$CFG" | jq -r '.synthesisFrequency // "normal"')")
 
 # Per-session question counter drives the synthesis cadence.

@@ -108,3 +108,12 @@ salvo on the questions. A missing exercise is not worth a retry loop.
 
 A coach challenge in progress wins: finish it, record the answer, then open the salvo. Never
 both at once. `references/coach.md` states the same rule from the other side.
+
+**A `🤖` trigger arriving while a salvo is still open is queued, not dropped.** `stop_hook_active`
+only suppresses the very next Stop; it resets the moment the dev answers, so a later turn's Stop
+can fire a second salvo before the first has asked its last question or run its exercise — a
+3-agent batch stacks all three triggers inside the first salvo's opening question. Finish the
+open salvo — its remaining questions, then its exercise — before touching the new trigger; only
+then start the next one, back-to-back. Never two salvos at once, and never one discarded:
+`.agents-served` is already incremented the moment a trigger is issued, so a salvo that gets
+ignored instead of queued is a salvo consumed and lost, not merely postponed.
