@@ -1424,10 +1424,37 @@ out=$(tstart "$SIDA" "Refactor the repository layer")
   && ok "--start writes nothing to stdout" || ko "--start writes nothing to stdout"
 [ "$(grep -c . "$(agents "$SIDA")")" = "1" ] \
   && ok "--start records one in-flight agent" || ko "--start records one in-flight agent"
-[ "$(cat "$(dispatched "$SIDA")")" = "1" ] \
+[ "$(grep -c . "$(dispatched "$SIDA")")" = "1" ] \
   && ok "--start increments the dispatched counter" || ko "--start increments the dispatched counter"
 grep -qF 'Refactor the repository layer' "$(agents "$SIDA")" \
   && ok "--start keeps the task description" || ko "--start keeps the task description"
+grep -qF '  ' "$(agents "$SIDA")" \
+  && ko "the recorded description carries no double space" \
+  || ok "the recorded description carries no double space"
+
+# FINDING 2: .agents-dispatched must not lose increments when several --start
+# calls land at once — a batch of parallel Task dispatches is the spec's
+# headline case for this feature, not an edge case. Backgrounded and waited,
+# no sleep.
+SIDPAR=salvopar
+for i in 1 2 3 4 5 6; do
+  tstart "$SIDPAR" "Parallel agent $i" >/dev/null &
+done
+wait
+[ "$(grep -c . "$(agents "$SIDPAR")")" = "6" ] \
+  && ok "six parallel --start calls record six in-flight agents" \
+  || ko "six parallel --start calls record six in-flight agents (got $(grep -c . "$(agents "$SIDPAR")" 2>/dev/null))"
+[ "$(grep -c . "$(dispatched "$SIDPAR")")" = "6" ] \
+  && ok "six parallel --start calls all increment the dispatched counter" \
+  || ko "six parallel --start calls all increment the dispatched counter (got $(grep -c . "$(dispatched "$SIDPAR")" 2>/dev/null))"
+
+# The mirror race on --end is milder — two simultaneous returns can leave the
+# in-flight count one too high, which over-reports but stays bounded and is
+# reaped at SessionEnd either way — so it is left as-is; see the comment in
+# hooks/learner-agent-track.sh.
+grep -qF 'is acceptable' "$ROOT/hooks/learner-agent-track.sh" \
+  && ok "learner-agent-track.sh explains why the --end race is left alone" \
+  || ko "learner-agent-track.sh explains why the --end race is left alone"
 
 # The anti-recursion contract: the salvo's own preparation agent must not arm a salvo.
 SIDP=salvo2
@@ -1438,6 +1465,10 @@ tstart "$SIDP" "   learner-prep: leading spaces still count"
 [ ! -f "$(agents "$SIDP")" ] \
   && ok "leading whitespace does not defeat the learner-prep: contract" \
   || ko "leading whitespace does not defeat the learner-prep: contract"
+tstart "$SIDP" '\tlearner-prep: a leading tab still counts'
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "a leading tab does not defeat the learner-prep: contract on --start" \
+  || ko "a leading tab does not defeat the learner-prep: contract on --start"
 
 # One agent is always one line, whatever the description contains.
 SIDM=salvo3
@@ -1469,8 +1500,19 @@ printf '{"session_id":"%s","tool_input":{"description":"x"}}' "$SIDF" | sh "$TRA
 [ ! -f "$(agents "$SIDF")" ] \
   && ok "the tracker with no flag is a no-op" || ko "the tracker with no flag is a no-op"
 
-# $1 session id
-tend() { printf '{"session_id":"%s","tool_name":"Task"}' "$1" | sh "$TRACK" --end; }
+# $1 session id, $2 optional description. A real PostToolUse payload can carry
+# either shape — tool_input present, or absent entirely — and --end must
+# behave correctly either way; the no-description call keeps exercising the
+# no-tool_input shape, the with-description call is what lets the
+# learner-prep: contract be pinned on --end at all.
+tend() {
+  if [ -n "${2:-}" ]; then
+    printf '{"session_id":"%s","tool_name":"Task","tool_input":{"description":"%s"}}' \
+      "$1" "$2" | sh "$TRACK" --end
+  else
+    printf '{"session_id":"%s","tool_name":"Task"}' "$1" | sh "$TRACK" --end
+  fi
+}
 
 echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
 
@@ -1484,7 +1526,7 @@ tend "$SIDE"
   && ok "--end removes exactly one in-flight line" || ko "--end removes exactly one in-flight line"
 grep -qF 'Agent one' "$(agents "$SIDE")" \
   && ko "--end removes the oldest line first (FIFO)" || ok "--end removes the oldest line first (FIFO)"
-[ "$(cat "$(dispatched "$SIDE")")" = "3" ] \
+[ "$(grep -c . "$(dispatched "$SIDE")")" = "3" ] \
   && ok "--end leaves the dispatched counter alone while agents remain" \
   || ko "--end leaves the dispatched counter alone while agents remain"
 
@@ -1493,6 +1535,53 @@ tend "$SIDE"; tend "$SIDE"
 { [ ! -f "$(agents "$SIDE")" ] && [ ! -f "$(dispatched "$SIDE")" ] && [ ! -f "$(served "$SIDE")" ]; } \
   && ok "the last --end deletes all three batch files" \
   || ko "the last --end deletes all three batch files"
+
+# FINDING 1: --end must honour the learner-prep: contract exactly as --start
+# does — the preparation agent's own return must never drain a REAL agent's
+# in-flight count. Leading-space and leading-tab variants both count.
+SIDPE=salvo6b
+tstart "$SIDPE" "Agent one"; tstart "$SIDPE" "Agent two"
+tend "$SIDPE" "learner-prep: cut a fill exercise in Foo.kt"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "a learner-prep: --end never drains a real agent's in-flight count" \
+  || ko "a learner-prep: --end never drains a real agent's in-flight count"
+tend "$SIDPE" "  learner-prep: leading spaces still count on --end"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "leading spaces do not defeat the learner-prep: contract on --end" \
+  || ko "leading spaces do not defeat the learner-prep: contract on --end"
+tend "$SIDPE" '\tlearner-prep: a leading tab still counts on --end'
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "a leading tab does not defeat the learner-prep: contract on --end" \
+  || ko "a leading tab does not defeat the learner-prep: contract on --end"
+tend "$SIDPE"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "1" ] \
+  && ok "a real --end still drains normally after prep-agent --ends were ignored" \
+  || ko "a real --end still drains normally after prep-agent --ends were ignored"
+tend "$SIDPE"
+[ ! -f "$(agents "$SIDPE")" ] \
+  && ok "the batch still ends once every real agent has returned" \
+  || ko "the batch still ends once every real agent has returned"
+
+# The reviewer-recommended interleaved sequence: dispatch 3, serve a salvo,
+# --end a learner-prep: agent (must not drain), --end a real agent (must
+# drain), then a third salvo must still be owed. This is exactly what
+# tend()'s old no-tool_input-at-all payload could never exercise — it is why
+# the one-sided --end survived seven task reviews.
+SIDIL=salvo6c
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+tstart "$SIDIL" "Agent one"; tstart "$SIDIL" "Agent two"; tstart "$SIDIL" "Agent three"
+quiz "$SIDIL" >/dev/null                              # serve salvo 1/3
+tend "$SIDIL" "learner-prep: cut a fill exercise"      # must not drain a real slot
+tend "$SIDIL"                                          # a real agent's return
+[ "$(grep -c . "$(agents "$SIDIL")")" = "2" ] \
+  && ok "interleaved: a prep --end plus one real --end leaves 2 in flight" \
+  || ko "interleaved: a prep --end plus one real --end leaves 2 in flight"
+printf '%s' "$(quiz "$SIDIL" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "interleaved: a salvo still serves instead of the batch ending early" \
+  || ko "interleaved: a salvo still serves instead of the batch ending early"
+{ [ "$(cat "$(served "$SIDIL")")" = "2" ] && [ "$(grep -c . "$(dispatched "$SIDIL")")" = "3" ]; } \
+  && ok "interleaved: a third salvo is still owed (served 2 of 3 dispatched)" \
+  || ko "interleaved: a third salvo is still owed (served 2 of 3 dispatched)"
 
 # A dev who switches the key off mid-flight must not be left with frozen counters.
 SIDD=salvo7
@@ -1566,6 +1655,47 @@ tend "$SIDS3"; tend "$SIDS3"; tend "$SIDS3"
 echo 3 > "$(dispatched "$SIDS3")"   # stale on purpose
 printf '%s' "$(quiz "$SIDS3" | jq -r '.reason // ""')" | grep -qF '🤖' \
   && ko "an empty in-flight list serves no salvo" || ok "an empty in-flight list serves no salvo"
+
+# FINDING 4: a crashed or `claude --resume`d session must not leave $AGENTS
+# stale forever. Batch files are written directly here (bypassing tstart,
+# which always stamps "now") so a line's age can be controlled precisely.
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+NOWTS=$(date +%s)
+STALE_TS=$((NOWTS - 5 * 3600))   # 5h old, past the 4h staleness bound
+
+SIDF1=salvofresh1
+printf '%s\t%s\n' "$STALE_TS" "Stale agent" > "$(agents "$SIDF1")"
+printf '%s\n' "$STALE_TS" > "$(dispatched "$SIDF1")"
+echo 0 > "$(served "$SIDF1")"
+printf '%s' "$(quiz "$SIDF1" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "an all-stale batch serves no salvo" || ok "an all-stale batch serves no salvo"
+{ [ ! -f "$(agents "$SIDF1")" ] && [ ! -f "$(dispatched "$SIDF1")" ] && [ ! -f "$(served "$SIDF1")" ]; } \
+  && ok "an all-stale batch is cleaned up (all three files removed)" \
+  || ko "an all-stale batch is cleaned up (all three files removed)"
+
+SIDF2=salvofresh2
+printf '%s\t%s\n' "$NOWTS" "Fresh agent" > "$(agents "$SIDF2")"
+printf '%s\n' "$NOWTS" > "$(dispatched "$SIDF2")"
+printf '%s' "$(quiz "$SIDF2" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a fresh line still serves a salvo" || ko "a fresh line still serves a salvo"
+
+SIDF3=salvofresh3
+{ printf '%s\t%s\n' "$STALE_TS" "Stale agent"; printf '%s\t%s\n' "$NOWTS" "Fresh agent"; } \
+  > "$(agents "$SIDF3")"
+printf '%s\n%s\n' "$STALE_TS" "$NOWTS" > "$(dispatched "$SIDF3")"
+printf '%s' "$(quiz "$SIDF3" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a mixed stale+fresh batch still serves a salvo (the fresh line is counted)" \
+  || ko "a mixed stale+fresh batch still serves a salvo (the fresh line is counted)"
+
+SIDF4=salvofresh4
+printf '%s\t%s\n' "not-a-number" "Malformed epoch agent" > "$(agents "$SIDF4")"
+printf '%s\n' "$NOWTS" > "$(dispatched "$SIDF4")"
+printf '%s' "$(quiz "$SIDF4" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a line with a malformed epoch counts as fresh, not stale" \
+  || ko "a line with a malformed epoch counts as fresh, not stale"
+grep -qF 'AGENT_STALE_SECONDS=14400' "$ROOT/hooks/learner-quiz.sh" \
+  && ok "the staleness bound is a named constant, not a bare magic number" \
+  || ko "the staleness bound is a named constant, not a bare magic number"
 
 # The salvo consumes pending edits, exactly as the quiz does.
 SIDS4=salvoq4
@@ -1671,6 +1801,16 @@ grep -qF 'data.md' "$SALVO_REF" \
   || ko "the protocol defers to data.md for the record files"
 grep -qiF 'coach' "$SALVO_REF" \
   && ok "the protocol covers the coach-mode case" || ko "the protocol covers the coach-mode case"
+
+# FINDING 3: a 🤖 landing while a salvo is still open must be queued, never
+# dropped — stop_hook_active only suppresses the very next Stop, so a later
+# turn's Stop can fire a second salvo before the first has finished asking.
+grep -qiF 'queued' "$SALVO_REF" \
+  && ok "the protocol states the salvo-vs-salvo queue rule" \
+  || ko "the protocol states the salvo-vs-salvo queue rule"
+grep -qiF 'not dropped' "$SALVO_REF" \
+  && ok "the protocol states a queued salvo is never dropped" \
+  || ko "the protocol states a queued salvo is never dropped"
 
 grep -qF '🤖' "$SKILLMD" \
   && ok "SKILL.md documents the salvo trigger" || ko "SKILL.md documents the salvo trigger"
@@ -1853,10 +1993,20 @@ grep -q 'broken' "$I5/settings.json" \
   || ko "install leaves an invalid settings.json untouched"
 
 I6="$WORK/inst6"; mkdir -p "$I6"
-inst "$I6" --level S --dry-run >/dev/null 2>&1
+dry_out=$(inst "$I6" --level S --dry-run 2>&1)
 { [ ! -e "$I6/learner.json" ] && [ ! -e "$I6/hooks" ]; } \
   && ok "--dry-run writes nothing" \
   || ko "--dry-run writes nothing"
+
+# FINDING 5: install.sh's --dry-run hook count must match what its own copy
+# loop actually copies. Derived from disk, the same "ground truth from disk"
+# style as the hook-count drift guard further down (search "hook count drift
+# guard") — this exact class of staleness has now drifted three times on this
+# branch.
+hook_n_dry=$(find "$ROOT/hooks" -maxdepth 1 -name '*.sh' | grep -c .)
+printf '%s' "$dry_out" | grep -qF "would copy $hook_n_dry hooks" \
+  && ok "--dry-run reports the actual hook count ($hook_n_dry)" \
+  || ko "--dry-run reports the actual hook count (want $hook_n_dry, got: $(printf '%s' "$dry_out" | grep 'would copy'))"
 
 I7="$WORK/inst7"
 out=$(PATH="/usr/bin:/bin" HOME="$WORK/nohome" CLAUDE_CONFIG_DIR="$I7" \
@@ -3728,7 +3878,7 @@ grep -qiF 'copyleft' "$RM" \
 # edit to either list that follows.
 HOOK_SH=$(cd "$PLUG/hooks" && ls -- *.sh | sort)
 LIC_SCAN="README.md docs/"
-for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN hooks/$hf"; done
+for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN plugins/learner/hooks/$hf"; done
 LIC_SCAN="$LIC_SCAN install.sh uninstall.sh bootstrap.sh
 Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh
 packaging/apt-repo/assemble-site.sh"
