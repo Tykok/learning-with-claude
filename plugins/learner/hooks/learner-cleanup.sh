@@ -19,6 +19,9 @@ rm -f "$DIR/claude-learner-${SID}.edits" \
       "$DIR/claude-learner-${SID}.coach-empty" \
       "$DIR/claude-learner-${SID}.coach-last" \
       "$DIR/claude-learner-${SID}.pilot-nudged" \
-      "$DIR/claude-learner-${SID}.onboard-roots"
+      "$DIR/claude-learner-${SID}.onboard-roots" \
+      "$DIR/claude-learner-${SID}.agents" \
+      "$DIR/claude-learner-${SID}.agents-dispatched" \
+      "$DIR/claude-learner-${SID}.agents-served"
 rm -rf "$DIR/claude-learner-${SID}.coach-base"
 exit 0
