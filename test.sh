@@ -1626,10 +1626,10 @@ for f in "$ROOT/hooks/hooks.json" "$ROOT/hooks/settings.snippet.json"; do
   jq -e '[.hooks.PostToolUse[] | select(.matcher == "Task") | .hooks[].command]
          | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
     && ok "$b wires the tracker on PostToolUse Task" || ko "$b wires the tracker on PostToolUse Task"
-  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh.? --start"))) | length == 1' "$f" \
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh\" --start"))) | length == 1' "$f" \
     >/dev/null 2>&1 \
     && ok "$b passes --start exactly once" || ko "$b passes --start exactly once"
-  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh.? --end"))) | length == 1' "$f" \
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh\" --end"))) | length == 1' "$f" \
     >/dev/null 2>&1 \
     && ok "$b passes --end exactly once" || ko "$b passes --end exactly once"
   # The Task matcher must not sweep in Write/Edit, or every edit would look like an agent.
