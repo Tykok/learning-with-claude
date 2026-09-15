@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Stop hook, two jobs.
+# Stop hook, three jobs.
 #
 # 1. Guardrail — while a `// LEARNER-TODO` marker left behind by a crashed
 #    fill-in exercise survives in the working tree, block and force a restore, so
@@ -9,7 +9,10 @@
 #    in a repo where the quiz is switched off. Only `disabledPaths` (or a missing
 #    jq / git repo / session id) silences it, and it blocks at most twice per
 #    outstanding exercise so a session can always end.
-# 2. Quiz trigger — when the session edited tracked files, block once with a
+# 2. Agent salvo — while a dispatched subagent is still in flight, serve one
+#    short quiz salvo per agent so the wait is not dead time. Ahead of the quiz
+#    trigger, behind the guardrail.
+# 3. Quiz trigger — when the session edited tracked files, block once with a
 #    SHORT trigger. The protocol lives in the skill (references/hook-quiz.md),
 #    never here: this reason is rendered in the console.
 
@@ -100,7 +103,7 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   fi
 fi
 
-# --- 2) Quiz trigger --------------------------------------------------------
+# --- 2) Agent salvo ---------------------------------------------------------
 learner_active "$CFG" "$ROOT" || exit 0
 
 # Don't re-block while already continuing from this hook, else Claude never waits
@@ -108,8 +111,9 @@ learner_active "$CFG" "$ROOT" || exit 0
 ACTIVE=$(printf '%s' "$DATA" | jq -r '.stop_hook_active // false')
 [ "$ACTIVE" = "true" ] && exit 0
 
-[ -s "$STATE" ] || exit 0
-
+# Resolved before the pending-edits check below, because the agent salvo needs
+# them on a turn that edited nothing at all — which is exactly the turn that
+# only dispatched subagents.
 LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
 STYLES=$(printf '%s' "$CFG" | jq -r '
   if (.questionStyles | type) == "array"
@@ -119,6 +123,54 @@ case "$STYLES" in ''|null) STYLES=auto ;; esac
 BLANKS=$(printf '%s' "$CFG" | jq -r '.blanksPerExercise // 2')
 case "$BLANKS" in ''|*[!0-9]*) BLANKS=2 ;; esac
 [ "$BLANKS" -lt 1 ] && BLANKS=1
+
+# While a subagent is in flight the main conversation has nothing to do but
+# wait, which is the best teaching window a session offers: serve one salvo per
+# dispatched agent, then fall through to the quiz. Deliberately ahead of the
+# pending-edits check and deliberately behind the guardrail above.
+AGENTS="$TMPD/claude-learner-${SID}.agents"
+DISPATCHED="$TMPD/claude-learner-${SID}.agents-dispatched"
+SERVED="$TMPD/claude-learner-${SID}.agents-served"
+
+if learner_salvo_active "$CFG" "$ROOT" && [ -s "$AGENTS" ]; then
+  # grep -c rather than wc -l: a last line with no trailing newline still counts.
+  INFLIGHT=$(grep -c . "$AGENTS" 2>/dev/null); case "$INFLIGHT" in ''|*[!0-9]*) INFLIGHT=0 ;; esac
+  ND=$(cat "$DISPATCHED" 2>/dev/null); case "$ND" in ''|*[!0-9]*) ND=0 ;; esac
+  NS=$(cat "$SERVED" 2>/dev/null); case "$NS" in ''|*[!0-9]*) NS=0 ;; esac
+
+  QN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.agentSalvoQuestions // empty')" 2 0)
+  FILL=$(printf '%s' "$CFG" | jq -r '.agentSalvoFill')
+  COACH=off
+  learner_coach_active "$CFG" "$ROOT" && COACH=on
+
+  # No questions AND no exercise is an empty salvo. Don't spend the turn's one
+  # block on it — the quiz below may still have something to ask.
+  EMPTY=0
+  if [ "$QN" -eq 0 ]; then
+    if [ "$FILL" != "true" ] || [ "$COACH" = "on" ]; then EMPTY=1; fi
+  fi
+
+  if [ "$INFLIGHT" -gt 0 ] && [ "$NS" -lt "$ND" ] && [ "$EMPTY" -eq 0 ]; then
+    NS=$((NS + 1)); echo "$NS" > "$SERVED"
+    # The most recent dispatch is the delegation the dev just watched Claude make.
+    TASK=$(tail -n 1 "$AGENTS" | cut -f2-)
+    SFILES=''
+    [ -s "$STATE" ] && SFILES=$(sort -u "$STATE" | head -n 20 | tr '\n' ' ')
+
+    SREASON="🤖 Learner salvo (level: $LEVEL, questions: $QN, blanks: $BLANKS, styles: $STYLES, agent $NS/$ND, coach: $COACH) — task: $TASK — files: $SFILES
+Invoke the \`learner\` skill and follow references/agent-salvo.md. Ask ONE question at a time, then wait for the dev's answer."
+
+    # Same batch discipline as the quiz: one channel per batch of edits, never two.
+    : > "$STATE"
+
+    jq -n --arg r "$SREASON" '{decision:"block", reason:$r}'
+    exit 0
+  fi
+fi
+
+[ -s "$STATE" ] || exit 0
+
+# --- 3) Quiz trigger --------------------------------------------------------
 EVERY=$(learner_synthesis_n "$(printf '%s' "$CFG" | jq -r '.synthesisFrequency // "normal"')")
 
 # Per-session question counter drives the synthesis cadence.
