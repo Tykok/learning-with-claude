@@ -1617,6 +1617,43 @@ printf '%s' "$(quiz "$SIDS9" | jq -r '.reason')" | grep -qF '🎓 Learner (' \
   && ok "the quiz trigger is untouched when no agent is in flight" \
   || ko "the quiz trigger is untouched when no agent is in flight"
 
+# --- agent salvo: wiring and cleanup -----------------------------------------
+for f in "$ROOT/hooks/hooks.json" "$ROOT/hooks/settings.snippet.json"; do
+  b=$(basename "$f")
+  jq -e '[.hooks.PreToolUse[] | select(.matcher == "Task") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
+    && ok "$b wires the tracker on PreToolUse Task" || ko "$b wires the tracker on PreToolUse Task"
+  jq -e '[.hooks.PostToolUse[] | select(.matcher == "Task") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
+    && ok "$b wires the tracker on PostToolUse Task" || ko "$b wires the tracker on PostToolUse Task"
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh.? --start"))) | length == 1' "$f" \
+    >/dev/null 2>&1 \
+    && ok "$b passes --start exactly once" || ko "$b passes --start exactly once"
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh.? --end"))) | length == 1' "$f" \
+    >/dev/null 2>&1 \
+    && ok "$b passes --end exactly once" || ko "$b passes --end exactly once"
+  # The Task matcher must not sweep in Write/Edit, or every edit would look like an agent.
+  jq -e '[.hooks.PostToolUse[] | select(.matcher == "Write|Edit") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 0' "$f" >/dev/null 2>&1 \
+    && ok "$b keeps the tracker out of the Write|Edit matcher" \
+    || ko "$b keeps the tracker out of the Write|Edit matcher"
+done
+
+grep -qF 'learner-agent-track.sh' "$ROOT/install.sh" \
+  && ok "install.sh copies the tracker" || ko "install.sh copies the tracker"
+[ "$(grep -cF 'learner-agent-track.sh' "$ROOT/uninstall.sh")" = "2" ] \
+  && ok "uninstall.sh removes the tracker from both install shapes" \
+  || ko "uninstall.sh removes the tracker from both install shapes"
+
+SIDC=salvoc1
+echo '{"level":"S"}' > "$GCFG"
+tstart "$SIDC" "Something"
+echo 1 > "$(served "$SIDC")"
+printf '{"session_id":"%s"}' "$SIDC" | sh "$CLEAN"
+{ [ ! -f "$(agents "$SIDC")" ] && [ ! -f "$(dispatched "$SIDC")" ] && [ ! -f "$(served "$SIDC")" ]; } \
+  && ok "SessionEnd cleans up the three salvo files" \
+  || ko "SessionEnd cleans up the three salvo files"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
@@ -1679,17 +1716,18 @@ n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
   && ok "install lays down 7 learner-*.sh hook files" \
   || ko "install lays down 7 learner-*.sh hook files (got $n)"
 
-# hookcount() greps commands for "learner-", so it counts 5, not the 6 that
-# are actually wired: learner-config.sh is sourced, never invoked, so it was
-# never one of the 5 either way, and coach-gate.sh is a real wired hook that
-# this filter simply doesn't name-match. 5 is the right number for what this
-# helper counts; it is not a count of every wired hook.
+# hookcount() greps commands for "learner-", so it counts 7, not the 7 files
+# that are actually wired by coincidence: learner-config.sh is sourced, never
+# invoked, so it was never one of the 7 either way, and coach-gate.sh is a
+# real wired hook that this filter simply doesn't name-match — it is offset
+# by learner-agent-track.sh wiring twice (--start and --end). 7 is the right
+# number for what this helper counts; it is not a count of every wired hook.
 n1=$(hookcount "$I")
 inst "$I" --level S >/dev/null 2>&1
 n2=$(hookcount "$I")
-{ [ "$n1" = 5 ] && [ "$n2" = 5 ]; } \
-  && ok "hook merge is idempotent (5 name-matched hooks)" \
-  || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
+{ [ "$n1" = 7 ] && [ "$n2" = 7 ]; } \
+  && ok "hook merge is idempotent (7 name-matched hooks)" \
+  || ko "hook merge is idempotent (got $n1 then $n2, want 7/7)"
 
 # install.sh's own dedup — exercised end to end, not a re-typed copy of its
 # jq — must catch every hook this project wires, coach's PreToolUse entry
@@ -2375,7 +2413,7 @@ for flag in "--project=" "--project"; do
     || ko "the '$flag' error message names the flag (got '$out')"
 done
 { [ -f "$UE/hooks/learner-quiz.sh" ] && [ -f "$UE/learner.json" ] \
-  && [ "$(hookcount "$UE")" = 5 ]; } \
+  && [ "$(hookcount "$UE")" = 7 ]; } \
   && ok "a rejected --project leaves the user-level install untouched" \
   || ko "a rejected --project leaves the user-level install untouched"
 
@@ -3923,10 +3961,21 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "8" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "8" ]; } \
-  && ok "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+# Derived rather than counted by hand. A literal number here conflicts on every
+# branch that adds a hook — it did so three times over — and the number was never
+# the thing worth pinning. What matters is that every wired command goes through
+# the plugin root, and that every script it names is one this payload actually
+# ships: a typo in a path is otherwise a hook that silently never runs.
+n_cmds=$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")
+n_root=$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")
+unknown_hook=""
+for sc in $(jq -r '.hooks[][].hooks[].command' "$PLUGIN_HOOKS" \
+            | sed -n 's#.*/hooks/\([A-Za-z0-9_.-]*\.sh\).*#\1#p' | sort -u); do
+  [ -f "$PLUG/hooks/$sc" ] || unknown_hook="$unknown_hook $sc"
+done
+{ [ "$n_cmds" -gt 0 ] && [ "$n_cmds" = "$n_root" ] && [ -z "$unknown_hook" ]; } \
+  && ok "hooks.json wires $n_cmds commands, every one via \${CLAUDE_PLUGIN_ROOT} and shipped" \
+  || ko "hooks.json wiring is off (commands=$n_cmds via-root=$n_root unknown:$unknown_hook)"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
