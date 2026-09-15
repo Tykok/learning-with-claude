@@ -1654,6 +1654,35 @@ printf '{"session_id":"%s"}' "$SIDC" | sh "$CLEAN"
   && ok "SessionEnd cleans up the three salvo files" \
   || ko "SessionEnd cleans up the three salvo files"
 
+# --- agent salvo: the skill protocol -----------------------------------------
+SALVO_REF="$ROOT/skills/learner/references/agent-salvo.md"
+SKILLMD="$ROOT/skills/learner/SKILL.md"
+
+[ -f "$SALVO_REF" ] \
+  && ok "the salvo protocol reference exists" || ko "the salvo protocol reference exists"
+grep -qF 'learner-prep:' "$SALVO_REF" \
+  && ok "the protocol states the anti-recursion contract" \
+  || ko "the protocol states the anti-recursion contract"
+grep -qF 'hook-quiz.md' "$SALVO_REF" \
+  && ok "the protocol defers to hook-quiz.md instead of restating it" \
+  || ko "the protocol defers to hook-quiz.md instead of restating it"
+grep -qF 'data.md' "$SALVO_REF" \
+  && ok "the protocol defers to data.md for the record files" \
+  || ko "the protocol defers to data.md for the record files"
+grep -qiF 'coach' "$SALVO_REF" \
+  && ok "the protocol covers the coach-mode case" || ko "the protocol covers the coach-mode case"
+
+grep -qF '🤖' "$SKILLMD" \
+  && ok "SKILL.md documents the salvo trigger" || ko "SKILL.md documents the salvo trigger"
+grep -qF 'references/agent-salvo.md' "$SKILLMD" \
+  && ok "SKILL.md points at the salvo protocol" || ko "SKILL.md points at the salvo protocol"
+for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
+  grep -qF "$k" "$SKILLMD" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+done
+grep -qiF 'salvo' "$ROOT/skills/learner/references/coach.md" \
+  && ok "coach.md states which channel wins when both land" \
+  || ko "coach.md states which channel wins when both land"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
