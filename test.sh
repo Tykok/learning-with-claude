@@ -1425,9 +1425,9 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
   || ko "install writes the global config from flags"
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
-[ "$n" = 6 ] \
-  && ok "install lays down 6 learner-*.sh hook files" \
-  || ko "install lays down 6 learner-*.sh hook files (got $n)"
+[ "$n" = 7 ] \
+  && ok "install lays down 7 learner-*.sh hook files" \
+  || ko "install lays down 7 learner-*.sh hook files (got $n)"
 
 # hookcount() greps commands for "learner-", so it counts 5, not the 6 that
 # are actually wired: learner-config.sh is sourced, never invoked, so it was

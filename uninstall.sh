@@ -132,6 +132,7 @@ if [ -n "$PROJECT" ]; then
         "$TARGET/.claude/hooks/learner-quiz.sh" \
         "$TARGET/.claude/hooks/learner-cleanup.sh" \
         "$TARGET/.claude/hooks/learner-config.sh" \
+        "$TARGET/.claude/hooks/learner-sync.sh" \
         "$TARGET/.claude/hooks/coach-gate.sh" \
         "$TARGET/.claude/hooks/coach-watch.sh" \
         "$TARGET/.claude/hooks/pilot-record.sh" \
@@ -162,6 +163,7 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/learner-quiz.sh" \
       "$CFG_DIR/hooks/learner-cleanup.sh" \
       "$CFG_DIR/hooks/learner-update-check.sh" \
+      "$CFG_DIR/hooks/learner-sync.sh" \
       "$CFG_DIR/hooks/coach-gate.sh" \
       "$CFG_DIR/hooks/coach-watch.sh" \
       "$CFG_DIR/hooks/pilot-record.sh" \

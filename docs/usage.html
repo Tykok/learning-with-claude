@@ -48,6 +48,7 @@
       <li><a href="#commands">On demand</a></li>
       <li><a href="#coach">Coach mode — you write, Claude challenges</a></li>
       <li><a href="#pilot">Pilot — a delegation score, read from the transcript</a></li>
+      <li><a href="#sync">Sync — carry your record between machines</a></li>
     </ol>
   </nav>
 
@@ -92,6 +93,10 @@
     <dd>Pushes the recap into a Notion database — one row per competency theme, with a
     learning level derived from your session history. Needs the Notion connector; the
     parent page URL is asked for once, on the first export, and remembered after that.</dd>
+    <dt><code>learner sync push</code> / <code>pull [gist]</code> / <code>status</code> /
+    <code>use &lt;gist&gt;</code></dt>
+    <dd>Carries your learning record between machines through a private gist. See
+    <a href="#sync">Sync</a> below.</dd>
     <dt><code>learner update</code></dt>
     <dd>Checks the remote version and, if it is newer, re-runs the installer pinned to it.
     Safe to run any time — a no-op when you are already current.</dd>
@@ -235,6 +240,40 @@
     characters each, and <code>pilot forget --all</code> purges every one of them, any
     time.</li>
   </ul>
+  <h2 id="sync">Sync — carry your record between machines</h2>
+
+  <p><code>learner sync</code> moves your learning record — <code>memory.md</code>,
+  <code>recap.md</code> and the global <code>learner.json</code> — between machines through
+  one private GitHub gist. It is the only path that ever sends the record off the machine, and
+  it is <strong>manual only</strong>: no hook pushes anything, on any machine; nothing leaves
+  until you type it.</p>
+
+  <dl>
+    <dt><code>learner sync push</code></dt>
+    <dd>Snapshots the local record to the gist. The first push asks before creating it, and
+    creates it <code>--secret</code>. A secret gist is <strong>unlisted, not
+    access-controlled</strong>: anyone who has the URL can read it, without a GitHub account —
+    it carries your repo names, file names and the wording of your weak spots, so treat the
+    link like a password.</dd>
+    <dt><code>learner sync pull [gist-url]</code></dt>
+    <dd>Backs up the local record first, to
+    <code>${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/&lt;timestamp&gt;/</code>, then
+    three-way merges <code>memory.md</code> — a line you deleted here because you mastered it
+    stays deleted, even if the other side still has it — unions the <code>Session history</code>
+    table, and lets Claude merge the theme sections. Name a gist URL the first time you pull on
+    a new machine; after that it is remembered.</dd>
+    <dt><code>learner sync status</code></dt>
+    <dd>Read-only: the gist URL, when you last pushed and pulled, and what is not pushed yet.</dd>
+    <dt><code>learner sync use &lt;gist-url&gt;</code></dt>
+    <dd>Repoints this machine at a different gist — for a dev who already has one from another
+    machine.</dd>
+  </dl>
+
+  <p><code>learner export</code> (Notion) is unaffected by any of this: it stays the
+  human-readable view of your record, not a restore path. The gist carries the raw state, and
+  needs <code>gh</code>, authenticated (<code>gh auth login</code>). Worth making a habit:
+  <code>learner sync push</code> before you switch machines, so the record you left behind is
+  the one you pick back up.</p>
 
   <p class="next">Next: <a href="config.html">Configuration</a> — every setting
   Learner reads.</p>
@@ -252,7 +291,7 @@
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and eleven POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and twelve POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

@@ -262,6 +262,16 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
   only once coach mode is on. Nine of the other ten source
+  <p>Nine hook files ship and six are wired, into <code>SessionStart</code> (twice —
+  <code>learner-onboard.sh</code> and <code>learner-update-check.sh</code> both fire
+  there), <code>PreToolUse</code> (<code>coach-gate.sh</code>),
+  <code>PostToolUse</code>, <code>Stop</code> and <code>SessionEnd</code>. Three ship
+  unwired: <code>learner-config.sh</code> is sourced-only, and Claude Code never
+  invokes it directly; <code>coach-watch.sh</code> is never a static entry either —
+  <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
+  only once coach mode is on; and <code>learner-sync.sh</code> is never wired to a
+  hook event at all — the skill invokes it directly, only when the dev types
+  <code>learner sync</code>. Seven of the other eight source
   <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
   which needs none of it.</p>
 
@@ -304,7 +314,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and eleven POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and twelve POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>
