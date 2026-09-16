@@ -253,8 +253,10 @@ cmd_push() {
     _remote_at=$(gist_file "$_id" manifest.json | jq -r '.pushedAt // empty' 2>/dev/null)
     _base_at=''
     [ -f "$BASE_DIR/manifest.json" ] && _base_at=$(jq -r '.pushedAt // empty' "$BASE_DIR/manifest.json" 2>/dev/null)
+    # Pinned to the C locale: an LC_COLLATE where digits don't sort in byte
+    # order would otherwise silently mis-order these fixed-width timestamps.
     if [ -n "$_remote_at" ] && [ -n "$_base_at" ] && [ "$_remote_at" != "$_base_at" ] \
-       && [ "$(printf '%s\n%s\n' "$_base_at" "$_remote_at" | sort | tail -n1)" = "$_remote_at" ]; then
+       && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
       rm -rf "$_work"; fail remote-ahead
     fi
     # One PATCH with all four files: a gist whose manifest announces a recap.md

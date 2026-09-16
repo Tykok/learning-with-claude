@@ -4707,6 +4707,17 @@ out=$(sh "$SYNC" push)
   && ok "a later push updates the same gist without asking again" \
   || ko "a later push updates the same gist without asking again (out=$out)"
 
+# A remote pushedAt exactly equal to the base (the normal case right after a
+# clean sync) must not trip the guard — only a remote strictly newer does.
+_at=$(jq -r .pushedAt "$SDATA/sync-base/manifest.json")
+jq --arg at "$_at" '.pushedAt = $at' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" \
+  && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -r '.error // empty')" = "" ] \
+  && [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ]; } \
+  && ok "a remote pushedAt equal to the base does not trip remote-ahead" \
+  || ko "a remote pushedAt equal to the base does not trip remote-ahead (rc=$rc out=$out)"
+
 # The other machine pushed since our last sync: refuse rather than overwrite it.
 jq '.pushedAt = "2099-01-01T00:00:00Z"' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" \
   && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
