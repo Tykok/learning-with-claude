@@ -2184,8 +2184,10 @@ grep -qF 'learner-sync.sh' "$SYNCMD" \
   || ko "sync.md calls the shipped script rather than gh directly"
 
 # Narrowed to an actual gist-surface invocation, not any mention of `gh `: sync.md's own
-# prose tells the dev to run `gh auth login`, which must stay legal here.
-grep -qE '(^|[$]\( *)gh (gist|api) ' "$SYNCMD" \
+# prose tells the dev to run `gh auth login`, which must stay legal here. Leading
+# whitespace is allowed after the line-start anchor so an invocation indented inside a
+# code block (as every command in this file is) still matches.
+grep -qE '(^[[:space:]]*|[$]\( *)gh (gist|api) ' "$SYNCMD" \
   && ko "sync.md never drives the gist itself" \
   || ok "sync.md never drives the gist itself"
 
