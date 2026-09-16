@@ -57,12 +57,18 @@ On success report the action (`created` / `updated`) and the URL.
 sh "$HOOKS/learner-sync.sh" pull          # or: pull <gist-url> when the dev gives one
 ```
 
+Naming a gist that differs from the one already recorded repoints this machine at it and clears
+`sync-base/` first, exactly like `sync use` — the old base described agreement with the old
+gist, and merging against it here would read the new remote's absent lines as deletions.
+
 | `error` | What to say |
 |---------|-------------|
 | `no-gist` | Nothing recorded and nothing found. Ask for the gist URL: `learner sync pull <url>`. Never guess. |
 | `ambiguous-gist` | Several gists carry the marker. Ask which URL. |
-| `gh-fetch` | The gist could not be read. Nothing was written. |
+| `gh-fetch` | The gist could not be read, or answered with less than its own manifest promised. Nothing was written. |
 | `schema-too-new` | The snapshot comes from a newer learner — run `learner update`, then retry. |
+| `no-work-dir` | `pull-finish` was given a path that is not a live pull work directory. Re-run `learner sync pull` from scratch — never invent or reuse a work-dir path. |
+| *anything else* (`work-dir`, `backup-dir`, `merge`, `config-merge`, `write`, `base-dir`, `sync-json`) | These can fire **after** `memory.md` has already been rewritten in place. Say plainly that the local record may already be merged, point the dev at the most recent folder under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/` (named by UTC timestamp) to compare or restore from, and do **not** run `pull-finish` — that would lock the interrupted state in as agreed.|
 
 On success the script has already merged `memory.md` and `learner.json`, and taken a backup.
 `recap.md` is yours to write, from the four paths it hands back in `recap`:
@@ -113,8 +119,10 @@ sh "$HOOKS/learner-sync.sh" status
 
 Read-only. Report the gist URL, `lastPush` / `lastPull`, and what is not pushed
 (`unpushed.memoryLines`, `unpushed.historyRows`). `remoteAhead: true` → say a pull is due
-before the next push. `hasBase: false` → say the next pull will union both sides. `no-gist` →
-nothing is set up yet; `learner sync push` creates it.
+before the next push. `hasBase: false` → say the next pull will union both sides, **and** that a
+pull is required before the next push: `push` itself will refuse with `needs-pull` until then,
+since without a base there is nothing to check a push's safety against. `no-gist` → nothing is
+set up yet; `learner sync push` creates it.
 
 ## 5. `sync use`
 
@@ -124,7 +132,8 @@ sh "$HOOKS/learner-sync.sh" use <gist-url-or-id>
 
 Points this machine at an existing gist and clears `sync-base/`. Use it when the dev already
 has a gist from another machine. Say that the next pull will union both sides, since there is
-no agreed base with this gist yet.
+no agreed base with this gist yet — and that `push` will refuse with `needs-pull` until that
+pull has run, for the same reason.
 
 ## Files
 

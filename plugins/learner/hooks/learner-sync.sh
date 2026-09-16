@@ -315,7 +315,13 @@ write_atomic() {  # SRC DEST — never leave a half-written record behind
 cmd_pull() {
   _id=$(sync_json_get '.github.gistId')
   if [ -n "${1:-}" ]; then
-    _id=$(gist_id_from "$1")
+    _new_id=$(gist_id_from "$1")
+    # A base describes agreement with the *previous* gist. Repointing to a
+    # different one and keeping it would make this merge read the new
+    # remote's absent lines as deletions — the same reasoning `cmd_use`
+    # already applies.
+    [ "$_new_id" = "$_id" ] || rm -rf "$BASE_DIR"
+    _id="$_new_id"
   elif [ -z "$_id" ]; then
     _id=$(discover_gist)
     [ "$_id" = "AMBIGUOUS" ] && fail ambiguous-gist
