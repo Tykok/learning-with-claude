@@ -4635,6 +4635,98 @@ man="$WORK/snap/manifest.json"
   && ok "files with real content but zero bullets snapshot successfully" \
   || ko "files with real content but zero bullets snapshot successfully (out=$out man=$(cat "$man"))"
 
+# --- learner sync: push -----------------------------------------------------
+# Replace Task 1's minimal fake gh with a fuller one that serves a "remote gist"
+# out of $GH_REMOTE and logs argv to $GH_LOG, now that push needs create/patch/view.
+cat > "$WORK/bin/gh" <<'GHFAKE'
+#!/bin/sh
+# Fake gh: serves a "remote gist" out of $GH_REMOTE, logs argv to $GH_LOG.
+printf '%s\n' "$*" >> "${GH_LOG:-/dev/null}"
+case "$1 $2" in
+  "auth status") exit "${GH_AUTH:-0}" ;;
+  "gist create")
+    mkdir -p "$GH_REMOTE"
+    for f in "$@"; do [ -f "$f" ] && cp "$f" "$GH_REMOTE/$(basename "$f")"; done
+    printf 'https://gist.github.com/%s\n' "${GH_GIST_ID:-abc123}"
+    exit 0 ;;
+  "gist list")
+    cat "${GH_LIST:-/dev/null}" 2>/dev/null; exit 0 ;;
+  "gist view")
+    # gh gist view <id> -f <name> --raw
+    shift 3; name=""
+    while [ $# -gt 0 ]; do case "$1" in -f) name=$2; shift 2 ;; *) shift ;; esac; done
+    [ -f "$GH_REMOTE/$name" ] || exit 1
+    cat "$GH_REMOTE/$name"; exit 0 ;;
+esac
+if [ "$1" = "api" ]; then
+  [ -n "${GH_FAIL_API:-}" ] && { cat >/dev/null; exit 1; }
+  payload=$(cat)
+  mkdir -p "$GH_REMOTE"
+  printf '%s' "$payload" | jq -r '.files | keys[]' | while read -r k; do
+    printf '%s' "$payload" | jq -r --arg k "$k" '.files[$k].content' > "$GH_REMOTE/$k"
+  done
+  printf '{"id":"%s"}\n' "${GH_GIST_ID:-abc123}"
+  exit 0
+fi
+exit 0
+GHFAKE
+chmod +x "$WORK/bin/gh"
+export GH_REMOTE="$WORK/remote"; export GH_GIST_ID="abc123"
+
+rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
+printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$SDATA/recap.md"
+
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "needs-create-ok" ] \
+  && [ ! -d "$GH_REMOTE" ]; } \
+  && ok "the first push refuses to create a gist without --create-ok" \
+  || ko "the first push refuses to create a gist without --create-ok (rc=$rc out=$out)"
+
+out=$(sh "$SYNC" push --create-ok)
+{ [ "$(printf '%s' "$out" | jq -r .action)" = "created" ] \
+  && [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ] \
+  && [ -f "$GH_REMOTE/memory.md" ] && [ -f "$GH_REMOTE/manifest.json" ]; } \
+  && ok "--create-ok creates the gist and uploads the four files" \
+  || ko "--create-ok creates the gist and uploads the four files (out=$out)"
+
+grep -q -- '--secret' "$GH_LOG" \
+  && ok "the gist is created secret, never public" \
+  || ko "the gist is created secret, never public"
+
+{ [ "$(jq -r .github.gistId "$SDATA/sync.json")" = "abc123" ] \
+  && [ -n "$(jq -r .github.lastPush "$SDATA/sync.json")" ] \
+  && [ -f "$SDATA/sync-base/manifest.json" ]; } \
+  && ok "a successful push records the gist and advances the base" \
+  || ko "a successful push records the gist and advances the base"
+
+printf -- '- [Tests][api] fixtures — seen: 2026-09-15\n' >> "$SDATA/memory.md"
+out=$(sh "$SYNC" push)
+{ [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ] \
+  && [ "$(grep -c 'fixtures' "$GH_REMOTE/memory.md")" = 1 ]; } \
+  && ok "a later push updates the same gist without asking again" \
+  || ko "a later push updates the same gist without asking again (out=$out)"
+
+# The other machine pushed since our last sync: refuse rather than overwrite it.
+jq '.pushedAt = "2099-01-01T00:00:00Z"' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" \
+  && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+cp "$GH_REMOTE/memory.md" "$WORK/remote-memory-before"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "remote-ahead" ] \
+  && diff -q "$WORK/remote-memory-before" "$GH_REMOTE/memory.md" >/dev/null; } \
+  && ok "a push refuses to overwrite a remote that moved since the base" \
+  || ko "a push refuses to overwrite a remote that moved since the base (rc=$rc out=$out)"
+
+# A failed upload must leave the base where it was, or the next pull would read
+# the remote as an ancestor and delete what the other machine added.
+cp "$SDATA/sync-base/manifest.json" "$WORK/base-before"
+jq '.pushedAt = "2000-01-01T00:00:00Z"' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" \
+  && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+out=$(GH_FAIL_API=1 sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && diff -q "$WORK/base-before" "$SDATA/sync-base/manifest.json" >/dev/null; } \
+  && ok "a failed push leaves the base untouched" \
+  || ko "a failed push leaves the base untouched (rc=$rc out=$out)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

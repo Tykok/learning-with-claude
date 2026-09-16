@@ -22,16 +22,13 @@
 . "$(dirname "$0")/learner-config.sh"
 
 SYNC_SCHEMA=1
-# shellcheck disable=SC2034
 SYNC_DESC="claude-learner-state"
 
 DATA_DIR="$LEARNER_CFG_DIR/learner"
 MEM_FILE="$DATA_DIR/memory.md"
 REC_FILE="$DATA_DIR/recap.md"
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
-# shellcheck disable=SC2034
 SYNC_JSON="$DATA_DIR/sync.json"
-# shellcheck disable=SC2034
 BASE_DIR="$DATA_DIR/sync-base"
 # shellcheck disable=SC2034
 BACKUP_DIR="$DATA_DIR/backups"
@@ -203,6 +200,85 @@ snapshot_into() {  # DIR — the four gist files, or fail empty-record
     > "$_sd/manifest.json" || fail manifest
 }
 
+sync_json_get() {  # KEYPATH -> value or empty
+  [ -f "$SYNC_JSON" ] || return 0
+  jq -r "$1 // empty" "$SYNC_JSON" 2>/dev/null
+}
+
+sync_json_set() {  # KEY VALUE (string values only)
+  mkdir -p "$DATA_DIR"
+  _cur='{}'
+  [ -f "$SYNC_JSON" ] && _cur=$(jq -c 'if type == "object" then . else {} end' "$SYNC_JSON" 2>/dev/null)
+  [ -n "$_cur" ] || _cur='{}'
+  printf '%s' "$_cur" | jq -c --arg v "$2" "$1 = \$v" > "$SYNC_JSON.tmp" || fail sync-json
+  mv "$SYNC_JSON.tmp" "$SYNC_JSON" || fail sync-json
+}
+
+gist_file() {  # ID NAME -> the file's content on stdout, exit 1 when absent
+  gh gist view "$1" -f "$2" --raw 2>/dev/null
+}
+
+advance_base() {  # DIR — adopt DIR as the new common ancestor
+  rm -rf "$BASE_DIR.tmp"
+  mkdir -p "$BASE_DIR.tmp" || fail base-dir
+  for f in memory.md recap.md learner.json manifest.json; do
+    [ -f "$1/$f" ] && cp "$1/$f" "$BASE_DIR.tmp/$f"
+  done
+  rm -rf "$BASE_DIR"
+  mv "$BASE_DIR.tmp" "$BASE_DIR" || fail base-dir
+}
+
+cmd_push() {
+  _create_ok=0
+  [ "${1:-}" = "--create-ok" ] && _create_ok=1
+
+  _work="${TMPDIR:-/tmp}/learner-sync-push.$$"
+  rm -rf "$_work"
+  snapshot_into "$_work"     # calls fail empty-record when there is nothing to push
+
+  _id=$(sync_json_get '.github.gistId')
+
+  if [ -z "$_id" ]; then
+    [ "$_create_ok" = 1 ] || { rm -rf "$_work"; fail needs-create-ok; }
+    _url=$(gh gist create --secret -d "$SYNC_DESC" \
+             "$_work/memory.md" "$_work/recap.md" "$_work/learner.json" "$_work/manifest.json" \
+             2>/dev/null | tail -1)
+    [ -n "$_url" ] || { rm -rf "$_work"; fail gh-create; }
+    _id=${_url##*/}
+    sync_json_set '.github.gistId' "$_id"
+    _action=created
+  else
+    # The base is what we last agreed on. A remote pushedAt beyond it means the
+    # other machine has pushed since, and this push would erase that session.
+    _remote_at=$(gist_file "$_id" manifest.json | jq -r '.pushedAt // empty' 2>/dev/null)
+    _base_at=''
+    [ -f "$BASE_DIR/manifest.json" ] && _base_at=$(jq -r '.pushedAt // empty' "$BASE_DIR/manifest.json" 2>/dev/null)
+    if [ -n "$_remote_at" ] && [ -n "$_base_at" ] && [ "$_remote_at" != "$_base_at" ] \
+       && [ "$(printf '%s\n%s\n' "$_base_at" "$_remote_at" | sort | tail -n1)" = "$_remote_at" ]; then
+      rm -rf "$_work"; fail remote-ahead
+    fi
+    # One PATCH with all four files: a gist whose manifest announces a recap.md
+    # that has not landed would make the next pull merge against a lie.
+    jq -n \
+      --rawfile mem "$_work/memory.md" \
+      --rawfile rec "$_work/recap.md" \
+      --rawfile cfg "$_work/learner.json" \
+      --rawfile man "$_work/manifest.json" \
+      '{files:{"memory.md":{content:$mem},"recap.md":{content:$rec},
+               "learner.json":{content:$cfg},"manifest.json":{content:$man}}}' \
+      | gh api --method PATCH "/gists/$_id" --input - >/dev/null 2>&1 \
+      || { rm -rf "$_work"; fail gh-push; }
+    _action=updated
+  fi
+
+  # Only now, with GitHub's yes in hand.
+  advance_base "$_work"
+  sync_json_set '.github.lastPush' "$(now_utc)"
+  rm -rf "$_work"
+  printf '{"ok":true,"action":"%s","gistId":"%s","url":"https://gist.github.com/%s"}\n' \
+    "$_action" "$_id" "$_id"
+}
+
 case "$cmd" in
   merge-memory)
     [ $# -eq 3 ] || usage
@@ -220,5 +296,6 @@ case "$cmd" in
     printf '{"ok":true,"action":"snapshot","dir":"%s"}\n' "$1"
     exit 0
     ;;
+  push) cmd_push "$@"; exit 0 ;;
   *) fail not-implemented ;;
 esac
