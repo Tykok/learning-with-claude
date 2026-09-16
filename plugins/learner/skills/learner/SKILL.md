@@ -29,6 +29,10 @@ to the skill that holds the protocol.
 | `coach delegate <glob> …` | Let Claude write inside those globs this session; `none` clears | the `coach` skill |
 | `coach review [base-ref]` | Run one review now, off-cadence | the `coach` skill |
 | `export [notion-page-url]` | Push the recap into a Notion database | the `export` skill |
+| `sync push` | Snapshot the record into a private gist | `references/sync.md` |
+| `sync pull [gist]` | Fetch the gist and merge it into this machine | `references/sync.md` |
+| `sync status` | Gist, last push/pull, what is not pushed yet | `references/sync.md` |
+| `sync use <gist>` | Point this machine at an existing gist | `references/sync.md` |
 | `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | the `update` skill |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
