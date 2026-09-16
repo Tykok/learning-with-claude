@@ -4988,6 +4988,74 @@ lines=$(printf '%s\n' "$out" | grep -c .)
   || ko "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write (rc=$rc out=$out)"
 rm -f "$SDATA/backups"
 
+# --- learner sync: Important 4 — pull <gist> drops a stale base from a different gist ---
+setup_pull
+jq -n '{github:{gistId:"gist-A"}}' > "$SDATA/sync.json"
+mkdir -p "$SDATA/sync-base"
+printf -- '- [Code][api] gistA-only — seen: 2026-09-10\n' > "$SDATA/sync-base/memory.md"
+: > "$SDATA/sync-base/recap.md"
+jq -n '{schemaVersion:1,pushedAt:"2026-09-10T00:00:00Z"}' > "$SDATA/sync-base/manifest.json"
+printf -- '- [Code][api] gistA-only — seen: 2026-09-10\n' > "$SDATA/memory.md"
+printf '## To improve\n' > "$SDATA/recap.md"
+# GH_REMOTE now stands in for a *different* gist, which never held gistA-only.
+sh "$SYNC" pull "https://gist.github.com/gist-B" >/dev/null
+grep -qF 'gistA-only' "$SDATA/memory.md" \
+  && ok "pull <gist> with a different id drops the stale base instead of reading it as an ancestor" \
+  || ko "pull <gist> with a different id drops the stale base instead of reading it as an ancestor ($(cat "$SDATA/memory.md"))"
+
+# --- learner sync: Important 6 — a two-machine round trip loses nothing from either side ---
+A="$WORK/machineA"; B="$WORK/machineB"
+rm -rf "$A" "$B" "$GH_REMOTE"; mkdir -p "$A/learner" "$B/learner"
+
+printf -- '- [Code][api] A-weak-spot — seen: 2026-09-10\n' > "$A/learner/memory.md"
+printf '## To improve\n\n### Code\n- A theme\n' > "$A/learner/recap.md"
+
+out=$(CLAUDE_CONFIG_DIR="$A" sh "$SYNC" push --create-ok)
+{ [ "$(printf '%s' "$out" | jq -r .action)" = "created" ]; } \
+  && ok "round trip: machine A creates the gist" \
+  || ko "round trip: machine A creates the gist (out=$out)"
+
+printf -- '- [Tests][api] B-weak-spot — seen: 2026-09-11\n' > "$B/learner/memory.md"
+printf '## To improve\n\n### Tests\n- B theme\n' > "$B/learner/recap.md"
+pull_out=$(CLAUDE_CONFIG_DIR="$B" sh "$SYNC" pull "https://gist.github.com/$GH_GIST_ID")
+work=$(printf '%s' "$pull_out" | jq -r .work)
+CLAUDE_CONFIG_DIR="$B" sh "$SYNC" pull-finish "$work" >/dev/null
+{ grep -qF 'A-weak-spot' "$B/learner/memory.md" && grep -qF 'B-weak-spot' "$B/learner/memory.md"; } \
+  && ok "round trip: machine B's pull merges in A's line and keeps its own" \
+  || ko "round trip: machine B's pull merges in A's line and keeps its own ($(cat "$B/learner/memory.md"))"
+
+out=$(CLAUDE_CONFIG_DIR="$B" sh "$SYNC" push)
+{ [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ]; } \
+  && ok "round trip: machine B pushes its merged state back" \
+  || ko "round trip: machine B pushes its merged state back (out=$out)"
+
+pull_out=$(CLAUDE_CONFIG_DIR="$A" sh "$SYNC" pull)
+work=$(printf '%s' "$pull_out" | jq -r .work)
+CLAUDE_CONFIG_DIR="$A" sh "$SYNC" pull-finish "$work" >/dev/null
+{ grep -qF 'A-weak-spot' "$A/learner/memory.md" && grep -qF 'B-weak-spot' "$A/learner/memory.md"; } \
+  && ok "round trip: neither machine loses a line after the full push/pull cycle" \
+  || ko "round trip: neither machine loses a line after the full push/pull cycle ($(cat "$A/learner/memory.md"))"
+
+# sync-base/ must only ever describe a state both sides actually held.
+{ grep -qF 'A-weak-spot' "$A/learner/sync-base/memory.md" \
+  && grep -qF 'B-weak-spot' "$A/learner/sync-base/memory.md"; } \
+  && ok "round trip: the base after the cycle reflects only content both sides agreed on" \
+  || ko "round trip: the base after the cycle reflects only content both sides agreed on ($(cat "$A/learner/sync-base/memory.md"))"
+
+# --- learner sync: Important 5 — sync.md documents the rest of the pull error slugs -----
+grep -qF 'no-work-dir' "$SYNCMD" \
+  && ok "sync.md documents the no-work-dir pull-finish error" \
+  || ko "sync.md documents the no-work-dir pull-finish error"
+
+grep -qiF 'already be merged' "$SYNCMD" \
+  && grep -qiF 'pull-finish' "$SYNCMD" \
+  && ok "sync.md's pull table warns that a mid-merge failure leaves memory.md already changed" \
+  || ko "sync.md's pull table warns that a mid-merge failure leaves memory.md already changed"
+
+grep -qiF 'needs-pull' "$SYNCMD" && grep -qiE 'hasbase.*false|hasBase.*false' "$SYNCMD" \
+  && ok "sync.md's status guidance ties hasBase:false to the needs-pull push refusal" \
+  || ko "sync.md's status guidance ties hasBase:false to the needs-pull push refusal"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
