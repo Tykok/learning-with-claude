@@ -4581,13 +4581,13 @@ snap() { rm -rf "$WORK/snap"; sh "$SYNC" snapshot "$WORK/snap"; }
 
 rm -f "$SDATA/memory.md" "$SDATA/recap.md"
 out=$(snap); rc=$?
-{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "empty-record" ]; } \
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "empty-record" ] && [ ! -d "$WORK/snap" ]; } \
   && ok "an empty record is not snapshotted" \
   || ko "an empty record is not snapshotted (rc=$rc out=$out)"
 
 printf '   \n\n' > "$SDATA/memory.md"
 printf '\n' > "$SDATA/recap.md"
-[ "$(snap | jq -r .error)" = "empty-record" ] \
+{ [ "$(snap | jq -r .error)" = "empty-record" ] && [ ! -d "$WORK/snap" ]; } \
   && ok "whitespace-only files still count as an empty record" \
   || ko "whitespace-only files still count as an empty record"
 
@@ -4624,6 +4624,16 @@ man="$WORK/snap/manifest.json"
 diff -q "$SDATA/memory.md" "$WORK/snap/memory.md" >/dev/null \
   && ok "memory.md is snapshotted verbatim" \
   || ko "memory.md is snapshotted verbatim"
+
+printf 'This is a real file with content but no bullets\n' > "$SDATA/memory.md"
+printf '## To improve\n\nNo bullets here, only the table.\n' > "$SDATA/recap.md"
+out=$(snap)
+man="$WORK/snap/manifest.json"
+{ [ "$(printf '%s' "$out" | jq -r .ok)" = "true" ] \
+  && [ "$(jq -r .counts.memoryLines "$man")" = "0" ] \
+  && [ "$(jq -r .counts.themeLines "$man")" = "0" ]; } \
+  && ok "files with real content but zero bullets snapshot successfully" \
+  || ko "files with real content but zero bullets snapshot successfully (out=$out man=$(cat "$man"))"
 
 # --- summary ----------------------------------------------------------------
 echo

@@ -21,7 +21,6 @@
 # shellcheck source=hooks/learner-config.sh
 . "$(dirname "$0")/learner-config.sh"
 
-# shellcheck disable=SC2034
 SYNC_SCHEMA=1
 # shellcheck disable=SC2034
 SYNC_DESC="claude-learner-state"
@@ -173,7 +172,7 @@ history_rows() {  # FILE -> how many Session history rows it holds
 }
 
 bullet_lines() {  # FILE -> how many "- " lines it holds
-  if [ -f "$1" ]; then grep -c '^-[ \t]' "$1" 2>/dev/null || printf '0'; else printf '0'; fi
+  if [ -f "$1" ]; then n=$(grep -c '^-[ \t]' "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
 
 read_version() {
