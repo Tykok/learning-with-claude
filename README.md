@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Eleven POSIX `sh` hooks plus eight skills — a `learner` hub, one per subcommand (`quiz`,
+Twelve POSIX `sh` hooks plus eight skills — a `learner` hub, one per subcommand (`quiz`,
 `status`, `improve`, `coach`, `export`, `update`) and `pilot`, invocable as `/learner:quiz` and
 friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
@@ -253,7 +253,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `plugins/learner/hooks/*.sh` glob covers all eleven shipped hook files, including `learner-config.sh`. CI
+The `plugins/learner/hooks/*.sh` glob covers all twelve shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step. CI also runs `claude plugin validate` on the marketplace, on the

@@ -4420,6 +4420,44 @@ grep -qi 'never write' "$CO" && ok "the coach skill forbids writing to source" \
 grep -q 'references/data.md' "$CO" && ok "the coach skill defers to data.md for the data rules" \
   || ko "the coach skill defers to data.md for the data rules"
 
+# --- learner sync: skeleton -------------------------------------------------
+SYNC="$ROOT/hooks/learner-sync.sh"
+
+# A fake gh, so no test ever reaches the network. It serves a "remote" gist out
+# of $GH_REMOTE (one file per gist file) and logs its argv to $GH_LOG.
+mkdir -p "$WORK/bin"
+cat > "$WORK/bin/gh" <<'GHFAKE'
+#!/bin/sh
+printf '%s\n' "$*" >> "${GH_LOG:-/dev/null}"
+case "$1 $2" in
+  "auth status") exit "${GH_AUTH:-0}" ;;
+esac
+exit 0
+GHFAKE
+chmod +x "$WORK/bin/gh"
+export GH_LOG="$WORK/gh.log"
+PATH="$WORK/bin:$PATH"; export PATH
+
+out=$(sh "$SYNC" 2>/dev/null); rc=$?
+{ [ "$rc" = 2 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "usage" ]; } \
+  && ok "sync with no subcommand exits 2 with a usage error" \
+  || ko "sync with no subcommand exits 2 with a usage error (rc=$rc out=$out)"
+
+out=$(sh "$SYNC" frobnicate 2>/dev/null); rc=$?
+{ [ "$rc" = 2 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "usage" ]; } \
+  && ok "sync rejects an unknown subcommand" \
+  || ko "sync rejects an unknown subcommand (rc=$rc out=$out)"
+
+out=$(GH_AUTH=1 sh "$SYNC" status 2>/dev/null); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-unauthenticated" ]; } \
+  && ok "sync reports an unauthenticated gh instead of guessing" \
+  || ko "sync reports an unauthenticated gh instead of guessing (rc=$rc out=$out)"
+
+out=$(PATH="$(dirname "$(command -v jq)"):/usr/bin:/bin" sh "$SYNC" status 2>/dev/null); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-missing" ]; } \
+  && ok "sync reports a missing gh" \
+  || ko "sync reports a missing gh (rc=$rc out=$out)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
