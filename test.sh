@@ -5056,6 +5056,46 @@ grep -qiF 'needs-pull' "$SYNCMD" && grep -qiE 'hasbase.*false|hasBase.*false' "$
   && ok "sync.md's status guidance ties hasBase:false to the needs-pull push refusal" \
   || ko "sync.md's status guidance ties hasBase:false to the needs-pull push refusal"
 
+# --- learner sync: Minor 7 — jq builds the JSON, a quote in an argument can't break it ---
+out=$(sh "$SYNC" use 'gist"id'); rc=$?
+{ [ "$rc" = 0 ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1 \
+  && [ "$(printf '%s' "$out" | jq -r .gistId)" = 'gist"id' ]; } \
+  && ok "sync use emits valid JSON even when the gist id contains a quote" \
+  || ko "sync use emits valid JSON even when the gist id contains a quote (rc=$rc out=$out)"
+
+mkdir -p "$SDATA/sync-base"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/sync-base/memory.md"
+: > "$SDATA/sync-base/recap.md"
+jq -n '{}' > "$SDATA/sync-base/learner.json"
+jq -n '{schemaVersion:1}' > "$SDATA/sync-base/manifest.json"   # no pushedAt: skips the divergence guard
+jq -n --arg id 'gist"id' '{github:{gistId:$id}}' > "$SDATA/sync.json"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
+printf '## To improve\n' > "$SDATA/recap.md"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1 \
+  && [ "$(printf '%s' "$out" | jq -r .gistId)" = 'gist"id' ]; } \
+  && ok "sync push emits valid JSON even when the recorded gist id contains a quote" \
+  || ko "sync push emits valid JSON even when the recorded gist id contains a quote (rc=$rc out=$out)"
+
+# --- learner sync: Minor 8/11 — mktemp placeholders and work dirs, no guessable rm -rf ---
+grep -q 'mktemp' "$SYNC" \
+  && ok "sync builds its placeholder and work-dir paths with mktemp, not a \$\$-based guess" \
+  || ko "sync builds its placeholder and work-dir paths with mktemp, not a \$\$-based guess"
+
+mkdir -p "$WORK/not-a-work-dir"
+: > "$WORK/not-a-work-dir/manifest.json"
+: > "$WORK/not-a-work-dir/canary"
+out=$(sh "$SYNC" pull-finish "$WORK/not-a-work-dir"); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "no-work-dir" ] \
+  && [ -f "$WORK/not-a-work-dir/canary" ]; } \
+  && ok "pull-finish refuses to rm -rf a directory that is not one of its own work dirs" \
+  || ko "pull-finish refuses to rm -rf a directory that is not one of its own work dirs (rc=$rc out=$out)"
+
+# --- learner sync: Minor 9 — the Session history sort is pinned to the C locale ---------
+grep -qE 'LC_ALL=C sort .*-t' "$SYNC" \
+  && ok "merge_history sorts under LC_ALL=C, like the push/status timestamp comparisons" \
+  || ko "merge_history sorts under LC_ALL=C, like the push/status timestamp comparisons"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

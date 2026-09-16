@@ -69,17 +69,15 @@ esac
 
 # A readable path for a file that may be missing, so awk always gets three
 # distinct filenames. Distinct matters: the merge tells the three inputs apart
-# by FILENAME, and two identical names would fold two inputs into one.
-_empty_seq=0
+# by FILENAME, and two identical names would fold two inputs into one. Each
+# missing input gets its own file straight from mktemp, so two placeholders
+# in the same call can never collide on a shared name or a guessable path.
 readable_or_empty() {
   if [ -f "$1" ]; then
     printf '%s' "$1"
     return 0
   fi
-  _empty_seq=$((_empty_seq + 1))
-  _e="${TMPDIR:-/tmp}/learner-sync-empty.$$.$_empty_seq"
-  : > "$_e"
-  printf '%s' "$_e"
+  mktemp "${TMPDIR:-/tmp}/learner-sync-empty.XXXXXX"
 }
 
 merge_memory() {  # BASE LOCAL REMOTE -> merged markdown on stdout
@@ -149,7 +147,7 @@ merge_history() {  # LOCAL REMOTE -> merged body rows on stdout, oldest first
       split(norm, c, "|")
       printf "%s\t%s\n", c[2], line
     }
-  ' "$_hl" "$_hr" | sort -s -t "$(printf '\t')" -k1,1 | cut -f2-
+  ' "$_hl" "$_hr" | LC_ALL=C sort -s -t "$(printf '\t')" -k1,1 | cut -f2-
 }
 
 history_rows() {  # FILE -> how many Session history rows it holds
@@ -231,8 +229,7 @@ cmd_push() {
   _create_ok=0
   [ "${1:-}" = "--create-ok" ] && _create_ok=1
 
-  _work="${TMPDIR:-/tmp}/learner-sync-push.$$"
-  rm -rf "$_work"
+  _work=$(mktemp -d "${TMPDIR:-/tmp}/learner-sync-push.XXXXXX") || fail work-dir
   snapshot_into "$_work"     # calls fail empty-record when there is nothing to push
 
   _id=$(sync_json_get '.github.gistId')
@@ -281,8 +278,8 @@ cmd_push() {
   advance_base "$_work"
   sync_json_set '.github.lastPush' "$(now_utc)"
   rm -rf "$_work"
-  printf '{"ok":true,"action":"%s","gistId":"%s","url":"https://gist.github.com/%s"}\n' \
-    "$_action" "$_id" "$_id"
+  jq -nc --arg action "$_action" --arg id "$_id" \
+    '{ok:true, action:$action, gistId:$id, url:("https://gist.github.com/" + $id)}'
 }
 
 gist_id_from() {  # <id-or-url> -> bare id
@@ -328,8 +325,7 @@ cmd_pull() {
     [ -n "$_id" ] || fail no-gist
   fi
 
-  _work="${TMPDIR:-/tmp}/learner-sync-pull.$$"
-  rm -rf "$_work"; mkdir -p "$_work" || fail work-dir
+  _work=$(mktemp -d "${TMPDIR:-/tmp}/learner-sync-pull.XXXXXX") || fail work-dir
 
   for f in memory.md recap.md learner.json manifest.json; do
     gist_file "$_id" "$f" > "$_work/$f" || { rm -rf "$_work"; fail gh-fetch; }
@@ -395,10 +391,18 @@ cmd_pull() {
 cmd_pull_finish() {
   _work=${1:-}
   [ -n "$_work" ] && [ -f "$_work/manifest.json" ] || fail no-work-dir
+  # This path is handed in from the outside (the model relays what `pull`
+  # printed). Refuse anything that is not one of this script's own pull work
+  # dirs before the rm -rf below, so a stale or mistaken argument can never
+  # turn into an arbitrary recursive delete.
+  case "$_work" in
+    "${TMPDIR:-/tmp}/learner-sync-pull."*) ;;
+    *) fail no-work-dir ;;
+  esac
   advance_base "$_work"
   sync_json_set '.github.lastPull' "$(now_utc)"
   rm -rf "$_work"
-  printf '{"ok":true,"action":"pull-finished"}\n'
+  jq -nc '{ok:true, action:"pull-finished"}'
 }
 
 cmd_status() {
@@ -447,7 +451,7 @@ cmd_use() {
   # The base describes agreement with the *previous* gist. Kept, it would make
   # the next pull read the new remote's missing lines as deletions.
   rm -rf "$BASE_DIR"
-  printf '{"ok":true,"action":"repointed","gistId":"%s"}\n' "$_id"
+  jq -nc --arg id "$_id" '{ok:true, action:"repointed", gistId:$id}'
 }
 
 case "$cmd" in
