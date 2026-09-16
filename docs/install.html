@@ -246,6 +246,9 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/learner/pilot-evidence.md</code></td><td>The quotes behind each numeric score, capped at 200 characters each and fully purgeable with <code>pilot forget</code></td></tr>
       <tr><td><code>$CFG/learner/pilot-stamps</code></td><td><code>score=</code>/<code>brief=</code>/<code>declined=</code> timestamps that pace the scoring pass and the weekly brief</td></tr>
       <tr><td><code>$CFG/learner/pilot-devlines</code></td><td>Per-session line tallies from the coach watcher, consumed and truncated by the scoring pass</td></tr>
+      <tr><td><code>$CFG/learner/sync.json</code></td><td>Gist id and last push/pull times for <code>learner sync</code>. Created on the first sync, not by the installer</td></tr>
+      <tr><td><code>$CFG/learner/sync-base/</code></td><td>The state both sides last agreed on — the ancestor for the next <code>learner sync</code> merge</td></tr>
+      <tr><td><code>$CFG/learner/backups/&lt;timestamp&gt;/</code></td><td>A copy of the local record taken before every <code>learner sync pull</code> writes anything</td></tr>
     </tbody>
   </table>
   </div>

@@ -5096,6 +5096,27 @@ grep -qE 'LC_ALL=C sort .*-t' "$SYNC" \
   && ok "merge_history sorts under LC_ALL=C, like the push/status timestamp comparisons" \
   || ko "merge_history sorts under LC_ALL=C, like the push/status timestamp comparisons"
 
+# --- learner sync: Minor 12 — documentation gaps ----------------------------------------
+awk '/<h2 id="uninstall">/{f=1} f' "$ROOT/docs/safety.html" > "$WORK/uninstall-section.html"
+grep -qi 'gist' "$WORK/uninstall-section.html" \
+  && ok "docs/safety.html's uninstall section says the gist survives uninstall" \
+  || ko "docs/safety.html's uninstall section says the gist survives uninstall"
+
+for f in 'sync.json' 'sync-base' 'backups'; do
+  grep -qF "$f" "$ROOT/docs/install.html" \
+    && ok "docs/install.html's file table lists $f" \
+    || ko "docs/install.html's file table lists $f"
+done
+
+for f in "$ROOT/skills/learner/references/sync.md" "$ROOT/README.md" "$ROOT/docs/safety.html" "$ROOT/docs/usage.html"; do
+  grep -qF 'pushedFrom' "$f" \
+    && ok "$(basename "$f")'s consent warning names pushedFrom" \
+    || ko "$(basename "$f")'s consent warning names pushedFrom"
+  grep -qF 'disabledPaths' "$f" \
+    && ok "$(basename "$f")'s consent warning names disabledPaths" \
+    || ko "$(basename "$f")'s consent warning names disabledPaths"
+done
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

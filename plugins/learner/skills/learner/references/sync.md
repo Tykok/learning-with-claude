@@ -40,8 +40,9 @@ On `needs-create-ok`, ask the dev before anything is created, and include the wa
 the one thing they cannot undo once the link exists:
 
 > A secret gist is unlisted, not private: anyone who has the URL can read it without a GitHub
-> account. The snapshot carries your repo names, file names and the wording of your weak spots.
-> Create it?
+> account. The snapshot carries your repo names, file names and the wording of your weak spots,
+> plus `pushedFrom` (this machine's hostname) and `learner.json`'s `disabledPaths` (absolute
+> local paths). Create it?
 
 Only on an explicit yes:
 
