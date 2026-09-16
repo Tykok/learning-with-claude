@@ -2153,7 +2153,7 @@ REFS="$PLUG/skills/learner/references"
 
 # The hub keeps only what more than one mode reads; every subcommand's own protocol
 # is its own skill, so Claude Code can expose it as /learner:<name>.
-for f in hook-quiz.md data.md; do
+for f in hook-quiz.md data.md sync.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
 for n in quiz status improve coach export update; do
@@ -2165,6 +2165,51 @@ for n in quiz status improve coach export update; do
 done
 
 UPD="$PLUG/skills/update/SKILL.md"
+
+# --- skill content: sync -----------------------------------------------------
+SYNCMD="$REFS/sync.md"
+
+grep -q 'references/sync.md' "$SK" \
+  && ok "SKILL.md routes the sync subcommand to references/sync.md" \
+  || ko "SKILL.md routes the sync subcommand to references/sync.md"
+
+for s in "sync push" "sync pull" "sync status" "sync use"; do
+  grep -qF "$s" "$SK" \
+    && ok "SKILL.md's dispatch table lists '$s'" \
+    || ko "SKILL.md's dispatch table lists '$s'"
+done
+
+grep -qF 'learner-sync.sh' "$SYNCMD" \
+  && ok "sync.md calls the shipped script rather than gh directly" \
+  || ko "sync.md calls the shipped script rather than gh directly"
+
+# Narrowed to an actual gist-surface invocation, not any mention of `gh `: sync.md's own
+# prose tells the dev to run `gh auth login`, which must stay legal here.
+grep -qE '(^|[$]\( *)gh (gist|api) ' "$SYNCMD" \
+  && ko "sync.md never drives the gist itself" \
+  || ok "sync.md never drives the gist itself"
+
+grep -qF -- '--create-ok' "$SYNCMD" \
+  && grep -qiE 'unlisted|url can read|anyone with the (link|url)' "$SYNCMD" \
+  && ok "sync.md gates gist creation behind an explicit warning" \
+  || ko "sync.md gates gist creation behind an explicit warning"
+
+grep -qF 'pull-finish' "$SYNCMD" \
+  && ok "sync.md closes the pull with pull-finish" \
+  || ko "sync.md closes the pull with pull-finish"
+
+grep -qiE 'never (merge|rename)|report' "$SYNCMD" \
+  && grep -qF 'Theme' "$SYNCMD" \
+  && ok "sync.md keeps near-duplicate themes out of an automatic rename" \
+  || ko "sync.md keeps near-duplicate themes out of an automatic rename"
+
+grep -qF 'CLAUDE_CONFIG_DIR' "$SYNCMD" \
+  && grep -qF 'sync.json' "$SYNCMD" \
+  && grep -qF 'sync-base' "$SYNCMD" \
+  && ok "sync.md resolves its state under CLAUDE_CONFIG_DIR" \
+  || ko "sync.md resolves its state under CLAUDE_CONFIG_DIR"
+
+UPD="$ROOT/skills/learner/references/update.md"
 
 grep -qF 'INSTALL_ORIGIN' "$UPD" \
   && ok "update.md reads the install-origin marker" \
