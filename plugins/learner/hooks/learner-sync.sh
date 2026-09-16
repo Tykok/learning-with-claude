@@ -75,5 +75,77 @@ case "$cmd" in
   *) need_gh ;;
 esac
 
-# Subcommand bodies are added by later tasks.
-fail not-implemented
+# A readable path for a file that may be missing, so awk always gets three
+# distinct filenames. Distinct matters: the merge tells the three inputs apart
+# by FILENAME, and two identical names would fold two inputs into one.
+_empty_seq=0
+readable_or_empty() {
+  if [ -f "$1" ]; then
+    printf '%s' "$1"
+    return 0
+  fi
+  _empty_seq=$((_empty_seq + 1))
+  _e="${TMPDIR:-/tmp}/learner-sync-empty.$$.$_empty_seq"
+  : > "$_e"
+  printf '%s' "$_e"
+}
+
+merge_memory() {  # BASE LOCAL REMOTE -> merged markdown on stdout
+  _mb=$(readable_or_empty "$1")
+  _ml=$(readable_or_empty "$2")
+  _mr=$(readable_or_empty "$3")
+  awk -v BASEF="$_mb" -v REMF="$_mr" '
+    # The key is the concept, not the line: the date changes every time the dev
+    # is asked again, so keying on the whole line would make every refresh look
+    # like a brand-new weak spot.
+    function key(l,   p, k) {
+      p = index(l, " — seen:")
+      k = (p > 0) ? substr(l, 1, p - 1) : l
+      gsub(/[ \t]+/, " ", k); sub(/^ +/, "", k); sub(/ +$/, "", k)
+      return k
+    }
+    function dt(l,   p, d) {
+      p = index(l, "seen:")
+      if (p == 0) return ""
+      d = substr(l, p + 5)
+      gsub(/[^0-9-]/, "", d)
+      return substr(d, 1, 10)
+    }
+    FILENAME == BASEF { if (/^-[ \t]/) B[key($0)] = 1; next }
+    FILENAME == REMF  {
+      if (!/^-[ \t]/) next
+      k = key($0); R[k] = $0; RD[k] = dt($0)
+      if (!(k in RSEEN)) { RSEEN[k] = 1; ro[++rn] = k }
+      next
+    }
+    {
+      if (!/^-[ \t]/) { head[++hn] = $0; next }
+      k = key($0); L[k] = $0; LD[k] = dt($0)
+      if (!(k in LSEEN)) { LSEEN[k] = 1; lo[++ln] = k }
+    }
+    END {
+      for (i = 1; i <= hn; i++) print head[i]
+      for (i = 1; i <= ln; i++) {
+        k = lo[i]
+        if (k in R) { print (RD[k] > LD[k]) ? R[k] : L[k]; continue }
+        if (k in B) continue          # present in the base, gone remotely: deleted there
+        print L[k]                    # not in the base: added here since the last sync
+      }
+      for (i = 1; i <= rn; i++) {
+        k = ro[i]
+        if (k in L) continue          # already emitted by the loop above
+        if (k in B) continue          # present in the base, gone locally: deleted here
+        print R[k]                    # added on the other machine since the last sync
+      }
+    }
+  ' "$_mb" "$_mr" "$_ml"
+}
+
+case "$cmd" in
+  merge-memory)
+    [ $# -eq 3 ] || usage
+    merge_memory "$1" "$2" "$3"
+    exit 0
+    ;;
+  *) fail not-implemented ;;
+esac

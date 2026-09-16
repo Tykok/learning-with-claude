@@ -4464,6 +4464,73 @@ out=$(PATH="$NOGH_PATH" /bin/sh "$SYNC" status 2>/dev/null); rc=$?
   && ok "sync reports a missing gh" \
   || ko "sync reports a missing gh (rc=$rc out=$out)"
 
+# --- learner sync: memory.md three-way merge --------------------------------
+M="$WORK/merge"; mkdir -p "$M"
+mm() { sh "$SYNC" merge-memory "$M/base.md" "$M/local.md" "$M/remote.md"; }
+
+# Row 1 of the spec's table: in the base, gone locally, still on the remote.
+# The dev mastered it here; the merge must not resurrect it.
+printf -- '- [Code][api] null handling — seen: 2026-09-01\n' > "$M/base.md"
+: > "$M/local.md"
+printf -- '- [Code][api] null handling — seen: 2026-09-01\n' > "$M/remote.md"
+[ -z "$(mm)" ] \
+  && ok "a line deleted locally stays deleted" \
+  || ko "a line deleted locally stays deleted (got: $(mm))"
+
+# Row 2: in the base, still local, gone from the remote.
+printf -- '- [Code][api] null handling — seen: 2026-09-01\n' > "$M/base.md"
+printf -- '- [Code][api] null handling — seen: 2026-09-01\n' > "$M/local.md"
+: > "$M/remote.md"
+[ -z "$(mm)" ] \
+  && ok "a line deleted on the remote is dropped" \
+  || ko "a line deleted on the remote is dropped (got: $(mm))"
+
+# Rows 3 and 4: added on one side only, absent from the base — both survive.
+: > "$M/base.md"
+printf -- '- [Tests][api] fixture scope — seen: 2026-09-10\n' > "$M/local.md"
+printf -- '- [CI/Build][web] cache keys — seen: 2026-09-12\n' > "$M/remote.md"
+out=$(mm)
+{ printf '%s' "$out" | grep -qF 'fixture scope' \
+  && printf '%s' "$out" | grep -qF 'cache keys' \
+  && [ "$(printf '%s\n' "$out" | grep -c .)" = 2 ]; } \
+  && ok "additions from both sides are kept" \
+  || ko "additions from both sides are kept (got: $out)"
+
+# Row 5: both sides carry the line, different dates — the most recent wins, once.
+printf -- '- [Code][api] retries — seen: 2026-09-01\n' > "$M/base.md"
+printf -- '- [Code][api] retries — seen: 2026-09-05\n' > "$M/local.md"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$M/remote.md"
+out=$(mm)
+{ [ "$(printf '%s\n' "$out" | grep -c .)" = 1 ] \
+  && printf '%s' "$out" | grep -qF 'seen: 2026-09-14'; } \
+  && ok "the most recent date wins, and the line is not duplicated" \
+  || ko "the most recent date wins, and the line is not duplicated (got: $out)"
+
+# Whitespace must not fork one concept into two lines.
+printf -- '- [Code][api] retries — seen: 2026-09-01\n' > "$M/base.md"
+printf -- '-  [Code][api]  retries  — seen: 2026-09-05\n' > "$M/local.md"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$M/remote.md"
+[ "$(mm | grep -c .)" = 1 ] \
+  && ok "whitespace differences do not fork a concept in two" \
+  || ko "whitespace differences do not fork a concept in two (got: $(mm))"
+
+# No base at all (first pull on a new machine): union, nothing deleted.
+rm -f "$M/base.md"
+printf -- '- [Tests][api] fixture scope — seen: 2026-09-10\n' > "$M/local.md"
+printf -- '- [Code][web] hydration — seen: 2026-09-11\n' > "$M/remote.md"
+[ "$(mm | grep -c .)" = 2 ] \
+  && ok "with no base the merge falls back to the union" \
+  || ko "with no base the merge falls back to the union (got: $(mm))"
+touch "$M/base.md"
+
+# Non-entry lines come from the local file and stay at the top.
+printf '# Working memory\n\n' > "$M/local.md"
+printf -- '- [Code][web] hydration — seen: 2026-09-11\n' >> "$M/local.md"
+: > "$M/remote.md"; : > "$M/base.md"
+[ "$(mm | head -1)" = '# Working memory' ] \
+  && ok "non-entry lines are preserved at the top" \
+  || ko "non-entry lines are preserved at the top (got: $(mm | head -1))"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
