@@ -4531,6 +4531,50 @@ printf -- '- [Code][web] hydration — seen: 2026-09-11\n' >> "$M/local.md"
   && ok "non-entry lines are preserved at the top" \
   || ko "non-entry lines are preserved at the top (got: $(mm | head -1))"
 
+# --- learner sync: Session history union ------------------------------------
+H="$WORK/hist"; mkdir -p "$H"
+mh() { sh "$SYNC" merge-history "$H/local.md" "$H/remote.md"; }
+
+cat > "$H/local.md" <<'EOF'
+## Session history
+
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|---|---|---|---|---|---|---|
+| 2026-09-10 | api | Code | code | ✅ ok | clean | Error handling |
+| 2026-09-12 | api | Tests | fill | ⚠️ revisit | fixtures | Test design |
+EOF
+cat > "$H/remote.md" <<'EOF'
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|---|---|---|---|---|---|---|
+| 2026-09-11 | web | Code | archi | ✅ ok | layering | Layering |
+| 2026-09-12 | api | Tests | fill | ⚠️ revisit | fixtures | Test design |
+EOF
+
+out=$(mh)
+[ "$(printf '%s\n' "$out" | grep -c .)" = 3 ] \
+  && ok "the history union drops the row both sides share" \
+  || ko "the history union drops the row both sides share (got: $out)"
+
+printf '%s\n' "$out" | grep -qE '^\|[^|]*Date' \
+  && ko "the header row is not emitted" \
+  || ok "the header row is not emitted"
+
+printf '%s\n' "$out" | grep -qE '^\|[-| ]+\|$' \
+  && ko "the separator row is not emitted" \
+  || ok "the separator row is not emitted"
+
+[ "$(printf '%s\n' "$out" | head -1 | cut -d'|' -f2 | tr -d ' ')" = "2026-09-10" ] \
+  && [ "$(printf '%s\n' "$out" | tail -1 | cut -d'|' -f2 | tr -d ' ')" = "2026-09-12" ] \
+  && ok "the merged history is sorted oldest first" \
+  || ko "the merged history is sorted oldest first (got: $out)"
+
+# Spacing inside the cells is cosmetic; it must not survive as a second row.
+printf '|  2026-09-10 |  api | Code | code | ✅ ok | clean | Error handling |\n' > "$H/remote.md"
+printf '| 2026-09-10 | api | Code | code | ✅ ok | clean | Error handling |\n' > "$H/local.md"
+[ "$(mh | grep -c .)" = 1 ] \
+  && ok "cell spacing does not duplicate a history row" \
+  || ko "cell spacing does not duplicate a history row (got: $(mh))"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

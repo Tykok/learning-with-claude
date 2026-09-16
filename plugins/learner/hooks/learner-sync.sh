@@ -141,10 +141,34 @@ merge_memory() {  # BASE LOCAL REMOTE -> merged markdown on stdout
   ' "$_mb" "$_mr" "$_ml"
 }
 
+merge_history() {  # LOCAL REMOTE -> merged body rows on stdout, oldest first
+  _hl=$(readable_or_empty "$1")
+  _hr=$(readable_or_empty "$2")
+  awk '
+    /^[ \t]*\|/ {
+      line = $0
+      norm = line
+      gsub(/[ \t]+/, " ", norm)
+      gsub(/ *\| */, "|", norm)
+      sub(/^ +/, "", norm); sub(/ +$/, "", norm)
+      if (norm ~ /^\|[-|]+\|$/) next        # separator row
+      if (norm ~ /^\|Date\|/) next          # header row
+      if (seen[norm]++) next
+      split(norm, c, "|")
+      printf "%s\t%s\n", c[2], line
+    }
+  ' "$_hl" "$_hr" | sort -s -t "$(printf '\t')" -k1,1 | cut -f2-
+}
+
 case "$cmd" in
   merge-memory)
     [ $# -eq 3 ] || usage
     merge_memory "$1" "$2" "$3"
+    exit 0
+    ;;
+  merge-history)
+    [ $# -eq 2 ] || usage
+    merge_history "$1" "$2"
     exit 0
     ;;
   *) fail not-implemented ;;
