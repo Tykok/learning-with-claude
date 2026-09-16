@@ -4453,7 +4453,13 @@ out=$(GH_AUTH=1 sh "$SYNC" status 2>/dev/null); rc=$?
   && ok "sync reports an unauthenticated gh instead of guessing" \
   || ko "sync reports an unauthenticated gh instead of guessing (rc=$rc out=$out)"
 
-out=$(PATH="$(dirname "$(command -v jq)"):/usr/bin:/bin" sh "$SYNC" status 2>/dev/null); rc=$?
+# Collision-proof gh-missing test: symlink only what status path needs,
+# leave gh out. This prevents `gh auth status` real call even if jq and gh share a directory.
+NOGH_PATH="$WORK/tmp/no-gh-path"; mkdir -p "$NOGH_PATH"
+for b in jq grep date dirname; do
+  bp=$(command -v "$b") && ln -sf "$bp" "$NOGH_PATH/$b"
+done
+out=$(PATH="$NOGH_PATH" /bin/sh "$SYNC" status 2>/dev/null); rc=$?
 { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-missing" ]; } \
   && ok "sync reports a missing gh" \
   || ko "sync reports a missing gh (rc=$rc out=$out)"
