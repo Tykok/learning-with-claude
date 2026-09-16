@@ -4575,6 +4575,56 @@ printf '| 2026-09-10 | api | Code | code | ✅ ok | clean | Error handling |\n' 
   && ok "cell spacing does not duplicate a history row" \
   || ko "cell spacing does not duplicate a history row (got: $(mh))"
 
+# --- learner sync: the snapshot ---------------------------------------------
+SDATA="$WORK/cfg/learner"; mkdir -p "$SDATA"
+snap() { rm -rf "$WORK/snap"; sh "$SYNC" snapshot "$WORK/snap"; }
+
+rm -f "$SDATA/memory.md" "$SDATA/recap.md"
+out=$(snap); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "empty-record" ]; } \
+  && ok "an empty record is not snapshotted" \
+  || ko "an empty record is not snapshotted (rc=$rc out=$out)"
+
+printf '   \n\n' > "$SDATA/memory.md"
+printf '\n' > "$SDATA/recap.md"
+[ "$(snap | jq -r .error)" = "empty-record" ] \
+  && ok "whitespace-only files still count as an empty record" \
+  || ko "whitespace-only files still count as an empty record"
+
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
+cat > "$SDATA/recap.md" <<'EOF'
+## To improve
+
+### Code
+- Error and exception handling
+
+## Session history
+
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|---|---|---|---|---|---|---|
+| 2026-09-14 | api | Code | code | ✅ ok | fine | Error and exception handling |
+EOF
+echo '{"level":"S"}' > "$GCFG"
+out=$(snap)
+man="$WORK/snap/manifest.json"
+{ [ "$(printf '%s' "$out" | jq -r .ok)" = "true" ] \
+  && [ -f "$WORK/snap/memory.md" ] && [ -f "$WORK/snap/recap.md" ] \
+  && [ -f "$WORK/snap/learner.json" ] && [ -f "$man" ]; } \
+  && ok "the snapshot holds the four files" \
+  || ko "the snapshot holds the four files (out=$out)"
+
+{ [ "$(jq -r .schemaVersion "$man")" = "1" ] \
+  && [ "$(jq -r .counts.memoryLines "$man")" = "1" ] \
+  && [ "$(jq -r .counts.themeLines "$man")" = "1" ] \
+  && [ "$(jq -r .counts.historyRows "$man")" = "1" ] \
+  && [ -n "$(jq -r .pushedAt "$man")" ]; } \
+  && ok "the manifest counts lines, not meaning" \
+  || ko "the manifest counts lines, not meaning ($(cat "$man"))"
+
+diff -q "$SDATA/memory.md" "$WORK/snap/memory.md" >/dev/null \
+  && ok "memory.md is snapshotted verbatim" \
+  || ko "memory.md is snapshotted verbatim"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

@@ -27,11 +27,8 @@ SYNC_SCHEMA=1
 SYNC_DESC="claude-learner-state"
 
 DATA_DIR="$LEARNER_CFG_DIR/learner"
-# shellcheck disable=SC2034
 MEM_FILE="$DATA_DIR/memory.md"
-# shellcheck disable=SC2034
 REC_FILE="$DATA_DIR/recap.md"
-# shellcheck disable=SC2034
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
 # shellcheck disable=SC2034
 SYNC_JSON="$DATA_DIR/sync.json"
@@ -64,14 +61,14 @@ cmd=${1:-}
 shift
 
 case "$cmd" in
-  push|pull|pull-finish|status|use|merge-memory|merge-history) ;;
+  push|pull|pull-finish|status|use|merge-memory|merge-history|snapshot) ;;
   *) usage ;;
 esac
 
 need_jq
 
 case "$cmd" in
-  merge-memory|merge-history) ;;   # pure text, no network
+  merge-memory|merge-history|snapshot) ;;   # pure text, no network
   *) need_gh ;;
 esac
 
@@ -160,6 +157,53 @@ merge_history() {  # LOCAL REMOTE -> merged body rows on stdout, oldest first
   ' "$_hl" "$_hr" | sort -s -t "$(printf '\t')" -k1,1 | cut -f2-
 }
 
+history_rows() {  # FILE -> how many Session history rows it holds
+  _hf=$(readable_or_empty "$1")
+  awk '
+    /^[ \t]*\|/ {
+      norm = $0
+      gsub(/[ \t]+/, " ", norm); gsub(/ *\| */, "|", norm)
+      sub(/^ +/, "", norm); sub(/ +$/, "", norm)
+      if (norm ~ /^\|[-|]+\|$/) next
+      if (norm ~ /^\|Date\|/) next
+      n++
+    }
+    END { print n + 0 }
+  ' "$_hf"
+}
+
+bullet_lines() {  # FILE -> how many "- " lines it holds
+  if [ -f "$1" ]; then grep -c '^-[ \t]' "$1" 2>/dev/null || printf '0'; else printf '0'; fi
+}
+
+read_version() {
+  if [ -f "$LEARNER_CFG_DIR/skills/learner/VERSION" ]; then
+    tr -d '[:space:]' < "$LEARNER_CFG_DIR/skills/learner/VERSION"
+  else
+    printf 'unknown'
+  fi
+}
+
+snapshot_into() {  # DIR — the four gist files, or fail empty-record
+  _sd="$1"
+  has_content "$MEM_FILE" || has_content "$REC_FILE" || fail empty-record
+  mkdir -p "$_sd" || fail snapshot-dir
+  if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else : > "$_sd/memory.md"; fi
+  if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else : > "$_sd/recap.md"; fi
+  if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
+  jq -nc \
+    --argjson schema "$SYNC_SCHEMA" \
+    --arg at "$(now_utc)" \
+    --arg from "$(hostname 2>/dev/null || printf 'unknown')" \
+    --arg ver "$(read_version)" \
+    --argjson mem "$(bullet_lines "$MEM_FILE")" \
+    --argjson theme "$(bullet_lines "$REC_FILE")" \
+    --argjson hist "$(history_rows "$REC_FILE")" \
+    '{schemaVersion:$schema, pushedAt:$at, pushedFrom:$from, learnerVersion:$ver,
+      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist}}' \
+    > "$_sd/manifest.json" || fail manifest
+}
+
 case "$cmd" in
   merge-memory)
     [ $# -eq 3 ] || usage
@@ -169,6 +213,12 @@ case "$cmd" in
   merge-history)
     [ $# -eq 2 ] || usage
     merge_history "$1" "$2"
+    exit 0
+    ;;
+  snapshot)
+    [ $# -eq 1 ] || usage
+    snapshot_into "$1"
+    printf '{"ok":true,"action":"snapshot","dir":"%s"}\n' "$1"
     exit 0
     ;;
   *) fail not-implemented ;;
