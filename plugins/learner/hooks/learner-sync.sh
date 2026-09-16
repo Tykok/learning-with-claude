@@ -247,6 +247,11 @@ cmd_push() {
     sync_json_set '.github.gistId' "$_id"
     _action=created
   else
+    # A gist is recorded but this machine has never pulled it (fresh `use`, or
+    # a base wiped some other way): there is no agreement to check a push
+    # against, so a push here would overwrite whatever the other machine has
+    # unseen. Refuse and send the dev to `pull` first.
+    [ -f "$BASE_DIR/manifest.json" ] || { rm -rf "$_work"; fail needs-pull; }
     # The base is what we last agreed on. A remote pushedAt beyond it means the
     # other machine has pushed since, and this push would erase that session.
     _remote_at=$(gist_file "$_id" manifest.json | jq -r '.pushedAt // empty' 2>/dev/null)
@@ -291,13 +296,15 @@ discover_gist() {  # -> the single gist id carrying SYNC_DESC, or empty
     END { if (n == 1) print id; else if (n > 1) print "AMBIGUOUS" }'
 }
 
-backup_local() {  # -> the backup directory it created
-  _bk="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-  mkdir -p "$_bk" || fail backup-dir
+backup_local() {  # sets BACKUP_PATH to the directory it created
+  # Never call this under $( ): a subshell would run `fail`'s exit 1 in a
+  # copy of the shell, so the caller would see rc=0 and carry on rewriting
+  # memory.md with no backup underneath it.
+  BACKUP_PATH="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+  mkdir -p "$BACKUP_PATH" || fail backup-dir
   for f in "$MEM_FILE" "$REC_FILE" "$CFG_FILE"; do
-    [ -f "$f" ] && cp "$f" "$_bk/$(basename "$f")"
+    [ -f "$f" ] && cp "$f" "$BACKUP_PATH/$(basename "$f")"
   done
-  printf '%s' "$_bk"
 }
 
 write_atomic() {  # SRC DEST — never leave a half-written record behind
@@ -319,7 +326,7 @@ cmd_pull() {
   rm -rf "$_work"; mkdir -p "$_work" || fail work-dir
 
   for f in memory.md recap.md learner.json manifest.json; do
-    gist_file "$_id" "$f" > "$_work/$f" || : > "$_work/$f"
+    gist_file "$_id" "$f" > "$_work/$f" || { rm -rf "$_work"; fail gh-fetch; }
   done
   [ -s "$_work/manifest.json" ] || { rm -rf "$_work"; fail gh-fetch; }
 
@@ -329,8 +336,21 @@ cmd_pull() {
   esac
   [ "$_schema" -le "$SYNC_SCHEMA" ] || { rm -rf "$_work"; fail schema-too-new; }
 
+  # gh's own exit status only rules out an outright fetch failure. A gist that
+  # answers but hands back fewer lines than its own manifest claims is just as
+  # dangerous: the merge below would read the missing lines as deleted on the
+  # other machine and drop them here too. A manifest written by an older
+  # learner may carry no counts at all, so the check is skipped, not failed,
+  # when the expected value is empty.
+  _want_mem=$(jq -r '.counts.memoryLines // empty' "$_work/manifest.json" 2>/dev/null)
+  [ -z "$_want_mem" ] || [ "$(bullet_lines "$_work/memory.md")" = "$_want_mem" ] \
+    || { rm -rf "$_work"; fail gh-fetch; }
+  _want_hist=$(jq -r '.counts.historyRows // empty' "$_work/manifest.json" 2>/dev/null)
+  [ -z "$_want_hist" ] || [ "$(history_rows "$_work/recap.md")" = "$_want_hist" ] \
+    || { rm -rf "$_work"; fail gh-fetch; }
+
   # Past this line the local record changes, so the net goes up first.
-  _backup=$(backup_local)
+  backup_local; _backup="$BACKUP_PATH"
 
   _first=true
   [ -f "$BASE_DIR/memory.md" ] && _first=false

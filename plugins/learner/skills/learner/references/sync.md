@@ -32,6 +32,7 @@ sh "$HOOKS/learner-sync.sh" push
 | `gh-unauthenticated` | `gh auth login`, then re-run. |
 | `empty-record` | There is nothing recorded yet — run `learner quiz` first. |
 | `remote-ahead` | The other machine pushed since the last sync: run `learner sync pull` first. Do not retry the push. |
+| `needs-pull` | This machine is pointed at a gist it has never pulled — run `learner sync pull` first, then retry the push. |
 | `needs-create-ok` | Ask for the gist, see below. |
 | `gh-create` / `gh-push` | GitHub refused. Report it; nothing was written locally. |
 

@@ -4928,6 +4928,66 @@ out=$(sh "$SYNC" use 2>/dev/null); rc=$?
   && ok "use with no argument is a usage error" \
   || ko "use with no argument is a usage error (rc=$rc)"
 
+# --- learner sync: Critical 1 — a partial download must not read as a mass delete -----
+# The fake gh's "gist view" exits 1 when the requested file is missing from $GH_REMOTE,
+# which stands in for a network blip / rate limit on that one `gh gist view` call.
+setup_pull
+rm -f "$GH_REMOTE/memory.md"
+cp "$SDATA/memory.md" "$WORK/mem-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null; } \
+  && ok "a failed memory.md fetch fails the pull instead of reading the remote as empty" \
+  || ko "a failed memory.md fetch fails the pull instead of reading the remote as empty (rc=$rc out=$out)"
+
+# The fetch itself can succeed while the gist still answers with less than its own
+# manifest promises (a truncated upload, a stale CDN edge, ...). setup_pull's remote
+# manifest declares counts.memoryLines: 2.
+setup_pull
+: > "$GH_REMOTE/memory.md"
+cp "$SDATA/memory.md" "$WORK/mem-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null; } \
+  && ok "a remote memory.md truncated relative to its own manifest counts fails the pull" \
+  || ko "a remote memory.md truncated relative to its own manifest counts fails the pull (rc=$rc out=$out)"
+
+# --- learner sync: Critical 2 — push refuses to clobber when there is no base ----------
+# This is exactly the state `sync use` (and a fresh `pull <gist>`) creates: a gistId is
+# recorded, sync-base/ is not.
+setup_pull
+cp "$GH_REMOTE/memory.md" "$WORK/remote-mem-before"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "needs-pull" ] \
+  && diff -q "$WORK/remote-mem-before" "$GH_REMOTE/memory.md" >/dev/null; } \
+  && ok "push with a recorded gist but no base refuses with needs-pull, remote untouched" \
+  || ko "push with a recorded gist but no base refuses with needs-pull, remote untouched (rc=$rc out=$out)"
+
+pull_out=$(sh "$SYNC" pull)
+work=$(printf '%s' "$pull_out" | jq -r .work)
+sh "$SYNC" pull-finish "$work" >/dev/null
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ]; } \
+  && ok "after a pull and pull-finish, the same push succeeds" \
+  || ko "after a pull and pull-finish, the same push succeeds (rc=$rc out=$out)"
+
+grep -qF 'needs-pull' "$SYNCMD" \
+  && ok "sync.md documents the needs-pull push error" \
+  || ko "sync.md documents the needs-pull push error"
+
+# --- learner sync: Critical 3 — a failed backup must stop the pull, not just its subshell ---
+setup_pull
+rm -rf "$SDATA/backups"
+: > "$SDATA/backups"    # a plain file blocks mkdir -p "$SDATA/backups/<timestamp>"
+cp "$SDATA/memory.md" "$WORK/mem-before"
+out=$(sh "$SYNC" pull 2>/dev/null); rc=$?
+lines=$(printf '%s\n' "$out" | grep -c .)
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "backup-dir" ] \
+  && [ "$lines" = 1 ] && diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null; } \
+  && ok "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write" \
+  || ko "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write (rc=$rc out=$out)"
+rm -f "$SDATA/backups"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
