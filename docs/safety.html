@@ -47,6 +47,7 @@
       <li><a href="#guardrail">The guardrail</a></li>
       <li><a href="#material">What counts as quiz material</a></li>
       <li><a href="#pilot">Pilot's data</a></li>
+      <li><a href="#sync">What leaves the machine</a></li>
       <li><a href="#uninstall">Uninstall</a></li>
     </ol>
   </nav>
@@ -158,6 +159,21 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   <code>learner-uninstall --purge</code>) deletes all of it, along with the rest of
   <code>$CFG/learner/</code>; the plain form leaves it in place, same as it leaves your quiz
   progress.</p>
+  <h2 id="sync">What leaves the machine</h2>
+
+  <p>Everything above — the quiz, the record it keeps, the coach — stays on this machine.
+  <code>learner sync</code> is the one exception: it is the <strong>only</strong> path that
+  ever sends your learning record anywhere else, and it does so only when you type
+  <code>learner sync push</code> or <code>learner sync pull</code> yourself. No hook ever
+  calls it; nothing leaves on its own, on any cadence, from any regime.</p>
+
+  <p>A push snapshots <code>memory.md</code>, <code>recap.md</code> and your global
+  <code>learner.json</code> into one GitHub gist, created <code>--secret</code> the first time,
+  after asking. A <strong>secret gist is unlisted, not access-controlled</strong>: GitHub does
+  not check who is asking, only whether they have the URL. Anyone with that URL can read the
+  gist without a GitHub account of their own. Since the snapshot carries your repo names, file
+  names and the wording of your weak spots, treat the gist URL the way you would treat a
+  password, and expect anyone it reaches to be able to read everything in it.</p>
 
   <h2 id="uninstall">Uninstall</h2>
 

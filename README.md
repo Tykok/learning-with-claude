@@ -92,6 +92,34 @@ Pilot measures a habit, not you: **it is not a measure of intelligence and not a
 cognitive health.** It scores how much thinking gets handed over, nothing else — full
 reference, including the four axes, the weekly brief and the privacy paragraph, on
 [the site](https://tykok.github.io/learning-with-claude/usage.html#pilot).
+## Sync — carry your record between machines
+
+`learner sync` moves your learning record — `memory.md`, `recap.md` and the global
+`learner.json` — between machines through one private GitHub gist. It is the only path that
+ever sends the record off the machine, and it is **manual only**: no hook pushes anything;
+nothing leaves until you type it.
+
+```
+learner sync push            # snapshot the local record to the gist
+learner sync pull [gist]     # merge the gist back in; name a gist the first time on a new machine
+learner sync status          # what's pushed, what isn't, whether the remote moved ahead
+learner sync use <gist>      # repoint this machine at a different gist
+```
+
+The first `push` asks before creating the gist, and creates it `--secret`. A secret gist is
+**unlisted, not access-controlled**: anyone who has the URL can read it, without a GitHub
+account. It carries your repo names, file names and the wording of your weak spots — treat the
+link like a password.
+
+A `pull` backs up the local record first, under
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/<timestamp>/`, then three-way merges
+`memory.md` (a line you deleted here because you mastered it stays deleted, even if the other
+side still has it), unions the `Session history` table, and lets Claude merge the theme
+sections. `learner export` (Notion) is unchanged by any of this — it stays the human-readable
+view, not a restore path; the gist carries the raw state.
+
+Requires `gh`, authenticated (`gh auth login`). Habit worth keeping: `learner sync push` before
+you switch machines, so the record you left behind is the one you pick back up.
 
 ## Requirements
 
