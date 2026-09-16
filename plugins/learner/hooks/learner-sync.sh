@@ -375,6 +375,55 @@ cmd_pull_finish() {
   printf '{"ok":true,"action":"pull-finished"}\n'
 }
 
+cmd_status() {
+  _id=$(sync_json_get '.github.gistId')
+  [ -n "$_id" ] || fail no-gist
+
+  _has_base=false
+  [ -f "$BASE_DIR/manifest.json" ] && _has_base=true
+
+  _bm=0; _bh=0; _base_at=''
+  if [ "$_has_base" = true ]; then
+    _bm=$(bullet_lines "$BASE_DIR/memory.md")
+    _bh=$(history_rows "$BASE_DIR/recap.md")
+    _base_at=$(jq -r '.pushedAt // empty' "$BASE_DIR/manifest.json" 2>/dev/null)
+  fi
+  _lm=$(bullet_lines "$MEM_FILE")
+  _lh=$(history_rows "$REC_FILE")
+  _dm=$((_lm - _bm)); [ "$_dm" -lt 0 ] && _dm=0
+  _dh=$((_lh - _bh)); [ "$_dh" -lt 0 ] && _dh=0
+
+  _remote_at=$(gist_file "$_id" manifest.json | jq -r '.pushedAt // empty' 2>/dev/null)
+  _ahead=false
+  # Pinned to the C locale, matching the push's divergence guard: an
+  # LC_COLLATE where digits don't sort in byte order would otherwise
+  # silently mis-order these fixed-width timestamps.
+  if [ -n "$_remote_at" ] && [ -n "$_base_at" ] && [ "$_remote_at" != "$_base_at" ] \
+     && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
+    _ahead=true
+  fi
+
+  jq -nc --arg id "$_id" \
+     --arg push "$(sync_json_get '.github.lastPush')" \
+     --arg pull "$(sync_json_get '.github.lastPull')" \
+     --argjson base "$_has_base" --argjson dm "$_dm" --argjson dh "$_dh" \
+     --argjson ahead "$_ahead" \
+     '{ok:true, gistId:$id, url:("https://gist.github.com/" + $id),
+       lastPush:$push, lastPull:$pull, hasBase:$base,
+       unpushed:{memoryLines:$dm, historyRows:$dh}, remoteAhead:$ahead}'
+}
+
+cmd_use() {
+  [ -n "${1:-}" ] || usage
+  _id=$(gist_id_from "$1")
+  [ -n "$_id" ] || usage
+  sync_json_set '.github.gistId' "$_id"
+  # The base describes agreement with the *previous* gist. Kept, it would make
+  # the next pull read the new remote's missing lines as deletions.
+  rm -rf "$BASE_DIR"
+  printf '{"ok":true,"action":"repointed","gistId":"%s"}\n' "$_id"
+}
+
 case "$cmd" in
   merge-memory)
     [ $# -eq 3 ] || usage
@@ -395,5 +444,7 @@ case "$cmd" in
   push) cmd_push "$@"; exit 0 ;;
   pull) cmd_pull "$@"; exit 0 ;;
   pull-finish) cmd_pull_finish "$@"; exit 0 ;;
+  status) cmd_status; exit 0 ;;
+  use) cmd_use "$@"; exit 0 ;;
   *) fail not-implemented ;;
 esac

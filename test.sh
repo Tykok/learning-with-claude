@@ -4838,6 +4838,49 @@ out=$(sh "$SYNC" pull)
   && ok "with no base the pull unions and says so" \
   || ko "with no base the pull unions and says so (out=$out)"
 
+# --- learner sync: status and use -------------------------------------------
+setup_pull
+rm -rf "$SDATA/sync-base"
+out=$(sh "$SYNC" status)
+{ [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ] \
+  && [ "$(printf '%s' "$out" | jq -r .hasBase)" = "false" ]; } \
+  && ok "status reports a missing base instead of inventing drift" \
+  || ko "status reports a missing base instead of inventing drift (out=$out)"
+
+mkdir -p "$SDATA/sync-base"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/sync-base/memory.md"
+printf '## To improve\n' > "$SDATA/sync-base/recap.md"
+jq -n '{schemaVersion:1,pushedAt:"2026-09-15T10:00:00Z"}' > "$SDATA/sync-base/manifest.json"
+out=$(sh "$SYNC" status)
+{ [ "$(printf '%s' "$out" | jq -r .unpushed.memoryLines)" = "1" ] \
+  && [ "$(printf '%s' "$out" | jq -r .remoteAhead)" = "false" ]; } \
+  && ok "status counts what the local side holds beyond the base" \
+  || ko "status counts what the local side holds beyond the base (out=$out)"
+
+jq '.pushedAt = "2099-01-01T00:00:00Z"' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" \
+  && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+[ "$(sh "$SYNC" status | jq -r .remoteAhead)" = "true" ] \
+  && ok "status sees a remote that has moved ahead of the base" \
+  || ko "status sees a remote that has moved ahead of the base"
+
+cp "$SDATA/memory.md" "$WORK/mem-before"
+sh "$SYNC" status >/dev/null
+diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null \
+  && ok "status writes nothing" \
+  || ko "status writes nothing"
+
+out=$(sh "$SYNC" use https://gist.github.com/zzz999)
+{ [ "$(printf '%s' "$out" | jq -r .gistId)" = "zzz999" ] \
+  && [ "$(jq -r .github.gistId "$SDATA/sync.json")" = "zzz999" ] \
+  && [ ! -d "$SDATA/sync-base" ]; } \
+  && ok "use repoints the gist and clears the base" \
+  || ko "use repoints the gist and clears the base (out=$out)"
+
+out=$(sh "$SYNC" use 2>/dev/null); rc=$?
+[ "$rc" = 2 ] \
+  && ok "use with no argument is a usage error" \
+  || ko "use with no argument is a usage error (rc=$rc)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
