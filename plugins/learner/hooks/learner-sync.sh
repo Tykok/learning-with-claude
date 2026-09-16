@@ -30,7 +30,6 @@ REC_FILE="$DATA_DIR/recap.md"
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
 SYNC_JSON="$DATA_DIR/sync.json"
 BASE_DIR="$DATA_DIR/sync-base"
-# shellcheck disable=SC2034
 BACKUP_DIR="$DATA_DIR/backups"
 
 # Every failure leaves stdout with one machine-readable object and nothing else.
@@ -281,6 +280,101 @@ cmd_push() {
     "$_action" "$_id" "$_id"
 }
 
+gist_id_from() {  # <id-or-url> -> bare id
+  _g=${1%/}
+  printf '%s' "${_g##*/}"
+}
+
+discover_gist() {  # -> the single gist id carrying SYNC_DESC, or empty
+  gh gist list --limit 100 2>/dev/null | awk -v d="$SYNC_DESC" -F '\t' '
+    index($0, d) { n++; id = $1 }
+    END { if (n == 1) print id; else if (n > 1) print "AMBIGUOUS" }'
+}
+
+backup_local() {  # -> the backup directory it created
+  _bk="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+  mkdir -p "$_bk" || fail backup-dir
+  for f in "$MEM_FILE" "$REC_FILE" "$CFG_FILE"; do
+    [ -f "$f" ] && cp "$f" "$_bk/$(basename "$f")"
+  done
+  printf '%s' "$_bk"
+}
+
+write_atomic() {  # SRC DEST — never leave a half-written record behind
+  cp "$1" "$2.tmp" || fail write
+  mv "$2.tmp" "$2" || fail write
+}
+
+cmd_pull() {
+  _id=$(sync_json_get '.github.gistId')
+  if [ -n "${1:-}" ]; then
+    _id=$(gist_id_from "$1")
+  elif [ -z "$_id" ]; then
+    _id=$(discover_gist)
+    [ "$_id" = "AMBIGUOUS" ] && fail ambiguous-gist
+    [ -n "$_id" ] || fail no-gist
+  fi
+
+  _work="${TMPDIR:-/tmp}/learner-sync-pull.$$"
+  rm -rf "$_work"; mkdir -p "$_work" || fail work-dir
+
+  for f in memory.md recap.md learner.json manifest.json; do
+    gist_file "$_id" "$f" > "$_work/$f" || : > "$_work/$f"
+  done
+  [ -s "$_work/manifest.json" ] || { rm -rf "$_work"; fail gh-fetch; }
+
+  _schema=$(jq -r '.schemaVersion // 0' "$_work/manifest.json" 2>/dev/null)
+  case "$_schema" in
+    ''|*[!0-9]*) rm -rf "$_work"; fail gh-fetch ;;
+  esac
+  [ "$_schema" -le "$SYNC_SCHEMA" ] || { rm -rf "$_work"; fail schema-too-new; }
+
+  # Past this line the local record changes, so the net goes up first.
+  _backup=$(backup_local)
+
+  _first=true
+  [ -f "$BASE_DIR/memory.md" ] && _first=false
+
+  merge_memory "$BASE_DIR/memory.md" "$MEM_FILE" "$_work/memory.md" > "$_work/memory.merged" \
+    || { rm -rf "$_work"; fail merge; }
+  write_atomic "$_work/memory.merged" "$MEM_FILE"
+
+  merge_history "$REC_FILE" "$_work/recap.md" > "$_work/history.md" \
+    || { rm -rf "$_work"; fail merge; }
+
+  # The remote config wins, except disabledPaths: those are absolute paths that
+  # mean nothing on the other machine, so replacing them would silence learner
+  # on repos that are not here and wake it on the ones the dev muted.
+  if [ -s "$_work/learner.json" ]; then
+    [ -f "$CFG_FILE" ] || printf '{}\n' > "$CFG_FILE"
+    jq -s '(.[0] * .[1])
+           + {disabledPaths: (((.[0].disabledPaths // []) + (.[1].disabledPaths // [])) | unique)}' \
+      "$CFG_FILE" "$_work/learner.json" > "$_work/config.merged" \
+      || { rm -rf "$_work"; fail config-merge; }
+    write_atomic "$_work/config.merged" "$CFG_FILE"
+  fi
+
+  # sync.json records the gist only once the fetch has actually worked, so a
+  # mistyped id never sticks.
+  sync_json_set '.github.gistId' "$_id"
+
+  jq -nc --arg id "$_id" --arg bk "$_backup" --arg w "$_work" \
+     --arg rl "$REC_FILE" --arg rr "$_work/recap.md" --arg rb "$BASE_DIR/recap.md" \
+     --arg rh "$_work/history.md" --argjson first "$_first" \
+     '{ok:true, action:"pulled", gistId:$id, backup:$bk, work:$w, memory:"merged",
+       firstSync:$first,
+       recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh}}'
+}
+
+cmd_pull_finish() {
+  _work=${1:-}
+  [ -n "$_work" ] && [ -f "$_work/manifest.json" ] || fail no-work-dir
+  advance_base "$_work"
+  sync_json_set '.github.lastPull' "$(now_utc)"
+  rm -rf "$_work"
+  printf '{"ok":true,"action":"pull-finished"}\n'
+}
+
 case "$cmd" in
   merge-memory)
     [ $# -eq 3 ] || usage
@@ -299,5 +393,7 @@ case "$cmd" in
     exit 0
     ;;
   push) cmd_push "$@"; exit 0 ;;
+  pull) cmd_pull "$@"; exit 0 ;;
+  pull-finish) cmd_pull_finish "$@"; exit 0 ;;
   *) fail not-implemented ;;
 esac
