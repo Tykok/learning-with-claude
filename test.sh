@@ -4738,6 +4738,106 @@ out=$(GH_FAIL_API=1 sh "$SYNC" push); rc=$?
   && ok "a failed push leaves the base untouched" \
   || ko "a failed push leaves the base untouched (rc=$rc out=$out)"
 
+# --- learner sync: pull -----------------------------------------------------
+setup_pull() {   # a remote that has moved, and a local that has moved differently
+  rm -rf "$GH_REMOTE" "$SDATA/sync-base" "$SDATA/backups"; mkdir -p "$GH_REMOTE"
+  printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$GH_REMOTE/memory.md"
+  printf -- '- [Code][web] hydration — seen: 2026-09-15\n' >> "$GH_REMOTE/memory.md"
+  printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$GH_REMOTE/recap.md"
+  echo '{"level":"E","disabledPaths":["/remote/only"]}' > "$GH_REMOTE/learner.json"
+  jq -n '{schemaVersion:1,pushedAt:"2026-09-15T10:00:00Z",pushedFrom:"other",
+          learnerVersion:"0.2.0",counts:{memoryLines:2,themeLines:1,historyRows:0}}' \
+    > "$GH_REMOTE/manifest.json"
+  printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
+  printf -- '- [Tests][api] fixtures — seen: 2026-09-16\n' >> "$SDATA/memory.md"
+  printf '## To improve\n\n### Tests\n- Test design\n' > "$SDATA/recap.md"
+  echo '{"level":"S","disabledPaths":["/local/only"]}' > "$GCFG"
+  jq -n '{github:{gistId:"abc123"}}' > "$SDATA/sync.json"
+}
+
+setup_pull
+out=$(sh "$SYNC" pull)
+{ [ "$(printf '%s' "$out" | jq -r .ok)" = "true" ] \
+  && [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ]; } \
+  && ok "pull resolves the recorded gist" \
+  || ko "pull resolves the recorded gist (out=$out)"
+
+{ grep -qF 'hydration' "$SDATA/memory.md" \
+  && grep -qF 'fixtures' "$SDATA/memory.md" \
+  && grep -qF 'retries' "$SDATA/memory.md"; } \
+  && ok "pull merges memory.md from both sides" \
+  || ko "pull merges memory.md from both sides ($(cat "$SDATA/memory.md"))"
+
+bk=$(printf '%s' "$out" | jq -r .backup)
+{ [ -d "$bk" ] && grep -qF 'fixtures' "$bk/memory.md"; } \
+  && ok "pull backs the local record up before writing" \
+  || ko "pull backs the local record up before writing (bk=$bk)"
+
+grep -qF 'Test design' "$SDATA/recap.md" \
+  && ok "pull leaves recap.md to the model" \
+  || ko "pull leaves recap.md to the model"
+
+{ [ "$(jq -r .level "$GCFG")" = "E" ] \
+  && [ "$(jq -r '.disabledPaths | sort | join(",")' "$GCFG")" = "/local/only,/remote/only" ]; } \
+  && ok "the remote config wins but disabledPaths union" \
+  || ko "the remote config wins but disabledPaths union ($(cat "$GCFG"))"
+
+[ ! -d "$SDATA/sync-base" ] \
+  && ok "pull does not advance the base before the recap is written" \
+  || ko "pull does not advance the base before the recap is written"
+
+work=$(printf '%s' "$out" | jq -r .work)
+out2=$(sh "$SYNC" pull-finish "$work")
+{ [ "$(printf '%s' "$out2" | jq -r .ok)" = "true" ] \
+  && diff -q "$GH_REMOTE/recap.md" "$SDATA/sync-base/recap.md" >/dev/null \
+  && [ -n "$(jq -r .github.lastPull "$SDATA/sync.json")" ]; } \
+  && ok "pull-finish adopts the remote snapshot as the base" \
+  || ko "pull-finish adopts the remote snapshot as the base (out=$out2)"
+
+# A snapshot from a newer learner is refused, not guessed at.
+setup_pull
+jq '.schemaVersion = 99' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+cp "$SDATA/memory.md" "$WORK/mem-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "schema-too-new" ] \
+  && diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null; } \
+  && ok "a newer schemaVersion stops the pull before any write" \
+  || ko "a newer schemaVersion stops the pull before any write (rc=$rc out=$out)"
+
+# New machine: no sync.json, exactly one gist carries the description.
+setup_pull
+rm -f "$SDATA/sync.json"
+printf 'abc123\tclaude-learner-state\t4 files\n' > "$WORK/list.txt"
+out=$(GH_LIST="$WORK/list.txt" sh "$SYNC" pull)
+{ [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ] \
+  && [ "$(jq -r .github.gistId "$SDATA/sync.json")" = "abc123" ]; } \
+  && ok "pull adopts the single gist that carries the marker description" \
+  || ko "pull adopts the single gist that carries the marker description (out=$out)"
+
+setup_pull
+rm -f "$SDATA/sync.json"
+printf 'abc123\tclaude-learner-state\t4 files\ndef456\tclaude-learner-state\t4 files\n' > "$WORK/list.txt"
+out=$(GH_LIST="$WORK/list.txt" sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "ambiguous-gist" ]; } \
+  && ok "two candidate gists stop the pull instead of a coin toss" \
+  || ko "two candidate gists stop the pull instead of a coin toss (rc=$rc out=$out)"
+
+setup_pull
+rm -f "$SDATA/sync.json"
+out=$(GH_LIST=/dev/null sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "no-gist" ]; } \
+  && ok "no recorded and no discoverable gist is a named error" \
+  || ko "no recorded and no discoverable gist is a named error (rc=$rc out=$out)"
+
+# First sync on this machine: no base, so nothing may be read as a deletion.
+setup_pull
+rm -rf "$SDATA/sync-base"
+out=$(sh "$SYNC" pull)
+{ [ "$(printf '%s' "$out" | jq -r .firstSync)" = "true" ] \
+  && [ "$(grep -c '^- ' "$SDATA/memory.md")" = 3 ]; } \
+  && ok "with no base the pull unions and says so" \
+  || ko "with no base the pull unions and says so (out=$out)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
