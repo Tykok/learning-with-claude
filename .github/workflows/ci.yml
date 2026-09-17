@@ -13,14 +13,26 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: shellcheck
-        run: shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
+        run: shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 
       - name: tests
         run: ./test.sh
 
+      # The community-marketplace review pipeline runs exactly this on every
+      # submission, so a failure here is a rejection there. Two calls, not one:
+      # `validate` picks the manifest it finds at the path it is given, and the
+      # marketplace and the plugin are now separate directories.
+      - name: install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: validate the marketplace and the plugin
+        run: |
+          claude plugin validate . --strict
+          claude plugin validate ./plugins/learner --strict
+
       - name: plugin.json version matches VERSION
         run: |
-          PLUGIN_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+          PLUGIN_VERSION=$(jq -r '.version' plugins/learner/.claude-plugin/plugin.json)
           FILE="$(cat VERSION)"
           if [ "$PLUGIN_VERSION" != "$FILE" ]; then
             echo "plugin.json version ($PLUGIN_VERSION) does not match VERSION file ($FILE)"; exit 1

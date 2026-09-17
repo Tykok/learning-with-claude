@@ -14,7 +14,7 @@ among the listed files when relevant (spaced repetition).
 ## `mode: granular`
 
 Ask ONE short question about the listed `files`, at the difficulty matching `level`
-in the level table in `SKILL.md`. Never quiz on code you have not read: read the
+in the level table in `../SKILL.md`. Never quiz on code you have not read: read the
 files first.
 
 ## `mode: synthesis`

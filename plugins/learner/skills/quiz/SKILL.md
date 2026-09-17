@@ -1,3 +1,8 @@
+---
+description: Quiz the dev on the current branch's diff — one question at a time, at their configured level, updating the learning record after each answer. Use for "learner quiz", "quiz me", "quiz me on the branch", "interroge-moi", "quiz sur la branche", "pose-moi des questions sur cette branche".
+allowed-tools: Read, Write, Edit, Grep, Bash
+---
+
 # Quiz mode
 
 `learner quiz [base-ref] [count]` — an interactive Q&A session about the **current
@@ -6,12 +11,12 @@ on-demand counterpart to the Stop-hook quiz.
 
 ## Load config
 
-Load config the same way as `SKILL.md` § Config. An explicit `learner quiz` runs even
+Load config the same way as `../learner/SKILL.md` § Config. An explicit `learner quiz` runs even
 when `enabled` is `false` — the dev asked for it directly.
 
-`level` sets difficulty (level table in `SKILL.md`); `questionStyles` limits the
+`level` sets difficulty (level table in `../learner/SKILL.md`); `questionStyles` limits the
 formats, `auto` = vary; `blanksPerExercise` supplies `blanks` for a `fill` exercise
-(protocol in `references/hook-quiz.md`).
+(protocol in `../learner/references/hook-quiz.md`).
 
 ## Compute the branch diff
 
@@ -35,7 +40,7 @@ test-scaffolding churn unless it is the point of the branch.
 
 ## Run the session
 
-First read `references/data.md`: `memory.md` is the only file that drives question
+First read `../learner/references/data.md`: `memory.md` is the only file that drives question
 selection, so read it before choosing the first question — prefer a still-open weak
 spot when relevant (spaced repetition).
 
@@ -50,9 +55,9 @@ spot when relevant (spaced repetition).
 - Default to ~5 questions, then a closing synthesis question. Honour a count from
   `$ARGUMENTS`.
 - Stop early on repeated `skip` or on `stop`.
-- For a `fill`-style question, follow the protocol in `references/hook-quiz.md`.
+- For a `fill`-style question, follow the protocol in `../learner/references/hook-quiz.md`.
 
-After each answer, update `references/data.md`: record the outcome in `memory.md`
+After each answer, update `../learner/references/data.md`: record the outcome in `memory.md`
 and `recap.md`.
 
 ## Never hand the answer over

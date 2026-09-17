@@ -13,6 +13,27 @@ fi
 
 . "$(dirname "$0")/learner-config.sh"
 
+# --- installed twice ---------------------------------------------------------
+# The plugin wiring (hooks/hooks.json) and the traditional wiring
+# ($CLAUDE_CONFIG_DIR/settings.json) are independent, and neither can see the other.
+# Installed both ways, every learner hook runs twice: the Stop hook blocks twice and
+# the dev is quizzed twice per turn. Nothing else in the system is in a position to
+# notice, so this hook checks.
+#
+# The test is "am I running from somewhere other than the traditional install's own
+# hooks directory, while that install is still there" — exact regardless of whether
+# this copy came from the plugin cache, --plugin-dir or a skills-directory plugin,
+# and it needs no CLAUDE_PLUGIN_ROOT (substituted into hook *commands*, not
+# guaranteed in the hook process's environment).
+_lo_self=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || _lo_self=''
+_lo_legacy=$(cd "$LEARNER_CFG_DIR/hooks" 2>/dev/null && pwd -P) || _lo_legacy=''
+if [ -n "$_lo_self" ] && [ -n "$_lo_legacy" ] && [ "$_lo_self" != "$_lo_legacy" ] \
+   && [ -f "$_lo_legacy/learner-quiz.sh" ]; then
+  CTX="Learner is installed twice — as a Claude Code plugin and as a traditional install in $LEARNER_CFG_DIR — so every learner hook runs twice this session and the dev will be quizzed twice per turn. Tell the user, in one line, to remove the traditional install (\`uninstall.sh\` from a clone, or \`learner-uninstall\` if it came from Homebrew or apt) and keep the plugin. Then continue with their request."
+  jq -n --arg c "$CTX" '{hookSpecificOutput:{hookEventName:"SessionStart", additionalContext:$c}}'
+  exit 0
+fi
+
 ROOT=$(learner_repo_root)
 [ -n "$ROOT" ] || exit 0
 

@@ -1,3 +1,8 @@
+---
+description: Coach one recorded weak spot to mastery, grounded in this repo's real code, then mark it resolved. Use for "learner improve", "level me up", "help me get better at X", "m'améliorer sur", "je veux progresser sur".
+allowed-tools: Read, Write, Edit, Grep, Bash
+---
+
 # Improve mode
 
 `learner improve [topic]` — coach the dev to actually **master one weak spot**,
@@ -6,9 +11,9 @@ once they demonstrate it. The level-up counterpart to `quiz`.
 
 ## Gather context
 
-1. Load config the same way as `SKILL.md` § Config.
+1. Load config the same way as `../learner/SKILL.md` § Config.
 2. Read `memory.md` (open weak spots) and the recap's `To improve` section plus its
-   `Session history` — see `references/data.md` for paths.
+   `Session history` — see `../learner/references/data.md` for paths.
 
 ## Pick the target
 
@@ -31,12 +36,12 @@ Repeat until the dev demonstrates understanding or says `stop`:
 1. A concise explanation of the concept and the *why*.
 2. A worked example pulled from the real codebase.
 3. An active-recall step — a targeted question, or a `fill` exercise honouring
-   `questionStyles`/`blanksPerExercise` (protocol in `references/hook-quiz.md`).
+   `questionStyles`/`blanksPerExercise` (protocol in `../learner/references/hook-quiz.md`).
 4. Wait for the dev, then give brief feedback.
 
 ## On mastery
 
-Update both data files per `references/data.md`:
+Update both data files per `../learner/references/data.md`:
 
 - Remove the weak spot from `memory.md`.
 - Move its theme to `Mastered` in the recap.

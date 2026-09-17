@@ -23,8 +23,16 @@ set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-# shellcheck source=hooks/learner-config.sh
-. "$SRC_DIR/hooks/learner-config.sh"
+
+# The payload — hooks/ and skills/ — lives at plugins/learner/ in a clone, because
+# that directory is also the Claude Code plugin, and a plugin's root must hold nothing
+# but its own components. The brew/apt packages stage the same two directories flat
+# beside this script instead, so fall back to $SRC_DIR when the nested layout is absent.
+PAYLOAD="$SRC_DIR/plugins/learner"
+[ -d "$PAYLOAD/hooks" ] || PAYLOAD="$SRC_DIR"
+
+# shellcheck source=plugins/learner/hooks/learner-config.sh
+. "$PAYLOAD/hooks/learner-config.sh"
 
 LEVEL=""; SYNTH=""; BLANKS=""; ORIGIN=""; DRY=0; YES=0
 while [ $# -gt 0 ]; do
@@ -115,9 +123,9 @@ fi
 echo "→ Installing learner into: $CFG_DIR"
 if [ "$DRY" = 1 ]; then
   # Counted from disk, not hardcoded — see the copy loop and the snippet below.
-  N_HOOKS=$(find "$SRC_DIR/hooks" -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
-  N_WIRED=$(jq '[.. | .command? // empty] | length' "$SRC_DIR/hooks/settings.snippet.json")
-  N_SKILLS=$(find "$SRC_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+  N_HOOKS=$(find "$PAYLOAD/hooks" -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
+  N_WIRED=$(jq '[.. | .command? // empty] | length' "$PAYLOAD/hooks/settings.snippet.json")
+  N_SKILLS=$(find "$PAYLOAD/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   echo "  (dry run — nothing will be written)"
   echo "  would copy $N_HOOKS hooks   → $CFG_DIR/hooks/"
   echo "  would copy $N_SKILLS skills  → $CFG_DIR/skills/"
@@ -135,8 +143,8 @@ mkdir -p "$CFG_DIR/hooks" "$CFG_DIR/skills" "$CFG_DIR/learner"
 # Copy every hook script this repo ships, derived from what is actually in
 # hooks/ rather than named one by one — a hand-maintained list here is exactly
 # what let three Pilot hooks ship uncopied even after Tasks 2/4/5 wrote them.
-# A new hook needs no edit to this loop, only a file in hooks/.
-for h in "$SRC_DIR"/hooks/*.sh; do
+# A new hook needs no edit to this loop, only a file in the payload's hooks/.
+for h in "$PAYLOAD"/hooks/*.sh; do
   base="$(basename "$h")"
   cp "$h" "$CFG_DIR/hooks/$base"
   chmod +x "$CFG_DIR/hooks/$base"
@@ -147,12 +155,15 @@ echo "  ✓ hooks → $CFG_DIR/hooks/"
 # rather than named one by one — the same fix as the hook loop above, for the
 # same reason: a hand-maintained list here is exactly what let the `pilot`
 # skill ship missing from one install path while its SKILL.md already existed
-# on disk (this task). A new skill needs no edit to this loop, only a
-# directory under skills/. A skill directory need not have a references/ of
-# its own yet (pilot's arrives in a later task) — skip copying it rather than
-# fail when it is absent.
-for d in "$SRC_DIR"/skills/*/; do
+# on disk. A new skill needs no edit to this loop, only a directory under the
+# payload's skills/. A skill directory need not have a references/ of its own —
+# skip copying it rather than fail when it is absent.
+#
+# Names are carried over as they are. Every sibling reaches the hub through
+# `../learner/…`, so the tree shape has to survive the copy intact.
+for d in "$PAYLOAD"/skills/*/; do
   name="$(basename "$d")"
+  rm -rf "${CFG_DIR:?}/skills/$name"
   mkdir -p "$CFG_DIR/skills/$name"
   cp "$d/SKILL.md" "$CFG_DIR/skills/$name/SKILL.md"
   if [ -d "$d/references" ]; then
@@ -176,7 +187,7 @@ echo "  ✓ skills → $CFG_DIR/skills/"
 TMP="$(mktemp)"
 jq -n \
   --argjson base "$(cat "$SETTINGS")" \
-  --argjson add "$(cat "$SRC_DIR/hooks/settings.snippet.json")" '
+  --argjson add "$(cat "$PAYLOAD/hooks/settings.snippet.json")" '
   # For each event the snippet defines, drop existing entries this project
   # installed, then append the fresh ones, so re-running never duplicates.
   #

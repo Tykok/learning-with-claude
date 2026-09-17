@@ -1,6 +1,6 @@
 ---
-description: Learning mode. Invoke as "learner" with a subcommand — "quiz" (Q&A on the current branch), "status" (what to improve + level), "improve" (coach one weak spot to mastery), "coach" (coach mode: the dev writes the code, you challenge it — "coach on"/"off", "coach delegate <glob>", "coach review"), "export" (push the recap into a Notion database), "update" (check for a newer version and refresh), "config" (settings, incl. "off"/"on" for this repo), "help". Also invoked by the Stop hook, which passes a trigger line, and by the coach watcher's trigger line. Trigger on "learner", "learner quiz", "learner status", "learner improve", "learner export", "learner update", "learner config", "learner off", "quiz me", "quiz me on the branch", "what should I improve", "my level", "level me up", "mode apprentissage", "interroge-moi", "quiz sur la branche", "ce que je dois améliorer", "mon niveau", "m'améliorer sur", "exporter vers Notion", "learner coach", "coach on", "coach off", "coach delegate", "coach review", "mode coach", "passe en mode coach", "délègue-moi", "challenge-moi".
-allowed-tools: Read, Write, Edit, Grep, Bash, mcp__claude_ai_Notion, mcp__notionApi, mcp__notion
+description: Learning mode — the hub of the `learner` skills: dispatch table, the five levels, and every config key. Also the entry point for the Stop hook's 🎓 Learner trigger line, and for `learner config`, `learner off`/`on` and `learner help`. Use for "learner", "mode apprentissage", "learner config", "learner off", "learner on", "learner help", "level=S", or any bare Learner setting change.
+allowed-tools: Read, Write, Edit, Grep, Bash
 ---
 
 # Learner
@@ -15,16 +15,21 @@ language the dev is using in this conversation. There is no language setting.
 
 `learner <subcommand> [args]` — the subcommand is the first token of `$ARGUMENTS`.
 
+In a plugin install each subcommand is also its own skill, invocable directly: `/learner:quiz`,
+`/learner:status`, `/learner:improve`, `/learner:coach`, `/learner:export`,
+`/learner:update`, `/learner:pilot`. The table below is the routing from the `learner <subcommand>` phrasing
+to the skill that holds the protocol.
+
 | Subcommand | Mode | Read |
 |------------|------|------|
-| `quiz [base-ref] [count]` | Q&A over the current branch diff | `references/quiz.md` |
-| `status` | Read-only summary: level + what to improve | this file, § Status |
-| `improve [topic]` | Coach one weak spot to mastery | `references/improve.md` |
-| `coach on` / `coach off` | Turn the coach regime on/off in this repo | `references/coach.md` |
-| `coach delegate <glob> …` | Let Claude write inside those globs this session; `none` clears | `references/coach.md` |
-| `coach review [base-ref]` | Run one review now, off-cadence | `references/coach.md` |
-| `export [notion-page-url]` | Push the recap into a Notion database | `references/export.md` |
-| `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | `references/update.md` |
+| `quiz [base-ref] [count]` | Q&A over the current branch diff | the `quiz` skill |
+| `status` | Read-only summary: level + what to improve | the `status` skill |
+| `improve [topic]` | Coach one weak spot to mastery | the `improve` skill |
+| `coach on` / `coach off` | Turn the coach regime on/off in this repo | the `coach` skill |
+| `coach delegate <glob> …` | Let Claude write inside those globs this session; `none` clears | the `coach` skill |
+| `coach review [base-ref]` | Run one review now, off-cadence | the `coach` skill |
+| `export [notion-page-url]` | Push the recap into a Notion database | the `export` skill |
+| `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | the `update` skill |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |
 | `pilot …` | Invoke the `pilot` skill and hand it the rest of the line | — |
@@ -35,7 +40,10 @@ A bare config instruction with no subcommand (`level=S`, `disable`) is `config` 
 
 **Invoked by the Stop hook.** The hook blocks with a trigger line of the form `🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`. When you see it, read `references/hook-quiz.md` and follow it with those values. Do not treat the trigger as the protocol — it is only parameters.
 
-**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with `🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it, read `references/coach.md` and follow it with those values. As with the quiz trigger, the line is parameters, not the protocol.
+**Invoked by the coach watcher.** A `Monitor` armed at session start blocks with
+`🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it,
+read the `coach` skill and follow it with those values. As with the quiz trigger, the line is
+parameters, not the protocol.
 
 ## Levels
 
@@ -99,22 +107,3 @@ the global file; `config project …`, `off` and `on` edit `<repo>/.claude/learn
 and add that path to the repo's `.gitignore` if it is missing. Those are the only writes
 into a repo.
 
-## Status
-
-Read-only: no quiz, no config write, no data-file update.
-
-1. Level and version: `jq -r '.level // "not set"' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner.json"`
-   (a project override wins if present), and
-   `cat "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/learner/VERSION" 2>/dev/null` — unless this
-   skill's base directory (visible in context when it loaded) contains `/plugins/`,
-   in which case report the version as `plugin-managed` instead: a plugin install never
-   creates that file, and Claude Code's own `/plugin` command is the source of truth here.
-2. Open weak spots: read the `To improve` sections of the recap (see
-   `references/data.md` for paths). If nothing is recorded, say so and suggest `learner quiz`.
-3. Print one line for the level and version, then one line for coach status — on/off, the
-   current cycle if a coach session is running, and the delegated globs read from
-   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then, if
-   `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
-   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a
-   handful of bullets: broad competency themes grouped by domain, skipping anything already
-   under `Mastered`. Summarise; never dump the file. No tables, no history.
