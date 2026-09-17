@@ -1059,6 +1059,41 @@ printf '%s' "$out" | grep -qF 'learner-uninstall' \
   && ok "the installed-twice nudge names the uninstall route" \
   || ko "the installed-twice nudge names the uninstall route"
 
+# Two plugin copies are the other way to be wired twice, and the traditional-install
+# check above cannot see it — neither copy is the traditional install. SessionStart runs
+# the hook once per wired copy, so the second one along finds a stranger's directory in
+# the per-session file and says so; the first stays silent, having nothing to compare to.
+DBL2="$WORK/dbl2"; mkdir -p "$DBL2/a/hooks" "$DBL2/b/hooks" "$DBL2/cfg" "$DBL2/tmp"
+echo '{"level":"S"}' > "$DBL2/cfg/learner.json"
+for side in a b; do
+  cp "$PLUG/hooks/learner-onboard.sh" "$PLUG/hooks/learner-config.sh" "$DBL2/$side/hooks/"
+done
+onb2() { printf '{"session_id":"dblsid"}' \
+  | CLAUDE_CONFIG_DIR="$DBL2/cfg" CLAUDE_PROJECT_DIR="$WORK/tmp" TMPDIR="$DBL2/tmp" \
+    sh "$DBL2/$1/hooks/learner-onboard.sh"; }
+
+out=$(onb2 a)
+printf '%s' "$out" | grep -qF 'wired twice as a plugin' \
+  && ko "the first plugin copy stays silent" \
+  || ok "the first plugin copy stays silent"
+
+out=$(onb2 b)
+printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("wired twice as a plugin")' >/dev/null 2>&1 \
+  && ok "the second plugin copy reports the duplicate wiring" \
+  || ko "the second plugin copy reports the duplicate wiring"
+
+# Naming both directories is the whole point: "one of them" is not actionable.
+printf '%s' "$out" | grep -qF "$DBL2/a/hooks" && printf '%s' "$out" | grep -qF "$DBL2/b/hooks" \
+  && ok "the duplicate-wiring nudge names both copies" \
+  || ko "the duplicate-wiring nudge names both copies"
+
+# Re-entry by the same copy is not a duplicate — a resumed session must not cry wolf.
+out=$(onb2 a)
+printf '%s' "$out" | grep -qF 'wired twice as a plugin' \
+  && ko "a copy that already reported does not re-report" \
+  || ok "a copy that already reported does not re-report"
+rm -rf "$DBL2"
+
 # The mirror case: the SAME copy, running as the traditional install, must stay silent.
 # The test is "two installs", not "these files exist".
 cp "$PLUG/hooks/learner-onboard.sh" "$PLUG/hooks/learner-config.sh" "$DBL/hooks/"
@@ -3548,12 +3583,14 @@ n_seg=$(jq '[.. | .command? // empty] | map(select(test("/plugins/learner/hooks/
   && ok "every root fallback command points into plugins/learner/hooks/" \
   || ko "every root fallback command points into plugins/learner/hooks/ ($n_seg/$n_root)"
 
-# One version, three places. A stale root manifest would ship the payload under a
-# version string that is not what the payload says it is.
-{ [ "$(jq -r '.version' "$ROOT_PLUGIN_JSON")" = "$(jq -r '.version' "$PLUGIN_JSON")" ] \
-  && [ "$(jq -r '.name' "$ROOT_PLUGIN_JSON")" = "$(jq -r '.name' "$PLUGIN_JSON")" ]; } \
-  && ok "the root fallback manifest matches the payload's name and version" \
-  || ko "the root fallback manifest matches the payload's name and version"
+# Wholesale, not field by field. Checking only name and version left description,
+# keywords, displayName, author, homepage, repository, license and $schema unguarded —
+# and the root manifest is the one a root-pinned catalogue entry renders and searches,
+# so a stale description there is a stale listing in front of real users. `skills` is
+# the single field that is meant to differ: the payload has none, the root delegates.
+{ [ "$(jq -S 'del(.skills)' "$ROOT_PLUGIN_JSON")" = "$(jq -S 'del(.skills)' "$PLUGIN_JSON")" ]; } \
+  && ok "the root fallback manifest is the payload's, but for the skills delegation" \
+  || ko "the root fallback manifest is the payload's, but for the skills delegation"
 
 [ "$(jq -r '.skills' "$ROOT_PLUGIN_JSON")" = "./plugins/learner/skills" ] \
   && ok "the root fallback manifest delegates its skills to the payload" \
