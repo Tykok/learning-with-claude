@@ -13,6 +13,11 @@ fi
 
 . "$(dirname "$0")/learner-config.sh"
 
+# Read once, up front: both the duplicate check and the coach arming below need the
+# session id, and stdin can only be drained the one time.
+DATA=$(cat 2>/dev/null)
+SID=$(printf '%s' "$DATA" | jq -r '.session_id // ""' 2>/dev/null)
+
 # --- installed twice ---------------------------------------------------------
 # The plugin wiring (hooks/hooks.json) and the traditional wiring
 # ($CLAUDE_CONFIG_DIR/settings.json) are independent, and neither can see the other.
@@ -34,6 +39,30 @@ if [ -n "$_lo_self" ] && [ -n "$_lo_legacy" ] && [ "$_lo_self" != "$_lo_legacy" 
   exit 0
 fi
 
+# Two PLUGIN copies are the other way to end up wired twice, and the check above cannot
+# see it: neither copy is the traditional install, so both pass. It became possible the
+# moment the repository root became a plugin in its own right beside plugins/learner —
+# `learner@claude-community` and `learner@learning-with-claude` are different plugins by
+# Claude Code's name@marketplace rule, so both can be installed and enabled at once, and
+# then every hook fires twice exactly as above.
+#
+# Detected by the only thing that distinguishes the two: their directories. SessionStart
+# runs this hook once per wired copy, so each appends its own resolved path to one
+# per-session file and the second one along finds a stranger already there. First in
+# stays silent — it has nothing to compare against yet — which is why this reports on
+# the second run rather than the first.
+if [ -n "$_lo_self" ] && [ -n "$SID" ]; then
+  _lo_seen="${TMPDIR:-/tmp}/claude-learner-${SID}.onboard-roots"
+  if [ -f "$_lo_seen" ] && ! grep -qxF -e "$_lo_self" "$_lo_seen" 2>/dev/null; then
+    _lo_other=$(grep -vxF -e "$_lo_self" "$_lo_seen" 2>/dev/null | head -n 1)
+    printf '%s\n' "$_lo_self" >> "$_lo_seen" 2>/dev/null
+    CTX="Learner is wired twice as a plugin this session — one copy in $_lo_self, another in $_lo_other — so every learner hook runs twice and the dev will be quizzed twice per turn. Tell the user, in one line, to disable one of the two with \`/plugin\` (they are the same plugin from two marketplaces). Then continue with their request."
+    jq -n --arg c "$CTX" '{hookSpecificOutput:{hookEventName:"SessionStart", additionalContext:$c}}'
+    exit 0
+  fi
+  grep -qxF -e "$_lo_self" "$_lo_seen" 2>/dev/null || printf '%s\n' "$_lo_self" >> "$_lo_seen" 2>/dev/null
+fi
+
 ROOT=$(learner_repo_root)
 [ -n "$ROOT" ] || exit 0
 
@@ -52,8 +81,6 @@ fi
 # session start.
 learner_coach_active "$CFG" "$ROOT" || exit 0
 
-DATA=$(cat 2>/dev/null)
-SID=$(printf '%s' "$DATA" | jq -r '.session_id // ""' 2>/dev/null)
 [ -n "$SID" ] || exit 0
 
 # SessionStart fires on `startup`, `resume`, `clear`, `compact` and `fork`. Only
