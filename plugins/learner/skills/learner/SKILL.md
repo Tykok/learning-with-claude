@@ -17,7 +17,7 @@ language the dev is using in this conversation. There is no language setting.
 
 In a plugin install each subcommand is also its own skill, invocable directly: `/learner:quiz`,
 `/learner:status`, `/learner:improve`, `/learner:coach`, `/learner:export`,
-`/learner:update`, `/learner:pilot`. The table below is the routing from the `learner <subcommand>` phrasing
+`/learner:update`, `/learner:sync`, `/learner:pilot`. The table below is the routing from the `learner <subcommand>` phrasing
 to the skill that holds the protocol.
 
 | Subcommand | Mode | Read |
@@ -29,7 +29,7 @@ to the skill that holds the protocol.
 | `coach delegate <glob> …` | Let Claude write inside those globs this session; `none` clears | the `coach` skill |
 | `coach review [base-ref]` | Run one review now, off-cadence | the `coach` skill |
 | `export [notion-page-url]` | Push the recap into a Notion database | the `export` skill |
-| `sync push` / `sync pull [gist]` / `sync status` / `sync use <gist>` | Carry the learning record between machines through a private gist | `references/sync.md` |
+| `sync push` / `sync pull [gist]` / `sync status` / `sync use <gist>` | Carry the learning record between machines through a private gist | the `sync` skill |
 | `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | the `update` skill |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | this file, § Config |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | this file, § Config |

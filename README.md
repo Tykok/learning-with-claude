@@ -19,8 +19,8 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Twelve POSIX `sh` hooks plus eight skills — a `learner` hub, one per subcommand (`quiz`,
-`status`, `improve`, `coach`, `export`, `update`) and `pilot`, invocable as `/learner:quiz` and
+Twelve POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
+`status`, `improve`, `coach`, `export`, `sync`, `update`) and `pilot`, invocable as `/learner:quiz` and
 friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
 files, and `Stop` blocks once per turn to ask one question —
