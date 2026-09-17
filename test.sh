@@ -1408,7 +1408,7 @@ out=$(quiz "no-edits-sid")
              || ko "quiz silent when nothing was edited"
 
 # --- agent salvo: tracker ----------------------------------------------------
-TRACK="$ROOT/hooks/learner-agent-track.sh"
+TRACK="$PLUG/hooks/learner-agent-track.sh"
 agents()     { echo "$TMPDIR/claude-learner-$1.agents"; }
 dispatched() { echo "$TMPDIR/claude-learner-$1.agents-dispatched"; }
 served()     { echo "$TMPDIR/claude-learner-$1.agents-served"; }
@@ -1452,7 +1452,7 @@ wait
 # in-flight count one too high, which over-reports but stays bounded and is
 # reaped at SessionEnd either way — so it is left as-is; see the comment in
 # hooks/learner-agent-track.sh.
-grep -qF 'is acceptable' "$ROOT/hooks/learner-agent-track.sh" \
+grep -qF 'is acceptable' "$PLUG/hooks/learner-agent-track.sh" \
   && ok "learner-agent-track.sh explains why the --end race is left alone" \
   || ko "learner-agent-track.sh explains why the --end race is left alone"
 
@@ -1693,7 +1693,7 @@ printf '%s\n' "$NOWTS" > "$(dispatched "$SIDF4")"
 printf '%s' "$(quiz "$SIDF4" | jq -r '.reason // ""')" | grep -qF '🤖' \
   && ok "a line with a malformed epoch counts as fresh, not stale" \
   || ko "a line with a malformed epoch counts as fresh, not stale"
-grep -qF 'AGENT_STALE_SECONDS=14400' "$ROOT/hooks/learner-quiz.sh" \
+grep -qF 'AGENT_STALE_SECONDS=14400' "$PLUG/hooks/learner-quiz.sh" \
   && ok "the staleness bound is a named constant, not a bare magic number" \
   || ko "the staleness bound is a named constant, not a bare magic number"
 
@@ -1748,7 +1748,7 @@ printf '%s' "$(quiz "$SIDS9" | jq -r '.reason')" | grep -qF '🎓 Learner (' \
   || ko "the quiz trigger is untouched when no agent is in flight"
 
 # --- agent salvo: wiring and cleanup -----------------------------------------
-for f in "$ROOT/hooks/hooks.json" "$ROOT/hooks/settings.snippet.json"; do
+for f in "$PLUG/hooks/hooks.json" "$PLUG/hooks/settings.snippet.json"; do
   b=$(basename "$f")
   jq -e '[.hooks.PreToolUse[] | select(.matcher == "Task") | .hooks[].command]
          | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
@@ -1769,8 +1769,11 @@ for f in "$ROOT/hooks/hooks.json" "$ROOT/hooks/settings.snippet.json"; do
     || ko "$b keeps the tracker out of the Write|Edit matcher"
 done
 
-grep -qF 'learner-agent-track.sh' "$ROOT/install.sh" \
+IT="$WORK/install-tracker"; rm -rf "$IT"; mkdir -p "$IT"
+CLAUDE_CONFIG_DIR="$IT" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -x "$IT/hooks/learner-agent-track.sh" ] \
   && ok "install.sh copies the tracker" || ko "install.sh copies the tracker"
+rm -rf "$IT"
 [ "$(grep -cF 'learner-agent-track.sh' "$ROOT/uninstall.sh")" = "2" ] \
   && ok "uninstall.sh removes the tracker from both install shapes" \
   || ko "uninstall.sh removes the tracker from both install shapes"
@@ -1785,8 +1788,8 @@ printf '{"session_id":"%s"}' "$SIDC" | sh "$CLEAN"
   || ko "SessionEnd cleans up the three salvo files"
 
 # --- agent salvo: the skill protocol -----------------------------------------
-SALVO_REF="$ROOT/skills/learner/references/agent-salvo.md"
-SKILLMD="$ROOT/skills/learner/SKILL.md"
+SALVO_REF="$PLUG/skills/learner/references/agent-salvo.md"
+SKILLMD="$PLUG/skills/learner/SKILL.md"
 
 [ -f "$SALVO_REF" ] \
   && ok "the salvo protocol reference exists" || ko "the salvo protocol reference exists"
@@ -1817,10 +1820,10 @@ grep -qF '🤖' "$SKILLMD" \
 grep -qF 'references/agent-salvo.md' "$SKILLMD" \
   && ok "SKILL.md points at the salvo protocol" || ko "SKILL.md points at the salvo protocol"
 for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
-  grep -qF "$k" "$SKILLMD" "$ROOT/skills/learner/references/config.md" \
+  grep -qF "$k" "$SKILLMD" "$PLUG/skills/learner/references/config.md" \
     && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
-grep -qiF 'salvo' "$ROOT/skills/learner/references/coach.md" \
+grep -qiF 'salvo' "$PLUG/skills/coach/references/coach.md" \
   && ok "coach.md states which channel wins when both land" \
   || ko "coach.md states which channel wins when both land"
 
@@ -1882,9 +1885,10 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
   || ko "install writes the global config from flags"
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
-[ "$n" = 7 ] \
-  && ok "install lays down 7 learner-*.sh hook files" \
-  || ko "install lays down 7 learner-*.sh hook files (got $n)"
+want_n=$(find "$PLUG/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
+{ [ "$n" = "$want_n" ] && [ "$n" -gt 0 ]; } \
+  && ok "install lays down all $want_n learner-*.sh hook files" \
+  || ko "install lays down all $want_n learner-*.sh hook files (got $n)"
 
 # hookcount() greps commands for "learner-", so it counts 7, not the 7 files
 # that are actually wired by coincidence: learner-config.sh is sourced, never
@@ -2003,7 +2007,7 @@ dry_out=$(inst "$I6" --level S --dry-run 2>&1)
 # style as the hook-count drift guard further down (search "hook count drift
 # guard") — this exact class of staleness has now drifted three times on this
 # branch.
-hook_n_dry=$(find "$ROOT/hooks" -maxdepth 1 -name '*.sh' | grep -c .)
+hook_n_dry=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | grep -c .)
 printf '%s' "$dry_out" | grep -qF "would copy $hook_n_dry hooks" \
   && ok "--dry-run reports the actual hook count ($hook_n_dry)" \
   || ko "--dry-run reports the actual hook count (want $hook_n_dry, got: $(printf '%s' "$dry_out" | grep 'would copy'))"
@@ -2725,7 +2729,7 @@ grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md "$PLUG"/skills/
   || ok "skill uses the new data paths, not the old per-project names"
 
 for k in level enabled questionStyles synthesisFrequency blanksPerExercise untrackGlobs disabledPaths; do
-  grep -q "$k" "$SK" "$REFS/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
+  grep -q "$k" "$SK" "$PLUG/skills/learner/references/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 for l in D J C S E; do
@@ -3647,6 +3651,9 @@ case "$wired_n" in
   8) wired_word=eight ;;
   9) wired_word=nine ;;
   10) wired_word=ten ;;
+  11) wired_word=eleven ;;
+  12) wired_word=twelve ;;
+  13) wired_word=thirteen ;;
   *) wired_word='__no-word-mapped__' ;;
 esac
 
@@ -4952,7 +4959,7 @@ CO="$PLUG/skills/coach/references/coach.md"
 for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
          coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
          coachEveryMinutes coachCooldownMinutes; do
-  grep -q "\`$k\`" "$SK" "$REFS/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
+  grep -q "\`$k\`" "$SK" "$PLUG/skills/learner/references/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 # The dispatch table must route every subcommand the skill claims to accept.
