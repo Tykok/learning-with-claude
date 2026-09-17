@@ -1,14 +1,8 @@
-# Coach mode — the dev writes, you challenge
-
-Read on a `🧑‍🏫 Coach (…)` trigger, and on `learner coach review`. Read
-`references/data.md` once for the data-file rules; do not restate them here.
-
-**Language: mirror the dev**, exactly as everywhere else in this skill. The trigger line is an
-English machine parameter list — it is not what the dev reads.
+# Coach mode — the dev writes, you challenge — protocol
 
 ## Resolving `<session-id>`
 
-Every `<session-id>` below (and in `SKILL.md`'s status line) is the same value the hooks key
+Every `<session-id>` below (and in the `status` skill's status line) is the same value the hooks key
 their per-session files on. When a session *starts* with coach already on, it is handed to you
 literally: the `SessionStart` context that tells you to arm the watcher spells out the exact
 `sh ".../coach-watch.sh" "<sid>"` command to run, `<sid>` included. That context does not
@@ -31,7 +25,7 @@ name the glob — the dev runs `learner coach delegate '<glob>'`.
 
 The trigger carries `level`, `cycle`, `files` and `lines`. Then:
 
-1. **Read `memory.md`** (path in `references/data.md`). Open weak spots decide where to look
+1. **Read `memory.md`** (path in `../learner/references/data.md`). Open weak spots decide where to look
    first — the same spaced-repetition pull the quiz has. A dev with `Error and exception
    handling` open should be looked at for error paths before anything else.
 2. **Read the diff.** `git diff HEAD -- <the files named in the trigger>`, and read the files
@@ -48,7 +42,7 @@ The trigger carries `level`, `cycle`, `files` and `lines`. Then:
    in a code block long enough to paste. If the dev asks for the patch, that is a delegation
    request: point them at `learner coach delegate`.
 5. **When the dev answers**, update `memory.md` and `recap.md` exactly as § After every answer
-   of `references/data.md` prescribes: `✅ ok` / `⚠️ revisit` / `⏭️ skip`, and `coach` in the
+   of `../learner/references/data.md` prescribes: `✅ ok` / `⚠️ revisit` / `⏭️ skip`, and `coach` in the
    `Style` column.
 
 The ceiling — one challenge, a short findings list — is deliberate. A wall of text puts the dev

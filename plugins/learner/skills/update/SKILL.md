@@ -1,3 +1,8 @@
+---
+description: Check whether a newer Learner version is out and refresh the install, honouring how it was installed (plugin, curl, Homebrew, apt). Use for "learner update", "mets à jour learner".
+allowed-tools: Read, Bash
+---
+
 # Update mode
 
 `learner update` — check the remote version, and if it is newer, re-run the installer pinned

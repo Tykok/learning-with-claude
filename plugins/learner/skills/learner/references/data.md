@@ -1,7 +1,7 @@
 # Data files
 
-Shared by all three quiz modes (`references/hook-quiz.md`, `references/quiz.md`,
-`references/improve.md`). Read this once per mode invocation; do not restate these
+Shared by all three quiz modes (`references/hook-quiz.md`, the `quiz` skill,
+the `improve` skill). Read this once per mode invocation; do not restate these
 rules elsewhere.
 
 ## Paths

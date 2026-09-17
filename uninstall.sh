@@ -20,6 +20,12 @@ set -euo pipefail
 # list, not something read off this tree.
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Same payload resolution as install.sh: plugins/learner/ in a clone, flat beside
+# this script in the brew and apt packages. The two must agree — uninstall derives
+# what to remove from what install ships.
+PAYLOAD="$SRC_DIR/plugins/learner"
+[ -d "$PAYLOAD/skills" ] || PAYLOAD="$SRC_DIR"
+
 PURGE=0
 PROJECT=""
 while [ $# -gt 0 ]; do
@@ -166,10 +172,10 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
 # (pilot) must not need a second line here, or removal only fixes one at a
 # time exactly like the hook list above would if it were derived by hand.
 # Falls through harmlessly (no directories, nothing removed) if this script
-# is ever run with no sibling skills/ tree.
-for d in "$SRC_DIR"/skills/*/; do
+# is ever run with no payload skills/ tree.
+for d in "$PAYLOAD"/skills/*/; do
   [ -d "$d" ] || continue
-  rm -rf "$CFG_DIR/skills/$(basename "$d")"
+  rm -rf "${CFG_DIR:?}/skills/$(basename "$d")"
 done
 echo "  ✓ hooks + skills removed"
 

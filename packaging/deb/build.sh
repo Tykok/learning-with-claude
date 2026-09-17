@@ -19,10 +19,10 @@ trap 'rm -rf "$PKGROOT"' EXIT
 
 mkdir -p "$PKGROOT/DEBIAN" "$PKGROOT/usr/share/learner" "$PKGROOT/usr/bin"
 
-# "$ROOT/skills" ships every skill under it without naming one here — do not
-# narrow this to a per-skill path: that is the exact hand-maintained list
+# "$ROOT/plugins/learner/skills" ships every skill under it without naming one here —
+# do not narrow this to a per-skill path: that is the exact hand-maintained list
 # install.sh's copy loop exists to avoid.
-cp -r "$ROOT/hooks" "$ROOT/skills" "$ROOT/install.sh" "$ROOT/uninstall.sh" \
+cp -r "$ROOT/plugins/learner/hooks" "$ROOT/plugins/learner/skills" "$ROOT/install.sh" "$ROOT/uninstall.sh" \
       "$ROOT/VERSION" "$ROOT/LICENSE" "$PKGROOT/usr/share/learner/"
 
 cat > "$PKGROOT/usr/bin/learner-install" <<'EOF'

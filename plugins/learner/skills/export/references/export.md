@@ -1,12 +1,4 @@
-# Export mode
-
-`learner export [notion-page-url]` — push the recap into a Notion database, one row per
-competency theme. Read-only over the learning record: this mode never quizzes, never edits
-config, and never rewrites `memory.md` or `recap.md`.
-
-Mirror the dev's language in everything you print, as everywhere else in this skill. The
-schema below is fixed English on purpose — it is the key the upsert matches on, and it
-cannot depend on the language one dev happens to work in.
+# Export mode — protocol
 
 ## 1. Check the connector
 
@@ -68,7 +60,7 @@ Title: `Learner — Subjects`. Properties, created once:
 
 ## 4. Build one row per theme
 
-Read `references/data.md` for the paths, then read `recap.md`. This mode only ever reads
+Read `../learner/references/data.md` for the paths, then read `recap.md`. This mode only ever reads
 `memory.md` and `recap.md`: `data.md`'s "create either file if it does not exist yet" does
 not apply here, so never create either of them from this mode. If `recap.md` is missing, or
 exists but lists no theme under `To improve` or `Mastered`, say there is nothing to export

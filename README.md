@@ -19,7 +19,9 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Eleven POSIX `sh` hooks plus a `learner` skill: `SessionStart` flags a broken install and, on a
+Eleven POSIX `sh` hooks plus eight skills — a `learner` hub, one per subcommand (`quiz`,
+`status`, `improve`, `coach`, `export`, `update`) and `pilot`, invocable as `/learner:quiz` and
+friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
 files, and `Stop` blocks once per turn to ask one question —
 `code`, `architecture`, or `fill` (Claude cuts `// LEARNER-TODO` holes in a real function for
@@ -119,7 +121,7 @@ reference, including the four axes, the weekly brief and the privacy paragraph, 
 
 ```bash
 claude plugin marketplace add Tykok/learning-with-claude
-claude plugin install learner
+claude plugin install learner@learning-with-claude
 ```
 
 Installs and enables the skills and their hooks natively — no `~/.claude` file copying, no
@@ -151,12 +153,12 @@ Prefer not to add a repository? Grab the `.deb` directly from
 [Releases](https://github.com/Tykok/learning-with-claude/releases) instead:
 
 ```bash
-curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
-sudo apt install ./learner_0.2.0_all.deb
+curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.3.0/learner_0.3.0_all.deb
+sudo apt install ./learner_0.3.0_all.deb
 learner-install --level S --synthesis normal --blanks 2
 ```
 
-(`v0.2.0` is this release. Check [Releases](https://github.com/Tykok/learning-with-claude/releases)
+(`v0.3.0` is this release. Check [Releases](https://github.com/Tykok/learning-with-claude/releases)
 for the current version if you're reading this after a newer one has shipped.)
 
 ### Homebrew (macOS or Linux)
@@ -248,13 +250,14 @@ a session is already open changes nothing in it — quit and start a new session
 
 ```bash
 ./test.sh                                                     # hook + installer + skill tests
-shellcheck --severity=warning hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
+shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `hooks/*.sh` glob covers all eleven shipped hook files, including `learner-config.sh`. CI
+The `plugins/learner/hooks/*.sh` glob covers all eleven shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
-keeps the two in step.
+keeps the two in step. CI also runs `claude plugin validate` on the marketplace and on the
+plugin — the same check the community-marketplace review pipeline runs on a submission.
 
 ## License
 

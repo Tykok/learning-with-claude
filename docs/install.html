@@ -83,7 +83,7 @@
   <h2 id="plugin">Claude Code plugin</h2>
 
 <pre><code>claude plugin marketplace add Tykok/learning-with-claude
-claude plugin install learner</code></pre>
+claude plugin install learner@learning-with-claude</code></pre>
 
   <p>Installs and enables the skills and their hooks natively — no <code>~/.claude</code> file
   copying, no <code>learner-install</code> step. Claude Code manages updates itself
@@ -113,11 +113,11 @@ learner-install --level S --synthesis normal --blanks 2</code></pre>
   <p>Prefer not to add a repository? Grab the <code>.deb</code> directly from
   <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a> instead:</p>
 
-<pre><code>curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.2.0/learner_0.2.0_all.deb
-sudo apt install ./learner_0.2.0_all.deb
+<pre><code>curl -LO https://github.com/Tykok/learning-with-claude/releases/download/v0.3.0/learner_0.3.0_all.deb
+sudo apt install ./learner_0.3.0_all.deb
 learner-install --level S --synthesis normal --blanks 2</code></pre>
 
-  <p><code>v0.2.0</code> is this release. Check
+  <p><code>v0.3.0</code> is this release. Check
   <a href="https://github.com/Tykok/learning-with-claude/releases">Releases</a> for the
   current version if you're reading this after a newer one has shipped.</p>
 
@@ -216,8 +216,9 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><th scope="col">Path</th><th scope="col">Role</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> skill: dispatch, levels, config</td></tr>
-      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The protocols: <code>quiz.md</code>, <code>hook-quiz.md</code>, <code>improve.md</code>, <code>export.md</code>, <code>update.md</code>, <code>data.md</code></td></tr>
+      <tr><td><code>$CFG/skills/learner/SKILL.md</code></td><td>The <code>learner</code> hub skill: dispatch, levels, config</td></tr>
+      <tr><td><code>$CFG/skills/learner/references/</code></td><td>The two shared protocols: <code>hook-quiz.md</code>, <code>data.md</code></td></tr>
+      <tr><td><code>$CFG/skills/{quiz,status,improve,coach,export,update}/</code></td><td>One skill per subcommand, each holding its own protocol. A plugin install exposes the same directories as <code>/learner:quiz</code> and friends</td></tr>
       <tr><td><code>$CFG/skills/learner/VERSION</code></td><td>The installed version string; re-copied unconditionally on every install/re-install, so it always matches what's on disk</td></tr>
       <tr><td><code>$CFG/skills/learner/INSTALL_ORIGIN</code></td><td>How this install got here — <code>curl</code>, <code>brew</code> or <code>apt</code>; re-stamped on every install/re-install</td></tr>
       <tr><td><code>$CFG/skills/pilot/SKILL.md</code></td><td>The <code>pilot</code> skill: dispatch, the four axes, the privacy paragraph</td></tr>

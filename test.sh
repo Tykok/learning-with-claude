@@ -5,11 +5,12 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-REC="$ROOT/hooks/learner-record-edit.sh"
-QUIZ="$ROOT/hooks/learner-quiz.sh"
-ONB="$ROOT/hooks/learner-onboard.sh"
-CLEAN="$ROOT/hooks/learner-cleanup.sh"
-UCHK="$ROOT/hooks/learner-update-check.sh"
+PLUG="$ROOT/plugins/learner"
+REC="$PLUG/hooks/learner-record-edit.sh"
+QUIZ="$PLUG/hooks/learner-quiz.sh"
+ONB="$PLUG/hooks/learner-onboard.sh"
+CLEAN="$PLUG/hooks/learner-cleanup.sh"
+UCHK="$PLUG/hooks/learner-update-check.sh"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   - %s\n' "$1"; }
@@ -33,7 +34,7 @@ PCFG="$WORK/proj/.claude/learner.local.json"
 edits() { echo "$TMPDIR/claude-learner-$1.edits"; }
 
 # Run a snippet with learner-config.sh sourced.
-cfgsh() { sh -c '. "$1"; shift; eval "$@"' _ "$ROOT/hooks/learner-config.sh" "$@"; }
+cfgsh() { sh -c '. "$1"; shift; eval "$@"' _ "$PLUG/hooks/learner-config.sh" "$@"; }
 
 # --- config resolution ------------------------------------------------------
 echo '{"level":"senior","blanksPerExercise":3}' > "$GCFG"
@@ -75,7 +76,7 @@ echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
 NOJQ_PATH="$WORK/tmp/no-jq-path"
 mkdir -p "$NOJQ_PATH"
 noJqErr="$WORK/tmp/no-jq.stderr"
-out=$(PATH="$NOJQ_PATH" /bin/sh -c '. "$1"; learner_config' _ "$ROOT/hooks/learner-config.sh" 2>"$noJqErr")
+out=$(PATH="$NOJQ_PATH" /bin/sh -c '. "$1"; learner_config' _ "$PLUG/hooks/learner-config.sh" 2>"$noJqErr")
 rc=$?
 err=$(cat "$noJqErr")
 { [ -z "$err" ] && [ -z "$out" ] && [ "$rc" -ne 0 ]; } \
@@ -85,7 +86,7 @@ err=$(cat "$noJqErr")
 # Pilot is opt-in: the master switch must default to false, or installing an
 # update would silently start reading every prompt the dev types.
 CFG_P=$(cd "$ROOT" && CLAUDE_CONFIG_DIR="$WORK/empty" CLAUDE_PROJECT_DIR="$WORK/empty" \
-  sh -c '. hooks/learner-config.sh; learner_config')
+  sh -c '. plugins/learner/hooks/learner-config.sh; learner_config')
 [ "$(printf '%s' "$CFG_P" | jq -r '.pilotEnabled')" = "false" ] \
   && ok "pilotEnabled defaults to false" \
   || ko "pilotEnabled defaults to false"
@@ -104,12 +105,12 @@ CFG_P=$(cd "$ROOT" && CLAUDE_CONFIG_DIR="$WORK/empty" CLAUDE_PROJECT_DIR="$WORK/
 
 # pilot_enabled is a predicate, so assert both directions: a truthy string must
 # not pass, or a typo like "yes" would enable the whole subsystem.
-if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":true}"'); then
+if (cd "$ROOT" && sh -c '. plugins/learner/hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":true}"'); then
   ok "pilot_enabled is true for pilotEnabled:true"
 else
   ko "pilot_enabled is true for pilotEnabled:true"
 fi
-if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"yes\"}"'); then
+if (cd "$ROOT" && sh -c '. plugins/learner/hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"yes\"}"'); then
   ko "pilot_enabled rejects any value other than the literal string \"true\""
 else
   ok "pilot_enabled rejects any value other than the literal string \"true\""
@@ -118,7 +119,7 @@ fi
 # exactly like the boolean does, because jq -r renders both the same way.
 # Pinned explicitly so the guard's own comment and this test's name cannot
 # drift back to claiming "boolean" when the code has never checked JSON type.
-if (cd "$ROOT" && sh -c '. hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"true\"}"'); then
+if (cd "$ROOT" && sh -c '. plugins/learner/hooks/learner-config.sh; pilot_enabled "{\"pilotEnabled\":\"true\"}"'); then
   ok "pilot_enabled accepts the JSON string \"true\", not only the boolean"
 else
   ko "pilot_enabled accepts the JSON string \"true\", not only the boolean"
@@ -135,7 +136,7 @@ pr_run() {  # pr_run <cfgdir> <cwd> <extra-config-json>
   printf '{"pilotEnabled":true}' > "$1/learner.json"
   [ -n "${3:-}" ] && printf '%s' "$3" > "$1/learner.json"
   printf '{"session_id":"S1","transcript_path":"%s","cwd":"%s","source":"other"}' "$PR_FIX" "$2" \
-    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$PLUG/hooks/pilot-record.sh")
 }
 
 # pr_run_fix <cfgdir> <cwd> <sid> <fixture> — like pr_run, but for a fixture
@@ -143,7 +144,7 @@ pr_run() {  # pr_run <cfgdir> <cwd> <extra-config-json>
 pr_run_fix() {
   printf '{"pilotEnabled":true}' > "$1/learner.json"
   printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","source":"other"}' "$3" "$4" "$2" \
-    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$ROOT/hooks/pilot-record.sh")
+    | (cd "$2" && CLAUDE_CONFIG_DIR="$1" CLAUDE_PROJECT_DIR="$2" sh "$PLUG/hooks/pilot-record.sh")
 }
 
 # 1. The prompt filter. isMeta, tool_result arrays, <local-command-…> and
@@ -266,7 +267,7 @@ awk 'NR==1{for(i=0;i<5000;i++) print}' "$PR_FIX" > "$PR_TMP/big.jsonl"
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
 PR_T0=$(date +%s)
 printf '{"session_id":"S2","transcript_path":"%s","cwd":"%s"}' "$PR_TMP/big.jsonl" "$PR_TMP/norepo" \
-  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh")
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$PLUG/hooks/pilot-record.sh")
 [ $(( $(date +%s) - PR_T0 )) -le 5 ] \
   && ok "pilot-record stays well inside its SessionEnd budget" \
   || ko "pilot-record stays well inside its SessionEnd budget"
@@ -275,7 +276,7 @@ printf '{"session_id":"S2","transcript_path":"%s","cwd":"%s"}' "$PR_TMP/big.json
 #     comes from the harness and Pilot does not own its lifetime.
 rm -f "$PR_TMP/cfg/learner/pilot-queue"
 printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "$PR_TMP/norepo" \
-  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$ROOT/hooks/pilot-record.sh") \
+  | (cd "$PR_TMP/norepo" && CLAUDE_CONFIG_DIR="$PR_TMP/cfg" sh "$PLUG/hooks/pilot-record.sh") \
   && [ ! -f "$PR_TMP/cfg/learner/pilot-queue" ] \
   && ok "pilot-record no-ops on a missing transcript" \
   || ko "pilot-record no-ops on a missing transcript"
@@ -453,7 +454,7 @@ pb_reset() {
 }
 pb_run() {
   printf '{"session_id":"B1","source":"%s","cwd":"%s"}' "${1:-startup}" "$PB_TMP/wd" \
-    | (cd "$PB_TMP/wd" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" sh "$ROOT/hooks/pilot-brief.sh")
+    | (cd "$PB_TMP/wd" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" sh "$PLUG/hooks/pilot-brief.sh")
 }
 # A Sessions table with N valid data rows (the row shape the floor counts:
 # `| YYYY-MM-DD | ... |`), prefixed to whatever $2 (an Index block etc.) holds.
@@ -595,7 +596,7 @@ printf 'brief=1\n' > "$PB_TMP/cfg/learner/pilot-stamps"
 printf 'sid=X date=2026-09-10 repo=r prompts=3 jsonl=/tmp/x.jsonl\n' > "$PB_TMP/cfg/learner/pilot-queue"
 printf '{"pilotEnabled":true,"disabledPaths":["%s"]}' "$PB_DIS_REPO" > "$PB_TMP/cfg/learner.json"
 PB_OUT=$(printf '{"session_id":"B1","source":"startup","cwd":"%s"}' "$PB_DIS_REPO" \
-  | (cd "$PB_DIS_REPO" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" CLAUDE_PROJECT_DIR="$PB_DIS_REPO" sh "$ROOT/hooks/pilot-brief.sh"))
+  | (cd "$PB_DIS_REPO" && CLAUDE_CONFIG_DIR="$PB_TMP/cfg" CLAUDE_PROJECT_DIR="$PB_DIS_REPO" sh "$PLUG/hooks/pilot-brief.sh"))
 [ -z "$PB_OUT" ] \
   && ok "pilot-brief is silent inside a disabledPaths repo" \
   || ko "pilot-brief is silent inside a disabledPaths repo"
@@ -614,7 +615,7 @@ pn_live() {  # pn_live <axis> <until>
 pn_run() {  # pn_run <prompt> [session_id]
   pn_sid="${2:-N1}"
   printf '{"session_id":"%s","prompt":"%s","cwd":"%s"}' "$pn_sid" "$1" "$PN_TMP/wd" \
-    | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh")
+    | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$PLUG/hooks/pilot-nudge.sh")
 }
 # Every pn_ helper below defaults to session "N1"; pn_reset also clears that
 # session's once-per-session nudge marker so each fresh config starts unnudged,
@@ -634,7 +635,7 @@ pn_run "fix it" >/dev/null 2>&1
              || ko "pilot-nudge exits 0 with no manoeuvre"
 pn_reset; pn_live direction "2099-01-01"
 printf '{"session_id":"N1","cwd":"%s"}' "$PN_TMP/wd" \
-  | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") >/dev/null 2>&1
+  | (cd "$PN_TMP/wd" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" sh "$PLUG/hooks/pilot-nudge.sh") >/dev/null 2>&1
 [ $? -eq 0 ] && ok "pilot-nudge exits 0 with no prompt field at all" \
              || ko "pilot-nudge exits 0 with no prompt field at all"
 
@@ -801,7 +802,7 @@ git -C "$PN_DIS_REPO" init -q
 pn_reset; pn_live direction "2099-01-01"
 printf '{"pilotEnabled":true,"disabledPaths":["%s"]}' "$PN_DIS_REPO" > "$PN_TMP/cfg/learner.json"
 PN_OUT=$(printf '{"session_id":"N1","prompt":"fix it","cwd":"%s"}' "$PN_DIS_REPO" \
-  | (cd "$PN_DIS_REPO" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" CLAUDE_PROJECT_DIR="$PN_DIS_REPO" sh "$ROOT/hooks/pilot-nudge.sh"))
+  | (cd "$PN_DIS_REPO" && CLAUDE_CONFIG_DIR="$PN_TMP/cfg" CLAUDE_PROJECT_DIR="$PN_DIS_REPO" sh "$PLUG/hooks/pilot-nudge.sh"))
 [ -z "$PN_OUT" ] \
   && ok "pilot-nudge is silent inside a disabledPaths repo" \
   || ko "pilot-nudge is silent inside a disabledPaths repo"
@@ -811,17 +812,17 @@ PN_OUT=$(printf '{"session_id":"N1","prompt":"fix it","cwd":"%s"}' "$PN_DIS_REPO
 # the manoeuvre is silently inert — the worst kind of broken, because the
 # dashboard still says a manoeuvre is live.
 grep -q '^- live: [a-z]* | .* | until [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$' \
-  skills/pilot/references/brief.md \
+  plugins/learner/skills/pilot/references/brief.md \
   && ok "brief.md states the manoeuvre line format the nudge parses" \
   || ko "brief.md states the manoeuvre line format the nudge parses"
 
 # Round-trip the documented example through the nudge's own parser.
 BR_TMP="$WORK/brief-format"; rm -rf "$BR_TMP"; mkdir -p "$BR_TMP/cfg/learner" "$BR_TMP/wd"
 printf '{"pilotEnabled":true}' > "$BR_TMP/cfg/learner.json"
-grep -m1 '^- live: ' skills/pilot/references/brief.md \
+grep -m1 '^- live: ' plugins/learner/skills/pilot/references/brief.md \
   | sed 's/until [0-9-]*/until 2099-01-01/' > "$BR_TMP/cfg/learner/pilot.md"
 printf '{"session_id":"R1","prompt":"fix it","cwd":"%s"}' "$BR_TMP/wd" \
-  | (cd "$BR_TMP/wd" && CLAUDE_CONFIG_DIR="$BR_TMP/cfg" sh "$ROOT/hooks/pilot-nudge.sh") \
+  | (cd "$BR_TMP/wd" && CLAUDE_CONFIG_DIR="$BR_TMP/cfg" sh "$PLUG/hooks/pilot-nudge.sh") \
   | jq -e '.hookSpecificOutput.additionalContext | test("axis: direction")' >/dev/null \
   && ok "the manoeuvre line documented in brief.md parses in pilot-nudge.sh" \
   || ko "the manoeuvre line documented in brief.md parses in pilot-nudge.sh"
@@ -832,37 +833,37 @@ printf '{"session_id":"R1","prompt":"fix it","cwd":"%s"}' "$BR_TMP/wd" \
 # no longer assert them; the qualitative finding they were standing in for
 # (weakest connectivity, markedly worse recall) is what the sources actually
 # support and must survive the edit.
-if grep -q '17%' skills/pilot/references/mechanisms.md \
-   || grep -q '46%' skills/pilot/references/mechanisms.md; then
+if grep -q '17%' plugins/learner/skills/pilot/references/mechanisms.md \
+   || grep -q '46%' plugins/learner/skills/pilot/references/mechanisms.md; then
   ko "mechanisms.md no longer cites the untraceable ~17%/~46% figures"
 else
   ok "mechanisms.md no longer cites the untraceable ~17%/~46% figures"
 fi
-grep -qi 'weakest neural connectivity' skills/pilot/references/mechanisms.md \
+grep -qi 'weakest neural connectivity' plugins/learner/skills/pilot/references/mechanisms.md \
   && ok "mechanisms.md keeps the qualitative connectivity finding the sources support" \
   || ko "mechanisms.md keeps the qualitative connectivity finding the sources support"
-grep -q 'media.mit.edu' skills/pilot/references/mechanisms.md \
+grep -q 'media.mit.edu' plugins/learner/skills/pilot/references/mechanisms.md \
   && ok "mechanisms.md links its source" || ko "mechanisms.md links its source"
-grep -qF '54 subjects' skills/pilot/references/mechanisms.md \
+grep -qF '54 subjects' plugins/learner/skills/pilot/references/mechanisms.md \
   && ok "mechanisms.md pins the 54-subject count to sessions 1-3" \
   || ko "mechanisms.md pins the 54-subject count to sessions 1-3"
-grep -qF '18' skills/pilot/references/mechanisms.md \
+grep -qF '18' plugins/learner/skills/pilot/references/mechanisms.md \
   && ok "mechanisms.md notes the fourth session's smaller subject count" \
   || ko "mechanisms.md notes the fourth session's smaller subject count"
-grep -qi 'context-dependent' skills/pilot/references/mechanisms.md \
+grep -qi 'context-dependent' plugins/learner/skills/pilot/references/mechanisms.md \
   && ok "mechanisms.md notes the study's own context-dependent limitation" \
   || ko "mechanisms.md notes the study's own context-dependent limitation"
-grep -qi 'one mechanism' skills/pilot/references/brief.md \
+grep -qi 'one mechanism' plugins/learner/skills/pilot/references/brief.md \
   && ok "brief.md limits a brief to one mechanism" \
   || ko "brief.md limits a brief to one mechanism"
-grep -qi 'not a failure\|deferral' skills/pilot/references/brief.md \
+grep -qi 'not a failure\|deferral' plugins/learner/skills/pilot/references/brief.md \
   && ok "brief.md treats a deferral as a deferral" \
   || ko "brief.md treats a deferral as a deferral"
 
 # The hook-level Sessions-row floor (pilot-brief.sh) is a cheap count, not a
 # check of which axes actually cleared their own per-axis floor — brief.md
 # must still check the Index block itself before running the four movements.
-grep -qiE 'enough.*to argue from' skills/pilot/references/brief.md \
+grep -qiE 'enough.*to argue from' plugins/learner/skills/pilot/references/brief.md \
   && ok "brief.md guards the four movements on the gating axes' own floor" \
   || ko "brief.md guards the four movements on the gating axes' own floor"
 
@@ -1040,6 +1041,32 @@ out=$(printf '{}' | CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$ONB")
 [ -z "$out" ] && ok "onboard silent outside a git repo" \
              || ko "onboard silent outside a git repo"
 echo '{"level":"S"}' > "$GCFG"
+
+# --- installed twice ---------------------------------------------------------
+# The plugin wiring and the $CLAUDE_CONFIG_DIR/settings.json wiring cannot see each
+# other, so both at once silently runs every hook twice and quizzes the dev twice per
+# turn. Nothing but this hook is in a position to notice.
+DBL="$WORK/dbl"; mkdir -p "$DBL/hooks"
+echo '{"level":"S"}' > "$DBL/learner.json"
+cp "$PLUG/hooks/learner-quiz.sh" "$DBL/hooks/learner-quiz.sh"
+out=$(printf '{}' | CLAUDE_CONFIG_DIR="$DBL" sh "$ONB")
+printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("installed twice")' >/dev/null 2>&1 \
+  && ok "onboard reports a plugin install sitting on top of a traditional one" \
+  || ko "onboard reports a plugin install sitting on top of a traditional one"
+
+# …and says which one to remove, since the plugin is the one Claude Code can update.
+printf '%s' "$out" | grep -qF 'learner-uninstall' \
+  && ok "the installed-twice nudge names the uninstall route" \
+  || ko "the installed-twice nudge names the uninstall route"
+
+# The mirror case: the SAME copy, running as the traditional install, must stay silent.
+# The test is "two installs", not "these files exist".
+cp "$PLUG/hooks/learner-onboard.sh" "$PLUG/hooks/learner-config.sh" "$DBL/hooks/"
+out=$(printf '{}' | CLAUDE_CONFIG_DIR="$DBL" CLAUDE_PROJECT_DIR="$WORK/tmp" sh "$DBL/hooks/learner-onboard.sh")
+printf '%s' "$out" | grep -qF 'installed twice' \
+  && ko "a lone traditional install is not reported as a double install" \
+  || ok "a lone traditional install is not reported as a double install"
+rm -rf "$DBL"
 
 # --- update-check hook -------------------------------------------------------
 uchk() { printf '{}' | sh "$UCHK"; }
@@ -1391,7 +1418,7 @@ IC="$WORK/inst-coach-dedup"; mkdir -p "$IC"
 inst "$IC" --level S >/dev/null 2>&1
 inst "$IC" --level S >/dev/null 2>&1
 n=$(jq -n --argjson got "$(jq '[.. | .command? // empty]' "$IC/settings.json")" \
-          --argjson want "$(jq '[.. | .command? // empty]' "$ROOT/hooks/settings.snippet.json")" '
+          --argjson want "$(jq '[.. | .command? // empty]' "$PLUG/hooks/settings.snippet.json")" '
   [ $want[] as $w | ($got | map(select(. == $w)) | length) | select(. != 1) ] | length
 ')
 [ "$n" = 0 ] \
@@ -1514,7 +1541,7 @@ jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPe
 # `SKILLS='learner pilot'` (install) or a two-name `rm -rf` (uninstall) would
 # satisfy every assertion about learner/pilot specifically while failing this
 # one, on either side.
-PROBE="$ROOT/skills/zz-probe"
+PROBE="$PLUG/skills/zz-probe"
 mkdir -p "$PROBE"
 printf '---\nname: zz-probe\ndescription: throwaway probe for the derived skill-copy loop, deleted immediately after.\n---\n\nprobe\n' > "$PROBE/SKILL.md"
 
@@ -1565,20 +1592,20 @@ rm -rf "$PROBE"
 # catch. Both patterns require the exact whole-directory token on the SAME
 # line as the copy call, so "skills/learner" (no closing quote right after
 # "skills") does not match either.
-grep -qE 'pkgshare\.install.*"skills"' "$ROOT/Formula/learner.rb" \
+grep -qE 'pkgshare\.install.*"plugins/learner/skills"' "$ROOT/Formula/learner.rb" \
   && ok "the brew formula ships the skills/ tree as a unit" \
   || ko "the brew formula ships the skills/ tree as a unit"
-grep -qE 'cp -r.*"\$ROOT/skills"' "$ROOT/packaging/deb/build.sh" \
+grep -qE 'cp -r.*"\$ROOT/plugins/learner/skills"' "$ROOT/packaging/deb/build.sh" \
   && ok "the deb build ships the skills/ tree as a unit" \
   || ko "the deb build ships the skills/ tree as a unit"
 
 # One line of forwarding, not a third regime inlined into the quiz's dispatch.
-grep -q 'pilot' "$ROOT/skills/learner/SKILL.md" \
+grep -q 'pilot' "$PLUG/skills/learner/SKILL.md" \
   && ok "the learner skill forwards pilot subcommands" \
   || ko "the learner skill forwards pilot subcommands"
 
 # Decision 14: the mark and its profile labels stay out of every shipped file.
-if grep -rqi 'cogniscore' "$ROOT/skills" "$ROOT/hooks" "$ROOT/README.md" "$ROOT/docs"; then
+if grep -rqi 'cogniscore' "$PLUG/skills" "$PLUG/hooks" "$ROOT/README.md" "$ROOT/docs"; then
   ko "no shipped file reuses the CogniScore mark"
 else
   ok "no shipped file reuses the CogniScore mark"
@@ -1586,7 +1613,7 @@ fi
 
 # Decision 12, asserted where a reader will look rather than only in a spec
 # they will never read.
-grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
+grep -qi 'opt-in' "$PLUG/skills/pilot/SKILL.md" \
   && ok "the pilot skill states that it is opt-in" \
   || ko "the pilot skill states that it is opt-in"
 
@@ -1594,7 +1621,7 @@ grep -qi 'opt-in' "$ROOT/skills/pilot/SKILL.md" \
 # follows for `pilot on`/`pilot off` — it must point at references/dashboard.md,
 # where the global-file naming lives, not at "this file, § Privacy" (which
 # never names a file at all and is what a model would land on instead).
-PSK="$ROOT/skills/pilot/SKILL.md"
+PSK="$PLUG/skills/pilot/SKILL.md"
 grep -qE '^\| `pilot on`.*references/dashboard\.md' "$PSK" \
   && ok "SKILL.md routes 'pilot on' to references/dashboard.md" \
   || ko "SKILL.md routes 'pilot on' to references/dashboard.md"
@@ -1605,7 +1632,7 @@ grep -qE '^\| `pilot off`.*references/dashboard\.md' "$PSK" \
 # pilot off must name the same global file pilot on does, in the page a
 # dispatching model actually reaches (dashboard.md), not just in prose no
 # dispatch path leads to.
-DASH="$ROOT/skills/pilot/references/dashboard.md"
+DASH="$PLUG/skills/pilot/references/dashboard.md"
 grep -qF 'learner.json' "$DASH" \
   && ok "dashboard.md names the global config file" \
   || ko "dashboard.md names the global config file"
@@ -1616,7 +1643,7 @@ grep -qF 'learner.json' "$DASH" \
 # --- pilot rubric and scorer -------------------------------------------------
 # The reference files are the scorer's whole implementation, so assert the two
 # properties that make the number defensible rather than prose that reads well.
-RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+RUBRIC="$PLUG/skills/pilot/references/rubric.md"
 
 # Axis names derived from the file's own "## <axis> — <question>" headings,
 # not named by hand — a fifth axis needs no edit here, only a new heading of
@@ -1656,15 +1683,15 @@ for A in $RUBRIC_AXES; do
     && ok "rubric.md's $A block anchors each of 0-4 exactly once" \
     || ko "rubric.md's $A block anchors each of 0-4 exactly once"
 done
-grep -qi 'quote' "$ROOT/skills/pilot/references/score.md" \
+grep -qi 'quote' "$PLUG/skills/pilot/references/score.md" \
   && ok "score.md requires a quote behind every score" \
   || ko "score.md requires a quote behind every score"
-grep -qi 'subagent' "$ROOT/skills/pilot/references/score.md" \
+grep -qi 'subagent' "$PLUG/skills/pilot/references/score.md" \
   && ok "score.md states it must run in a subagent" \
   || ko "score.md states it must run in a subagent"
 # A `-` floored to 0 would quietly punish short sessions, which is the most
 # likely way for this index to become meaningless.
-grep -qi 'never counted as 0\|not a zero\|never floored' "$ROOT/skills/pilot/references/rubric.md" \
+grep -qi 'never counted as 0\|not a zero\|never floored' "$PLUG/skills/pilot/references/rubric.md" \
   && ok "rubric.md states that a dash is not a zero" \
   || ko "rubric.md states that a dash is not a zero"
 
@@ -1675,17 +1702,17 @@ grep -qi 'never counted as 0\|not a zero\|never floored' "$ROOT/skills/pilot/ref
 # this loop is the deliberate substitute for enumerating them by hand.
 IR="$WORK/install-refs"; rm -rf "$IR"; mkdir -p "$IR"
 CLAUDE_CONFIG_DIR="$IR" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
-for REF in "$ROOT"/skills/pilot/references/*.md; do
+for REF in "$PLUG"/skills/pilot/references/*.md; do
   REFNAME=$(basename "$REF")
   [ -f "$IR/skills/pilot/references/$REFNAME" ] \
-    && ok "install ships skills/pilot/references/$REFNAME" \
-    || ko "install ships skills/pilot/references/$REFNAME"
+    && ok "install ships plugins/learner/skills/pilot/references/$REFNAME" \
+    || ko "install ships plugins/learner/skills/pilot/references/$REFNAME"
 done
 
 # --- pilot dashboard ----------------------------------------------------------
 # Task 10: dashboard.md is prose, so most of these are greps rather than
 # behavioural tests. The four below are given verbatim by the task brief.
-DASH="$ROOT/skills/pilot/references/dashboard.md"
+DASH="$PLUG/skills/pilot/references/dashboard.md"
 
 grep -qi 'not enough data yet' "$DASH" \
   && ok "dashboard.md refuses to render a thin index" \
@@ -1711,7 +1738,7 @@ grep -qi 'say nothing\|silent' "$DASH" \
 # to use that same, actually-current, name. If rubric.md ever renames or drops
 # Backseat, this goes red rather than dashboard.md silently pointing at a
 # profile that no longer exists.
-RUBRIC="$ROOT/skills/pilot/references/rubric.md"
+RUBRIC="$PLUG/skills/pilot/references/rubric.md"
 BACKSEAT_NAME=$(sed -nE 's/^\| [0-9]+ \| `([A-Za-z-]+)` \|.*/\1/p' "$RUBRIC" | grep -ix backseat)
 { [ -n "$BACKSEAT_NAME" ] && grep -qF "$BACKSEAT_NAME" "$DASH"; } \
   && ok "dashboard.md's Backseat callout names the profile rubric.md's table actually defines" \
@@ -1893,7 +1920,7 @@ echo '{"level":"S"}' > "$GCFG"
 eval "$(sed -n '/^strip_wiring()/,/^}/p' "$ROOT/uninstall.sh")"
 SWJD="$WORK/strip-wiring-snippet"; mkdir -p "$SWJD"
 SWJ="$SWJD/settings.json"
-cp "$ROOT/hooks/settings.snippet.json" "$SWJ"
+cp "$PLUG/hooks/settings.snippet.json" "$SWJ"
 strip_wiring "$SWJ"
 left=$(jq '[.. | .command? // empty] | length' "$SWJ")
 [ "$left" = 0 ] \
@@ -1964,6 +1991,22 @@ jq -e '.hooks.PreToolUse[0].hooks[0].command == "sh /opt/otherteam/hooks/coach-l
 
 U="$WORK/uninst"; mkdir -p "$U"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+
+# Every skill in the payload has to land, under the same name: the siblings reach the
+# hub through `../learner/…`, so the copy has to preserve the tree's shape, not just
+# its files.
+missing_skill=""
+for n in quiz status improve coach export update pilot; do
+  [ -f "$U/skills/$n/SKILL.md" ] || missing_skill="$missing_skill $n"
+done
+{ [ -z "$missing_skill" ] && [ -f "$U/skills/learner/SKILL.md" ]; } \
+  && ok "install lays down the hub and every sibling skill" \
+  || ko "install lays down the hub and every sibling skill (missing:$missing_skill)"
+
+[ -f "$U/skills/quiz/../learner/references/data.md" ] \
+  && ok "a sibling skill's ../learner/references link resolves once installed" \
+  || ko "a sibling skill's ../learner/references link resolves once installed"
+
 printf '# notes\n' > "$U/learner/memory.md"
 CLAUDE_CONFIG_DIR="$U" bash "$ROOT/uninstall.sh" >/dev/null 2>&1
 left=$(jq '[.. | .command? // empty | select(contains("learner-") or contains("coach-"))] | length' "$U/settings.json" 2>/dev/null || echo 0)
@@ -1974,9 +2017,12 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-") or contains("c
   && [ ! -e "$U/hooks/coach-gate.sh" ] \
   && [ ! -e "$U/hooks/coach-watch.sh" ] \
   && [ ! -e "$U/skills/learner/INSTALL_ORIGIN" ] \
-  && [ ! -d "$U/skills/learner" ]; } \
-  && ok "uninstall removes hooks, skill and wiring" \
-  || ko "uninstall removes hooks, skill and wiring (left=$left)"
+  && [ ! -d "$U/skills/learner" ] \
+  && [ ! -d "$U/skills/quiz" ] \
+  && [ ! -d "$U/skills/status" ] \
+  && [ ! -d "$U/skills/pilot" ]; } \
+  && ok "uninstall removes hooks, every skill and the wiring" \
+  || ko "uninstall removes hooks, every skill and the wiring (left=$left)"
 
 { [ -f "$U/learner.json" ] && [ -f "$U/learner/memory.md" ]; } \
   && ok "uninstall keeps config and progress data by default" \
@@ -2038,14 +2084,23 @@ left=$(jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$
 rm -rf "$L"
 
 # --- skill content ----------------------------------------------------------
-SK="$ROOT/skills/learner/SKILL.md"
-REFS="$ROOT/skills/learner/references"
+SK="$PLUG/skills/learner/SKILL.md"
+REFS="$PLUG/skills/learner/references"
 
-for f in hook-quiz.md quiz.md improve.md data.md export.md update.md; do
+# The hub keeps only what more than one mode reads; every subcommand's own protocol
+# is its own skill, so Claude Code can expose it as /learner:<name>.
+for f in hook-quiz.md data.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
+for n in quiz status improve coach export update; do
+  [ -f "$PLUG/skills/$n/SKILL.md" ] && ok "the $n skill exists" || ko "the $n skill exists"
+  head -1 "$PLUG/skills/$n/SKILL.md" 2>/dev/null | grep -qx -- '---' \
+    && grep -qE '^description: .' "$PLUG/skills/$n/SKILL.md" \
+    && ok "the $n skill has frontmatter with a description" \
+    || ko "the $n skill has frontmatter with a description"
+done
 
-UPD="$ROOT/skills/learner/references/update.md"
+UPD="$PLUG/skills/update/SKILL.md"
 
 grep -qF 'INSTALL_ORIGIN' "$UPD" \
   && ok "update.md reads the install-origin marker" \
@@ -2074,7 +2129,7 @@ grep -qF '/plugin update learner' "$UPD" \
 # Every skill's SKILL.md, not just learner's — derived from skills/*/SKILL.md
 # rather than a second hardcoded path, so a third skill inherits this budget
 # without anyone remembering to add a check for it.
-for sk in "$ROOT"/skills/*/SKILL.md; do
+for sk in "$PLUG"/skills/*/SKILL.md; do
   skn=$(basename "$(dirname "$sk")")
   n=$(wc -l < "$sk" | tr -d ' ')
   [ "$n" -le 120 ] \
@@ -2082,11 +2137,11 @@ for sk in "$ROOT"/skills/*/SKILL.md; do
     || ko "$skn/SKILL.md stays under 120 lines (got $n)"
 done
 
-grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"' "$SK" "$REFS"/*.md \
+grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"' "$SK" "$REFS"/*.md "$PLUG"/skills/*/SKILL.md \
   && ko "skill mentions no removed config key" \
   || ok "skill mentions no removed config key"
 
-grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md \
+grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md "$PLUG"/skills/*/SKILL.md \
   && ko "skill uses the new data paths, not the old per-project names" \
   || ok "skill uses the new data paths, not the old per-project names"
 
@@ -2104,25 +2159,24 @@ grep -q 'references/hook-quiz.md' "$SK" \
 
 # Same guard for the export Dispatch row: repointed at prose elsewhere, export.md would
 # become dead weight and every assertion below would still pass.
-grep -q 'references/export.md' "$SK" \
-  && ok "SKILL.md routes the export subcommand to references/export.md" \
-  || ko "SKILL.md routes the export subcommand to references/export.md"
+for n in quiz status improve coach export update; do
+  grep -qF "the \`$n\` skill" "$SK" \
+    && ok "SKILL.md routes the $n subcommand to the $n skill" \
+    || ko "SKILL.md routes the $n subcommand to the $n skill"
+done
 
-grep -q 'references/update.md' "$SK" \
-  && ok "SKILL.md routes the update subcommand to references/update.md" \
-  || ko "SKILL.md routes the update subcommand to references/update.md"
+STAT="$PLUG/skills/status/SKILL.md"
+grep -qi 'skills/learner/VERSION' "$STAT" \
+  && ok "the status skill reads the installed VERSION file" \
+  || ko "the status skill reads the installed VERSION file"
 
-grep -qi 'skills/learner/VERSION' "$SK" \
-  && ok "SKILL.md's Status section reads the installed VERSION file" \
-  || ko "SKILL.md's Status section reads the installed VERSION file"
-
-grep -qF '/plugin' "$SK" \
-  && ok "SKILL.md's Status section is plugin-aware" \
-  || ko "SKILL.md's Status section is plugin-aware"
+grep -qF '/plugin' "$STAT" \
+  && ok "the status skill is plugin-aware" \
+  || ko "the status skill is plugin-aware"
 
 grep -q 'references/data.md' "$REFS/hook-quiz.md" \
-  && grep -q 'references/data.md' "$REFS/quiz.md" \
-  && grep -q 'references/data.md' "$REFS/improve.md" \
+  && grep -q 'references/data.md' "$PLUG/skills/quiz/SKILL.md" \
+  && grep -q 'references/data.md' "$PLUG/skills/improve/SKILL.md" \
   && ok "the three quiz modes all defer to references/data.md" \
   || ko "the three quiz modes all defer to references/data.md"
 
@@ -2146,7 +2200,7 @@ grep -qF '| Date | Repo | Domain | Style | Verdict | Note | Theme |' "$REFS/data
 # `Mastered` in the prose besides, so a file-wide grep stayed green with the Select row
 # and rule 1 both gone.
 for v in Discovered Shaky Progressing Solid Mastered; do
-  grep -F 'Learning level' "$REFS/export.md" | grep -qF "\`$v\`" \
+  grep -F 'Learning level' "$PLUG/skills/export/references/export.md" | grep -qF "\`$v\`" \
     && ok "export.md documents the '$v' learning level" \
     || ko "export.md documents the '$v' learning level"
 done
@@ -2154,20 +2208,20 @@ done
 # Bracket expressions, not `\|`: the rule rows are the only lines in the file that open
 # with a pipe, a single digit and a pipe. Scoped to §5 so an unrelated `| N |` row added
 # elsewhere cannot inflate the count and turn this red with a misleading message.
-nrules=$(awk '/^## 5[.]/{f=1} /^## 6[.]/{f=0} f && /^[|] [1-6] [|]/{c++} END{print c+0}' "$REFS/export.md")
+nrules=$(awk '/^## 5[.]/{f=1} /^## 6[.]/{f=0} f && /^[|] [1-6] [|]/{c++} END{print c+0}' "$PLUG/skills/export/references/export.md")
 [ "$nrules" -eq 6 ] \
   && ok "export.md keeps all six level-derivation rules" \
   || ko "export.md keeps all six level-derivation rules (got $nrules)"
 
-grep -qF 'CLAUDE_CONFIG_DIR' "$REFS/export.md" \
-  && grep -qF 'export.json' "$REFS/export.md" \
+grep -qF 'CLAUDE_CONFIG_DIR' "$PLUG/skills/export/references/export.md" \
+  && grep -qF 'export.json' "$PLUG/skills/export/references/export.md" \
   && ok "export.md resolves export.json under CLAUDE_CONFIG_DIR" \
   || ko "export.md resolves export.json under CLAUDE_CONFIG_DIR"
 
 # Locked decision 2: no connector, no export. A file-shaped consolation prize would
 # reopen the export surface this design defers, so the two words are banned outright —
 # the protocol cannot drift into offering one without turning this red.
-grep -qiE 'csv|markdown' "$REFS/export.md" \
+grep -qiE 'csv|markdown' "$PLUG/skills/export/references/export.md" \
   && ko "export.md offers no file-format fallback" \
   || ok "export.md offers no file-format fallback"
 
@@ -2219,15 +2273,15 @@ printf '%s' "$fill" | grep -qi 'restore' \
   && ok "the fill protocol forbids ending a turn with a leftover marker" \
   || ko "the fill protocol forbids ending a turn with a leftover marker"
 
-{ grep -qi 'multiple-choice' "$REFS/quiz.md" && grep -qi 'multiple-choice' "$REFS/hook-quiz.md"; } \
+{ grep -qi 'multiple-choice' "$PLUG/skills/quiz/SKILL.md" && grep -qi 'multiple-choice' "$REFS/hook-quiz.md"; } \
   && ok "both quiz protocols prefer plain chat over multiple choice" \
   || ko "both quiz protocols prefer plain chat over multiple choice"
 
 # A question that quotes both sides of a hunk and then asks what the change does has
 # already been answered. The rule that forbids it has to live in both protocols: the
 # Stop hook reads one, `learner quiz` reads the other, and neither reads the other one.
-for f in quiz.md hook-quiz.md; do
-  leak=$(awk '/^## Never hand the answer over/{f=1;next} /^## /{f=0} f' "$REFS/$f")
+for f in "$PLUG/skills/quiz/SKILL.md" "$REFS/hook-quiz.md"; do
+  leak=$(awk '/^## Never hand the answer over/{f=1;next} /^## /{f=0} f' "$f")
   { printf '%s' "$leak" | grep -qi 'both sides' \
     && printf '%s' "$leak" | grep -qi 'feedback'; } \
     && ok "$f forbids a question that carries its own answer" \
@@ -2352,7 +2406,12 @@ grep -qF 'plugin.json version matches VERSION' "$CI_YML" \
   && ok "CI guards plugin.json's version against the VERSION file" \
   || ko "CI guards plugin.json's version against the VERSION file"
 
-grep -qF "jq -r '.version' .claude-plugin/plugin.json" "$CI_YML" \
+{ grep -qF 'claude plugin validate . --strict' "$CI_YML" \
+  && grep -qF 'claude plugin validate ./plugins/learner --strict' "$CI_YML"; } \
+  && ok "CI validates both the marketplace and the plugin manifest" \
+  || ko "CI validates both the marketplace and the plugin manifest"
+
+grep -qF "jq -r '.version' plugins/learner/.claude-plugin/plugin.json" "$CI_YML" \
   && ok "the plugin.json version guard reads the real field" \
   || ko "the plugin.json version guard reads the real field"
 
@@ -2386,9 +2445,9 @@ apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
   && ok "install.html lists the plugin section before apt" \
   || ko "install.html lists the plugin section before apt"
 
-grep -qF 'claude plugin install learner' "$SITE_INSTALL" \
-  && ok "install.html documents installing the plugin by name" \
-  || ko "install.html documents installing the plugin by name"
+grep -qF 'claude plugin install learner@learning-with-claude' "$SITE_INSTALL" \
+  && ok "install.html installs the plugin by its marketplace-qualified name" \
+  || ko "install.html installs the plugin by its marketplace-qualified name"
 
 grep -qF 'sudo apt install learner' "$SITE_INSTALL" \
   && ok "install.html documents installing directly from the apt repository" \
@@ -2441,9 +2500,11 @@ apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
   && ok "README lists the Claude Code plugin before apt" \
   || ko "README lists the Claude Code plugin before apt"
 
-grep -qF 'claude plugin install learner' "$RM" \
-  && ok "README documents installing the plugin by name" \
-  || ko "README documents installing the plugin by name"
+# Qualified with the marketplace, not bare: a bare `learner` is ambiguous the moment
+# the user has another marketplace registered that also ships one.
+grep -qF 'claude plugin install learner@learning-with-claude' "$RM" \
+  && ok "README installs the plugin by its marketplace-qualified name" \
+  || ko "README installs the plugin by its marketplace-qualified name"
 
 grep -qF 'claude plugin marketplace add Tykok/learning-with-claude' "$RM" \
   && ok "README documents adding the self-hosted marketplace" \
@@ -2805,7 +2866,7 @@ done
 # of truth via jq instead of hard-coding them here, so a changed default with a
 # stale page turns this red. (`level` is the one key with no default and is
 # correctly absent from LEARNER_DEFAULTS, so it is skipped automatically.)
-defaults_line=$(grep -m1 '^LEARNER_DEFAULTS=' "$ROOT/hooks/learner-config.sh")
+defaults_line=$(grep -m1 '^LEARNER_DEFAULTS=' "$PLUG/hooks/learner-config.sh")
 defaults_json=${defaults_line#LEARNER_DEFAULTS=\'}
 defaults_json=${defaults_json%\'}
 for key in $(printf '%s' "$defaults_json" | jq -r 'keys[]'); do
@@ -2832,7 +2893,7 @@ done
 # table instead of hard-coding it here, so a seventh subcommand added later is caught by
 # this check automatically rather than silently shipping undocumented, the way
 # `status`/`improve`/`help` and `quiz`'s syntax did the first time around.
-DISPATCH=$(awk '/^## Dispatch/{f=1;next} /^## /{f=0} f' "$ROOT/skills/learner/SKILL.md")
+DISPATCH=$(awk '/^## Dispatch/{f=1;next} /^## /{f=0} f' "$PLUG/skills/learner/SKILL.md")
 SUBCOMMANDS=$(printf '%s\n' "$DISPATCH" | awk -F'|' '/^\|/{print $2}' \
   | grep -oE '`[^`]*`' | tr -d '`' | awk '{print $1}' | grep -vE '^-' | sort -u)
 for sub in $SUBCOMMANDS; do
@@ -2948,12 +3009,12 @@ for sub in on off brief score why forget; do
     || ko "usage.html documents the 'pilot $sub' subcommand"
 done
 
-# The six profile names, derived from skills/pilot/references/rubric.md's own
+# The six profile names, derived from plugins/learner/skills/pilot/references/rubric.md's own
 # numbered table rather than hardcoded — a profile renamed or added there turns
 # this red automatically instead of leaving the site's list stale, the same
 # reasoning as the hook-count and LEARNER_DEFAULTS derivations elsewhere in this
 # file.
-PROFILES=$(grep -E '^\| [0-9]+ \|' "$ROOT/skills/pilot/references/rubric.md" \
+PROFILES=$(grep -E '^\| [0-9]+ \|' "$PLUG/skills/pilot/references/rubric.md" \
   | grep -oE '`[^`]+`' | tr -d '`')
 for p in $PROFILES; do
   grep -qF "$p" "$SITE_USAGE" \
@@ -2971,7 +3032,7 @@ done
 # (search "docs/config.html: threshold-only prose count"), so a ninth hook (or
 # a wiring change) turns every stale copy red automatically instead of leaving
 # a plausible-sounding number wrong forever.
-hook_files=$(find "$ROOT/hooks" -maxdepth 1 -name '*.sh' | sort)
+hook_files=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | sort)
 hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
 case "$hook_n" in
   6) hook_word=six ;;
@@ -2983,7 +3044,7 @@ case "$hook_n" in
   *) hook_word='__no-word-mapped__' ;;
 esac
 
-wired_n=$(jq '[.. | .command? // empty] | length' "$ROOT/hooks/settings.snippet.json")
+wired_n=$(jq '[.. | .command? // empty] | length' "$PLUG/hooks/settings.snippet.json")
 case "$wired_n" in
   5) wired_word=five ;;
   6) wired_word=six ;;
@@ -3005,9 +3066,14 @@ for hf in $hook_files; do
     || ko "install.html's table lists $base"
 done
 
-grep -qiF "$hook_word POSIX \`sh\` hooks plus a \`learner\` skill" "$RM" \
-  && ok "README's hook-count intro matches the $hook_n files on disk" \
-  || ko "README's hook-count intro matches the $hook_n files on disk"
+skill_n=$(find "$PLUG/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+case "$skill_n" in
+  6) skill_word=six ;; 7) skill_word=seven ;; 8) skill_word=eight ;;
+  9) skill_word=nine ;; 10) skill_word=ten ;; *) skill_word="$skill_n" ;;
+esac
+grep -qiF "$hook_word POSIX \`sh\` hooks plus $skill_word skills" "$RM" \
+  && ok "README's intro matches the $hook_n hooks and $skill_n skills on disk" \
+  || ko "README's intro matches the $hook_n hooks and $skill_n skills on disk"
 
 grep -qiF "covers all $hook_word shipped hook files" "$RM" \
   && ok "README's hooks/*.sh gloss matches the $hook_n files on disk" \
@@ -3196,7 +3262,7 @@ grep -qiF 'copyleft' "$RM" \
 # pilot-*.sh hooks once those shipped — the licence and SPDX guards below
 # never actually looked at the files this branch added. A new hook needs no
 # edit to either list that follows.
-HOOK_SH=$(cd "$ROOT/hooks" && ls -- *.sh | sort)
+HOOK_SH=$(cd "$PLUG/hooks" && ls -- *.sh | sort)
 LIC_SCAN="README.md docs/"
 for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN hooks/$hf"; done
 LIC_SCAN="$LIC_SCAN install.sh uninstall.sh bootstrap.sh
@@ -3213,7 +3279,7 @@ fi
 # this repository and land somewhere with no LICENSE beside them. A one-line
 # SPDX tag is what tells a reader over there what they are holding.
 SPDX_SCAN=""
-for hf in $HOOK_SH; do SPDX_SCAN="$SPDX_SCAN hooks/$hf"; done
+for hf in $HOOK_SH; do SPDX_SCAN="$SPDX_SCAN plugins/learner/hooks/$hf"; done
 SPDX_SCAN="$SPDX_SCAN install.sh uninstall.sh bootstrap.sh test.sh Formula/learner.rb
 scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh"
 for f in $SPDX_SCAN; do
@@ -3368,9 +3434,9 @@ fi
 rm -rf "$TESTGNUPGHOME"
 
 # --- Claude Code plugin ------------------------------------------------------
-PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
+PLUGIN_JSON="$PLUG/.claude-plugin/plugin.json"
 MARKETPLACE_JSON="$ROOT/.claude-plugin/marketplace.json"
-PLUGIN_HOOKS="$ROOT/hooks/hooks.json"
+PLUGIN_HOOKS="$PLUG/hooks/hooks.json"
 
 [ -f "$PLUGIN_JSON" ] && ok ".claude-plugin/plugin.json exists" || ko ".claude-plugin/plugin.json exists"
 [ -f "$MARKETPLACE_JSON" ] && ok ".claude-plugin/marketplace.json exists" || ko ".claude-plugin/marketplace.json exists"
@@ -3388,6 +3454,26 @@ jq -e . "$PLUGIN_HOOKS" >/dev/null 2>&1 \
   && ok "hooks/hooks.json is valid JSON" \
   || ko "hooks/hooks.json is valid JSON"
 
+# Discovery metadata: keywords are what the community catalogue searches, and the
+# $schema lines are what an editor validates against. Both are cheap to lose in a
+# hand-edit and silent when lost.
+jq -e 'has("$schema") and has("displayName") and (.keywords | type == "array" and length > 0)' \
+  "$PLUGIN_JSON" >/dev/null 2>&1 \
+  && ok "plugin.json carries \$schema, displayName and keywords" \
+  || ko "plugin.json carries \$schema, displayName and keywords"
+
+[ "$(jq -r '."$schema"' "$MARKETPLACE_JSON")" = "https://code.claude.com/schemas/marketplace.json" ] \
+  && ok "marketplace.json points at the documented schema URL" \
+  || ko "marketplace.json points at the documented schema URL"
+
+# The payload is a plugin root, and a plugin root must hold nothing but its own
+# components — no installer, no packaging, no site. Keeping the marketplace at the
+# repository root and the plugin one level down is what buys that.
+{ [ ! -e "$PLUG/install.sh" ] && [ ! -e "$PLUG/bootstrap.sh" ] \
+  && [ ! -d "$PLUG/docs" ] && [ ! -d "$PLUG/packaging" ] && [ ! -d "$PLUG/bin" ]; } \
+  && ok "the plugin root ships components only" \
+  || ko "the plugin root ships components only"
+
 [ "$(jq -r '.name' "$PLUGIN_JSON")" = "learner" ] \
   && ok "plugin.json names the plugin learner" \
   || ko "plugin.json names the plugin learner"
@@ -3399,9 +3485,9 @@ jq -r '.description' "$PLUGIN_JSON" | grep -qi 'pilot\|delegat' \
   || ko "plugin.json's description mentions the pilot skill, not just the quiz loop"
 
 [ "$(jq -r '.plugins[0].name' "$MARKETPLACE_JSON")" = "learner" ] \
-  && [ "$(jq -r '.plugins[0].source' "$MARKETPLACE_JSON")" = "./" ] \
-  && ok "marketplace.json lists learner with source ./" \
-  || ko "marketplace.json lists learner with source ./"
+  && [ "$(jq -r '.plugins[0].source' "$MARKETPLACE_JSON")" = "./plugins/learner" ] \
+  && ok "marketplace.json lists learner with source ./plugins/learner" \
+  || ko "marketplace.json lists learner with source ./plugins/learner"
 
 for h in SessionStart PostToolUse Stop SessionEnd; do
   jq -e --arg h "$h" '.hooks[$h]' "$PLUGIN_HOOKS" >/dev/null 2>&1 \
@@ -3433,7 +3519,7 @@ grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   || ko "plugin.json's version matches the VERSION file"
 
 # --- coach gate -------------------------------------------------------------
-GATE="$ROOT/hooks/coach-gate.sh"
+GATE="$PLUG/hooks/coach-gate.sh"
 scope() { echo "$TMPDIR/claude-learner-$1.coach-scope"; }
 
 # $1 = session id, $2 = file path, $3 = tool name (default Edit)
@@ -3572,7 +3658,7 @@ rm -f "$(scope "$SID_G")"
 [ -z "$(printf 'not json' | sh "$GATE")" ] && ok "non-JSON payload is a no-op" || ko "non-JSON payload is a no-op"
 
 # --- coach watcher: candidates and metric -----------------------------------
-WATCH="$ROOT/hooks/coach-watch.sh"
+WATCH="$PLUG/hooks/coach-watch.sh"
 basedir() { echo "$TMPDIR/claude-learner-$1.coach-base"; }
 sess() { echo "$TMPDIR/claude-learner-$1.session"; }
 
@@ -3981,7 +4067,7 @@ git -C "$CW_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
 printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
 (cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
-  sh "$ROOT/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
 if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
    && grep -q '^CW1 5$' "$CW_TMP/cfg/learner/pilot-devlines"; then
   ok "coach-watch persists the dev's line count for the writing axis"
@@ -4009,10 +4095,10 @@ git -C "$CW2_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
 printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW2_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\nz\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$ROOT/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
 printf 'a\nb\nC\nd\ne\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$ROOT/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
 CW2_LAST=$(grep '^CW2 ' "$CW2_TMP/cfg/learner/pilot-devlines" 2>/dev/null | tail -1)
 [ "$CW2_LAST" = "CW2 1" ] \
   && ok "coach-watch's writing tally counts only added lines, never the removed side of an edit or a pure deletion" \
@@ -4073,16 +4159,16 @@ printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
 
 # Both install paths must be wired, or half the users get half the feature.
 { jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
-         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/hooks.json" >/dev/null 2>&1; } \
+         | .hooks[0].command | contains("coach-gate.sh")' "$PLUG/hooks/hooks.json" >/dev/null 2>&1; } \
   && ok "hooks.json wires coach-gate.sh" || ko "hooks.json wires coach-gate.sh"
 { jq -e '.hooks.PreToolUse[] | select(.matcher == "Write|Edit|NotebookEdit")
-         | .hooks[0].command | contains("coach-gate.sh")' "$ROOT/hooks/settings.snippet.json" >/dev/null 2>&1; } \
+         | .hooks[0].command | contains("coach-gate.sh")' "$PLUG/hooks/settings.snippet.json" >/dev/null 2>&1; } \
   && ok "settings.snippet.json wires coach-gate.sh" || ko "settings.snippet.json wires coach-gate.sh"
 
 # coach-watch.sh is not a hook and must never be wired as one.
-grep -q 'coach-watch' "$ROOT/hooks/hooks.json" \
+grep -q 'coach-watch' "$PLUG/hooks/hooks.json" \
   && ko "coach-watch.sh is not wired as a hook" || ok "coach-watch.sh is not wired as a hook"
-grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
+grep -q 'coach-watch' "$PLUG/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
 
@@ -4091,21 +4177,21 @@ grep -q 'coach-watch' "$ROOT/hooks/settings.snippet.json" \
 # assert both manifests hold the same three, and the timeout that the
 # SessionEnd budget depends on.
 for H in pilot-record pilot-brief pilot-nudge; do
-  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$PLUG/hooks/hooks.json" >/dev/null \
     && ok "hooks.json wires $H" || ko "hooks.json wires $H"
-  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$ROOT/hooks/settings.snippet.json" >/dev/null \
+  jq -e --arg h "$H" '[.. | strings] | map(select(test($h))) | length > 0' "$PLUG/hooks/settings.snippet.json" >/dev/null \
     && ok "settings.snippet.json wires $H" || ko "settings.snippet.json wires $H"
 done
 
 # SessionEnd hooks share 1.5s unless the wired timeout raises the budget.
 # pilot-record.sh reads a whole transcript; at the default it would be killed.
 jq -e '.hooks.SessionEnd[].hooks[] | select(.command | test("pilot-record")) | .timeout >= 15' \
-  "$ROOT/hooks/hooks.json" >/dev/null \
+  "$PLUG/hooks/hooks.json" >/dev/null \
   && ok "pilot-record is wired with a raised SessionEnd budget" \
   || ko "pilot-record is wired with a raised SessionEnd budget"
 
 # UserPromptSubmit is a new event for this repo; a typo in the key is silent.
-jq -e '.hooks.UserPromptSubmit | length > 0' "$ROOT/hooks/hooks.json" >/dev/null \
+jq -e '.hooks.UserPromptSubmit | length > 0' "$PLUG/hooks/hooks.json" >/dev/null \
   && ok "hooks.json declares the UserPromptSubmit event" \
   || ko "hooks.json declares the UserPromptSubmit event"
 
@@ -4178,10 +4264,10 @@ fi
 echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
 # --- coach documentation ----------------------------------------------------
-SK="$ROOT/skills/learner/SKILL.md"
-CO="$ROOT/skills/learner/references/coach.md"
+SK="$PLUG/skills/learner/SKILL.md"
+CO="$PLUG/skills/coach/references/coach.md"
 
-[ -f "$CO" ] && ok "references/coach.md exists" || ko "references/coach.md exists"
+[ -f "$CO" ] && ok "the coach skill exists" || ko "the coach skill exists"
 
 # Every config key the code reads must be documented, or a dev cannot discover it.
 for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
@@ -4204,17 +4290,17 @@ for c in "coach on" "coach off" "coach delegate" "coach review"; do
 done
 
 # The protocol reference must be reachable from the trigger line's pointer.
-grep -q 'references/coach.md' "$SK" && ok "SKILL.md points at references/coach.md" \
-  || ko "SKILL.md points at references/coach.md"
+grep -qF 'the `coach` skill' "$SK" && ok "SKILL.md points at the coach skill" \
+  || ko "SKILL.md points at the coach skill"
 
 # The protocol must state its own ceiling and its own prohibition, since those
 # are the two things that keep the dev in the driver's seat.
-grep -qi 'one challenge' "$CO" && ok "coach.md states the one-challenge ceiling" \
-  || ko "coach.md states the one-challenge ceiling"
-grep -qi 'never write' "$CO" && ok "coach.md forbids writing to source" \
-  || ko "coach.md forbids writing to source"
-grep -q 'references/data.md' "$CO" && ok "coach.md defers to data.md for the data rules" \
-  || ko "coach.md defers to data.md for the data rules"
+grep -qi 'one challenge' "$CO" && ok "the coach skill states the one-challenge ceiling" \
+  || ko "the coach skill states the one-challenge ceiling"
+grep -qi 'never write' "$CO" && ok "the coach skill forbids writing to source" \
+  || ko "the coach skill forbids writing to source"
+grep -q 'references/data.md' "$CO" && ok "the coach skill defers to data.md for the data rules" \
+  || ko "the coach skill defers to data.md for the data rules"
 
 # --- summary ----------------------------------------------------------------
 echo
