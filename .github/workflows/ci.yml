@@ -25,10 +25,17 @@ jobs:
       - name: install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: validate the marketplace and the plugin
+      - name: validate the marketplace, the plugin and the root fallback
         run: |
           claude plugin validate . --strict
           claude plugin validate ./plugins/learner --strict
+          # The root is a plugin too (see the root fallback in test.sh), but
+          # `validate` picks the marketplace manifest when both sit in
+          # .claude-plugin/ — so check it on a copy with the marketplace removed.
+          rm -rf /tmp/rootplugin && mkdir -p /tmp/rootplugin
+          git archive HEAD | tar -x -C /tmp/rootplugin
+          rm -f /tmp/rootplugin/.claude-plugin/marketplace.json
+          claude plugin validate /tmp/rootplugin --strict
 
       - name: plugin.json version matches VERSION
         run: |

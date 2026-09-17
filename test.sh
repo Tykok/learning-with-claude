@@ -3507,6 +3507,58 @@ jq -e 'has("$schema") and has("displayName") and (.keywords | type == "array" an
   && ok "plugin.json names the plugin learner" \
   || ko "plugin.json names the plugin learner"
 
+# --- the root fallback plugin -------------------------------------------------
+# The community marketplace pins an approved plugin to a commit SHA and bumps that
+# pin automatically as commits land. This repository was submitted while its plugin
+# root WAS the repository root, so the catalogue entry may well name the repository
+# and nothing else — and moving the payload to plugins/learner/ would then bump the
+# pin onto a commit with no manifest at the root at all, breaking the plugin for
+# everyone who installed it from @claude-community.
+#
+# So the root stays a valid plugin too: a manifest that delegates its skills to the
+# payload, and a wiring file whose commands carry the extra path segment, since
+# ${CLAUDE_PLUGIN_ROOT} means the repository root for this one. Both are derived
+# from the payload's own files below rather than maintained beside them.
+ROOT_PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
+ROOT_HOOKS="$ROOT/hooks/hooks.json"
+
+[ -f "$ROOT_PLUGIN_JSON" ] && ok "the root fallback manifest exists" \
+  || ko "the root fallback manifest exists"
+[ -f "$ROOT_HOOKS" ] && ok "the root fallback wiring exists" \
+  || ko "the root fallback wiring exists"
+
+# Identical but for the path segment: derive one from the other and compare, so the
+# two can never drift the way two hand-maintained copies would.
+if jq -e . "$ROOT_HOOKS" >/dev/null 2>&1 && jq -e . "$PLUGIN_HOOKS" >/dev/null 2>&1; then
+  derived=$(jq -S '(.. | objects | select(has("command")) | .command)
+              |= sub("\\$\\{CLAUDE_PLUGIN_ROOT\\}/hooks/"; "${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/")' \
+            "$PLUGIN_HOOKS")
+  [ "$derived" = "$(jq -S . "$ROOT_HOOKS")" ] \
+    && ok "the root wiring is the payload wiring, re-rooted" \
+    || ko "the root wiring is the payload wiring, re-rooted"
+else
+  ko "the root wiring is the payload wiring, re-rooted"
+fi
+
+# Every root command must carry the extra segment, or it resolves to a path that
+# does not exist and the hook silently never runs.
+n_root=$(jq '[.. | .command? // empty] | length' "$ROOT_HOOKS" 2>/dev/null)
+n_seg=$(jq '[.. | .command? // empty] | map(select(test("/plugins/learner/hooks/"))) | length' "$ROOT_HOOKS" 2>/dev/null)
+{ [ -n "$n_root" ] && [ "$n_root" = "$n_seg" ] && [ "$n_root" -gt 0 ]; } \
+  && ok "every root fallback command points into plugins/learner/hooks/" \
+  || ko "every root fallback command points into plugins/learner/hooks/ ($n_seg/$n_root)"
+
+# One version, three places. A stale root manifest would ship the payload under a
+# version string that is not what the payload says it is.
+{ [ "$(jq -r '.version' "$ROOT_PLUGIN_JSON")" = "$(jq -r '.version' "$PLUGIN_JSON")" ] \
+  && [ "$(jq -r '.name' "$ROOT_PLUGIN_JSON")" = "$(jq -r '.name' "$PLUGIN_JSON")" ]; } \
+  && ok "the root fallback manifest matches the payload's name and version" \
+  || ko "the root fallback manifest matches the payload's name and version"
+
+[ "$(jq -r '.skills' "$ROOT_PLUGIN_JSON")" = "./plugins/learner/skills" ] \
+  && ok "the root fallback manifest delegates its skills to the payload" \
+  || ko "the root fallback manifest delegates its skills to the payload"
+
 # Two skills ship under this plugin now; the description should not describe
 # only the older one.
 jq -r '.description' "$PLUGIN_JSON" | grep -qi 'pilot\|delegat' \
