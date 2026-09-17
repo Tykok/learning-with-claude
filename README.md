@@ -256,8 +256,17 @@ shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh
 The `plugins/learner/hooks/*.sh` glob covers all eleven shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
-keeps the two in step. CI also runs `claude plugin validate` on the marketplace and on the
-plugin — the same check the community-marketplace review pipeline runs on a submission.
+keeps the two in step. CI also runs `claude plugin validate` on the marketplace, on the
+plugin and on the repository root — the same check the community-marketplace review pipeline
+runs on a submission.
+
+The plugin payload lives in `plugins/learner/`, but the repository root is a valid plugin
+too: `.claude-plugin/plugin.json` there delegates its skills to the payload, and
+`hooks/hooks.json` carries the same wiring with the extra path segment. That exists for one
+reason — the community marketplace pins an approved plugin to a commit SHA and advances that
+pin as commits land, and this repository was submitted while its plugin root *was* the
+repository root. Both files are derived from the payload's own, and `test.sh` re-derives them
+and compares, so neither can drift.
 
 ## License
 
