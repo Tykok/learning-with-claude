@@ -2060,7 +2060,7 @@ CLAUDE_CONFIG_DIR="$U" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
 # hub through `../learner/…`, so the copy has to preserve the tree's shape, not just
 # its files.
 missing_skill=""
-for n in quiz status improve coach export update pilot; do
+for n in quiz status improve coach export sync update pilot; do
   [ -f "$U/skills/$n/SKILL.md" ] || missing_skill="$missing_skill $n"
 done
 { [ -z "$missing_skill" ] && [ -f "$U/skills/learner/SKILL.md" ]; } \
@@ -2153,10 +2153,10 @@ REFS="$PLUG/skills/learner/references"
 
 # The hub keeps only what more than one mode reads; every subcommand's own protocol
 # is its own skill, so Claude Code can expose it as /learner:<name>.
-for f in hook-quiz.md data.md sync.md; do
+for f in hook-quiz.md data.md; do
   [ -f "$REFS/$f" ] && ok "references/$f exists" || ko "references/$f exists"
 done
-for n in quiz status improve coach export update; do
+for n in quiz status improve coach export sync update; do
   [ -f "$PLUG/skills/$n/SKILL.md" ] && ok "the $n skill exists" || ko "the $n skill exists"
   head -1 "$PLUG/skills/$n/SKILL.md" 2>/dev/null | grep -qx -- '---' \
     && grep -qE '^description: .' "$PLUG/skills/$n/SKILL.md" \
@@ -2167,11 +2167,11 @@ done
 UPD="$PLUG/skills/update/SKILL.md"
 
 # --- skill content: sync -----------------------------------------------------
-SYNCMD="$REFS/sync.md"
+SYNCMD="$PLUG/skills/sync/references/sync.md"
 
-grep -q 'references/sync.md' "$SK" \
-  && ok "SKILL.md routes the sync subcommand to references/sync.md" \
-  || ko "SKILL.md routes the sync subcommand to references/sync.md"
+grep -qF 'the `sync` skill' "$SK" \
+  && ok "SKILL.md routes the sync subcommand to the sync skill" \
+  || ko "SKILL.md routes the sync subcommand to the sync skill"
 
 for s in "sync push" "sync pull" "sync status" "sync use"; do
   grep -qF "$s" "$SK" \
@@ -2211,7 +2211,7 @@ grep -qF 'CLAUDE_CONFIG_DIR' "$SYNCMD" \
   && ok "sync.md resolves its state under CLAUDE_CONFIG_DIR" \
   || ko "sync.md resolves its state under CLAUDE_CONFIG_DIR"
 
-UPD="$ROOT/skills/learner/references/update.md"
+UPD="$PLUG/skills/update/SKILL.md"
 
 grep -qF 'INSTALL_ORIGIN' "$UPD" \
   && ok "update.md reads the install-origin marker" \
@@ -2270,7 +2270,7 @@ grep -q 'references/hook-quiz.md' "$SK" \
 
 # Same guard for the export Dispatch row: repointed at prose elsewhere, export.md would
 # become dead weight and every assertion below would still pass.
-for n in quiz status improve coach export update; do
+for n in quiz status improve coach export sync update; do
   grep -qF "the \`$n\` skill" "$SK" \
     && ok "SKILL.md routes the $n subcommand to the $n skill" \
     || ko "SKILL.md routes the $n subcommand to the $n skill"
@@ -3152,6 +3152,8 @@ case "$hook_n" in
   9) hook_word=nine ;;
   10) hook_word=ten ;;
   11) hook_word=eleven ;;
+  12) hook_word=twelve ;;
+  13) hook_word=thirteen ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
@@ -3180,7 +3182,8 @@ done
 skill_n=$(find "$PLUG/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 case "$skill_n" in
   6) skill_word=six ;; 7) skill_word=seven ;; 8) skill_word=eight ;;
-  9) skill_word=nine ;; 10) skill_word=ten ;; *) skill_word="$skill_n" ;;
+  9) skill_word=nine ;; 10) skill_word=ten ;; 11) skill_word=eleven ;;
+  *) skill_word="$skill_n" ;;
 esac
 grep -qiF "$hook_word POSIX \`sh\` hooks plus $skill_word skills" "$RM" \
   && ok "README's intro matches the $hook_n hooks and $skill_n skills on disk" \
@@ -4468,7 +4471,7 @@ grep -q 'references/data.md' "$CO" && ok "the coach skill defers to data.md for 
   || ko "the coach skill defers to data.md for the data rules"
 
 # --- learner sync: skeleton -------------------------------------------------
-SYNC="$ROOT/hooks/learner-sync.sh"
+SYNC="$PLUG/hooks/learner-sync.sh"
 
 # A fake gh, so no test ever reaches the network. It serves a "remote" gist out
 # of $GH_REMOTE (one file per gist file) and logs its argv to $GH_LOG.
@@ -5108,7 +5111,7 @@ for f in 'sync.json' 'sync-base' 'backups'; do
     || ko "docs/install.html's file table lists $f"
 done
 
-for f in "$ROOT/skills/learner/references/sync.md" "$ROOT/README.md" "$ROOT/docs/safety.html" "$ROOT/docs/usage.html"; do
+for f in "$PLUG/skills/sync/references/sync.md" "$ROOT/README.md" "$ROOT/docs/safety.html" "$ROOT/docs/usage.html"; do
   grep -qF 'pushedFrom' "$f" \
     && ok "$(basename "$f")'s consent warning names pushedFrom" \
     || ko "$(basename "$f")'s consent warning names pushedFrom"

@@ -1,24 +1,4 @@
-# Sync mode
-
-`learner sync <push|pull|status|use>` — carry the learning record between machines through
-one private gist. The record is the raw state: `memory.md`, `recap.md` and the global
-`learner.json`. This mode never quizzes and never edits settings.
-
-Mirror the dev's language in everything you print, as everywhere else in this skill.
-
-Every mechanical step is done by the shipped script, never by hand:
-
-```bash
-HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
-sh "$HOOKS/learner-sync.sh" <subcommand> [args]
-```
-
-Never call `gh` yourself, and never edit `sync.json` or `sync-base/` by hand: the script owns
-the agreement between the two sides, and a file written around it makes the next merge lie.
-The script prints one JSON object; you turn it into one or two sentences in the dev's language.
-
-If the script is not there (`learner-sync.sh` missing), say so in one line — the install is
-older than this skill, run `learner update` — and stop.
+# Sync mode — protocol
 
 ## 1. `sync push`
 
