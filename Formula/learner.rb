@@ -3,8 +3,8 @@
 class Learner < Formula
   desc "Turns Claude Code into a learning loop: quizzes you on your own diffs"
   homepage "https://github.com/Tykok/learning-with-claude"
-  url "https://github.com/Tykok/learning-with-claude/archive/refs/tags/v0.2.0.tar.gz"
-  sha256 "5b4c5dd3c5da37eaf1fd3dffcea972ee005fd954361f30c73258957c7430cc8e"
+  url "https://github.com/Tykok/learning-with-claude/archive/refs/tags/v0.4.0.tar.gz"
+  sha256 "0c7be88d67c633a103f13113d66b2a0db2a07cdc53323bb7bed374a19074f44d"
   license "GPL-3.0-or-later"
 
   depends_on "jq"
