@@ -79,6 +79,14 @@ Before anything else: restore the correct implementation, remove every // LEARNE
     <code>HEAD</code> to subtract from, so every marker in the tree counts, which is the
     right answer there.</dd>
 
+    <dt>Moved files count as committed</dt>
+    <dd>The difference above is taken by path, and a file you rename lands at a path
+    <code>HEAD</code> has never carried — so on paths alone every marker inside it would read
+    as a fresh hole and block a session that cut nothing. The hook therefore also compares
+    content: a working-tree file whose exact bytes are already committed somewhere is a
+    rename or a copy, not an exercise. A renamed file that was <em>also</em> cut has bytes
+    <code>HEAD</code> has never seen, and still counts.</dd>
+
     <dt>Untracked files count</dt>
     <dd>The search runs with <code>--untracked</code>. A file the session created a
     moment ago is the commonest place for a hole to be left behind, and it is precisely

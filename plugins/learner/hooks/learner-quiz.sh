@@ -45,6 +45,23 @@ if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
   COMMITTED=$(git -C "$ROOT" grep -lF '// LEARNER-TODO' HEAD 2>/dev/null \
     | while IFS= read -r _gl; do printf '%s\n' "${_gl#HEAD:}"; done)
 
+  # Matching HEAD by path alone is not enough: a committed file that MOVED lands at
+  # a path no HEAD entry carries, so every marker inside it reads as a fresh hole and
+  # the guardrail blocks a session that cut nothing — on repeat, until the rename is
+  # committed. Renaming a file that documents the marker is all it takes, and this
+  # project renames its own hooks and skill files.
+  #
+  # So match content as well: the blob ids HEAD already carries. A working-tree file
+  # whose exact bytes are already committed somewhere is content that moved — a rename
+  # or a copy — never an exercise this session cut. Reachability from HEAD, not bare
+  # object existence (`git cat-file -e`), which any stash or stale branch would satisfy.
+  #
+  # This can only ever ACQUIT a file, and only on a byte-for-byte match: a renamed file
+  # that was also cut has a blob HEAD has never seen and still blocks, which is the
+  # direction that must not regress. `awk` over ls-tree rather than `--format`, which
+  # needs git 2.36.
+  COMMITTED_BLOBS=$(git -C "$ROOT" ls-tree -r HEAD 2>/dev/null | awk '{print $3}')
+
   # Set difference, POSIX-only: no process substitution, no `comm`. The heredoc
   # keeps the loop in this shell, so the counter survives it.
   HOLES=''
@@ -52,6 +69,12 @@ if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
   while IFS= read -r _gf; do
     [ -n "$_gf" ] || continue
     printf '%s\n' "$COMMITTED" | grep -qxF -e "$_gf" && continue
+    if [ -n "$COMMITTED_BLOBS" ]; then
+      _gb=$(git -C "$ROOT" hash-object -- "$_gf" 2>/dev/null)
+      if [ -n "$_gb" ] && printf '%s\n' "$COMMITTED_BLOBS" | grep -qxF -e "$_gb"; then
+        continue
+      fi
+    fi
     NHOLES=$((NHOLES + 1))
     [ "$NHOLES" -le 20 ] && HOLES="$HOLES $_gf"
   done <<EOF
