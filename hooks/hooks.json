@@ -26,6 +26,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/learner-agent-track.sh\" --start",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -35,6 +45,16 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/learner-record-edit.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/learner-agent-track.sh\" --end",
             "timeout": 10
           }
         ]
