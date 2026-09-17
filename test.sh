@@ -1823,6 +1823,35 @@ out=$(guard "$G" "$WORK/cfg")
   && ok "guardrail blocks on a marker in a modified tracked file" \
   || ko "guardrail blocks on a marker in a modified tracked file"
 
+# A committed marker that MOVED is still repo content. The set difference is by path,
+# so a renamed file lands at a path no HEAD entry carries and every marker inside it
+# reads as a fresh hole — blocking a session that cut nothing, on repeat, until the
+# rename is committed. Renaming a file that documents the marker (this project renames
+# its own hooks and skills) is all it takes.
+G=$(gmk); hole "$G"; gcommit "$G" marker
+git -C "$G" mv A.kt B.kt
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "a committed // LEARNER-TODO survives a rename without blocking" \
+  || ok "a committed // LEARNER-TODO survives a rename without blocking"
+
+# The same content at a new path with the old one still in place — a copy, not a
+# rename — is equally not a fresh hole.
+G=$(gmk); hole "$G"; gcommit "$G" marker
+cp "$G/A.kt" "$G/COPY.kt"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "a committed // LEARNER-TODO survives being copied without blocking" \
+  || ok "a committed // LEARNER-TODO survives being copied without blocking"
+
+# …and the guarantee that matters: relaxing by content must not let a real hole
+# through. Same file, cut fresh, at a path HEAD has never seen.
+G=$(gmk); printf 'fun f() {\n  // LEARNER-TODO: cut\n}\n' > "$G/MOVED.kt"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("MOVED.kt")' >/dev/null 2>&1; } \
+  && ok "a fresh hole at an unseen path still blocks" \
+  || ko "a fresh hole at an unseen path still blocks"
+
 # The primary case: the session just wrote the file, so git does not know it yet.
 G=$(gmk); printf 'fun g() {\n  // LEARNER-TODO: body\n}\n' > "$G/NEW.kt"
 out=$(guard "$G" "$WORK/cfg")
