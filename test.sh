@@ -3312,6 +3312,7 @@ grep -qF 'working tree' "$SITE_SAFETY" && grep -qF 'HEAD' "$SITE_SAFETY" \
   && ok "safety.html explains the guardrail counts leftovers only" \
   || ko "safety.html explains the guardrail counts leftovers only"
 
+
 for p in $PAGES; do
   grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$(page_path "$p")" \
     && ko "$p.html mentions no removed key or old level" \
@@ -3685,6 +3686,42 @@ grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
 [ "$(jq -r '.version' "$PLUGIN_JSON")" = "$(cat "$ROOT/VERSION")" ] \
   && ok "plugin.json's version matches the VERSION file" \
   || ko "plugin.json's version matches the VERSION file"
+
+# A marketplace pins this plugin to plugins/learner as a git-subdir, so an install
+# receives that directory and nothing above it: the licence text and the README have
+# to live inside it, not only at the repository root.
+[ -f "$PLUG/LICENSE" ] \
+  && ok "the plugin directory ships its own LICENSE" \
+  || ko "the plugin directory ships its own LICENSE"
+
+cmp -s "$PLUG/LICENSE" "$ROOT/LICENSE" \
+  && ok "the plugin's LICENSE is identical to the repository's" \
+  || ko "the plugin's LICENSE is identical to the repository's"
+
+# plugin.json declares GPL-3.0-or-later; the shipped text has to be that licence.
+{ [ "$(jq -r '.license' "$PLUGIN_JSON")" = "GPL-3.0-or-later" ] \
+  && grep -q 'GNU GENERAL PUBLIC LICENSE' "$PLUG/LICENSE" \
+  && grep -q 'Version 3' "$PLUG/LICENSE"; } \
+  && ok "the plugin's LICENSE carries the licence plugin.json declares" \
+  || ko "the plugin's LICENSE carries the licence plugin.json declares"
+
+[ -f "$PLUG/README.md" ] \
+  && ok "the plugin directory ships its own README" \
+  || ko "the plugin directory ships its own README"
+
+grep -qF 'claude plugin install learner@learning-with-claude' "$PLUG/README.md" \
+  && ok "the plugin README gives the plugin install command" \
+  || ko "the plugin README gives the plugin install command"
+
+# The README must not promise skills the plugin does not ship.
+README_SKILLS=0
+for d in "$PLUG"/skills/*/; do
+  name="$(basename "$d")"
+  grep -qF "\`$name\`" "$PLUG/README.md" && README_SKILLS=$((README_SKILLS + 1))
+done
+[ "$README_SKILLS" = "$(find "$PLUG/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" ] \
+  && ok "the plugin README names every skill the plugin ships" \
+  || ko "the plugin README names every skill the plugin ships"
 
 # --- coach gate -------------------------------------------------------------
 GATE="$PLUG/hooks/coach-gate.sh"
