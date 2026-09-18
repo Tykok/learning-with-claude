@@ -211,46 +211,28 @@ if [ "$PRINT_MATERIAL" = 1 ]; then
 fi
 
 # --- cadence ----------------------------------------------------------------
-# All of this is re-derived from $CFG by coach_load_cadence, called once here
-# and again at the top of every loop iteration below: `learner coach off`
-# (or a cadence retune) is a config-file edit the dev makes mid-session, and
-# nothing else re-reads it once the watcher is armed as a Monitor.
+# One cadence: the dev's pause. Re-derived from $CFG here and again at the top
+# of every loop iteration below, because `learner coach off` (or a retune) is a
+# config-file edit made mid-session and nothing else re-reads it once the
+# watcher is armed as a Monitor.
 coach_load_cadence() {
   LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
-  CADENCE=$(printf '%s' "$CFG" | jq -r '.coachCadence // "pomodoro"')
-  case "$CADENCE" in threshold) ;; *) CADENCE=pomodoro ;; esac
-
-  IDLE_MAX=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachIdleCycles // empty')" 2 1)
-  CHALLENGE=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachChallengeMinutes // empty')" 8 0)
-  POLL=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachPollSeconds // empty')" 45 5)
-  THR_LINES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachLines // empty')" 40 1)
-  THR_FILES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachFiles // empty')" 3 1)
-  THR_EVERY=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachEveryMinutes // empty')" 0 0)
-  COOLDOWN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachCooldownMinutes // empty')" 5 0)
-  WORK_MINUTES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachWorkMinutes // empty')" 25 1)
-
-  # coachIdleCycles is documented (spec §2.4) as idle periods of one
-  # work-block-equivalent (coachWorkMinutes), in both cadences. In pomodoro,
-  # coach_cycle already runs once per work block, so one poll == one period. In
-  # threshold, coach_cycle runs once per coachPollSeconds — many times faster —
-  # so IDLE_MAX must be scaled into polls-per-period, or "2 idle cycles" becomes
-  # two 45-second polls instead of two work blocks. The division is guarded to
-  # never yield less than 1: a coachPollSeconds larger than the work block would
-  # otherwise floor to 0 and make the very first empty poll look like a whole
-  # elapsed period.
-  if [ "$CADENCE" = threshold ]; then
-    POLLS_PER_PERIOD=$(( WORK_MINUTES * 60 / POLL ))
-    [ "$POLLS_PER_PERIOD" -lt 1 ] && POLLS_PER_PERIOD=1
-  else
-    POLLS_PER_PERIOD=1
-  fi
-  IDLE_LIMIT=$((IDLE_MAX * POLLS_PER_PERIOD))
+  POLL=$(learner_int         "$(printf '%s' "$CFG" | jq -r '.coachPollSeconds // empty')"     30 5)
+  QUIET_POLLS=$(learner_int  "$(printf '%s' "$CFG" | jq -r '.coachQuietPolls // empty')"       1 1)
+  MIN_LINES=$(learner_int    "$(printf '%s' "$CFG" | jq -r '.coachMinLines // empty')"        10 1)
+  COOLDOWN=$(learner_int     "$(printf '%s' "$CFG" | jq -r '.coachCooldownMinutes // empty')"  3 0)
+  MAXWAIT=$(learner_int      "$(printf '%s' "$CFG" | jq -r '.coachMaxWaitMinutes // empty')"  15 0)
+  IDLE_MINUTES=$(learner_int "$(printf '%s' "$CFG" | jq -r '.coachIdleMinutes // empty')"     45 1)
 }
 coach_load_cadence
 
-# The empty-cycle counter has to survive `--once`, which is a fresh process per
-# cycle in tests and the only way the idle path is testable at all.
-EMPTYF="$TMPD/claude-learner-${SID}.coach-empty"
+# All cadence state is on disk, not in shell variables: `--once` is a fresh
+# process per cycle in the tests, and it is the only way this logic is testable
+# without sleeping through a real work session.
+FPF="$TMPD/claude-learner-${SID}.coach-fp"
+QUIETF="$TMPD/claude-learner-${SID}.coach-quiet"
+IDLEF="$TMPD/claude-learner-${SID}.coach-idle"
+PENDF="$TMPD/claude-learner-${SID}.coach-pending"
 LASTF="$TMPD/claude-learner-${SID}.coach-last"
 
 coach_read_int() { _cri=$(cat "$1" 2>/dev/null); case "$_cri" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$_cri" ;; esac; }
@@ -258,39 +240,84 @@ coach_read_int() { _cri=$(cat "$1" 2>/dev/null); case "$_cri" in ''|*[!0-9]*) pr
 # One measurement + decision + emission. Three-way result, deliberately not
 # inferred by the caller from any file's presence:
 #   0 = emitted            1 = stop (idle cut-off)      2 = no emission, keep going
-# The threshold branch has two paths — cooldown-blocked, and material present
-# but under every trigger — that are neither "emitted" nor "genuinely empty".
-# Folding those into 0 (as file-presence inference used to) inflates CYCLE with
-# no notification sent; folding them into "empty" tells a dev who is actively
-# writing, just below the threshold, that the session went idle. Both are
-# real 2s. CYCLE is read from the environment so --once can inject it.
+# "No emission" is a real, distinct outcome: material under the floor, a fire
+# blocked by the cooldown, and a dev still typing are none of them idle, and
+# none of them an emission. CYCLE is read from the environment so --once can
+# inject it.
 coach_cycle() {
   _ccm=$(coach_material)
+  _ccnow=$(date +%s)
 
   if [ -z "$_ccm" ]; then
-    _cce=$(coach_read_int "$EMPTYF" 0)
-    _cce=$((_cce + 1))
-    printf '%s' "$_cce" > "$EMPTYF"
-    if [ "$_cce" -ge "$IDLE_LIMIT" ]; then
+    # Nothing pending: drop the pause state so a dev who reverts everything and
+    # comes back later starts a clean observation, not mid-count.
+    rm -f "$PENDF" "$FPF"
+    printf '0' > "$QUIETF"
+    _cci=$(coach_read_int "$IDLEF" 0)
+    _cci=$((_cci + 1))
+    printf '%s' "$_cci" > "$IDLEF"
+    if [ $((_cci * POLL)) -ge $((IDLE_MINUTES * 60)) ]; then
       # One line, then stop. The watcher costs nothing while it waits, but every
       # notification opens a turn — so an abandoned session must not keep
       # producing them.
-      printf '%s\n' "🧑‍🏫 Coach — no tracked changes for $IDLE_MAX work blocks; the watcher has stopped.
+      printf '%s\n' "🧑‍🏫 Coach — no tracked changes for $IDLE_MINUTES minutes; the watcher has stopped.
 Ask the dev whether they want to continue the coaching session. If they do, re-arm the watcher."
-      rm -f "$EMPTYF"
+      rm -f "$IDLEF"
       return 1
     fi
     return 2
   fi
 
-  # Material existed this cycle. The dev has not gone idle, whether or not
-  # this cycle actually fires — a cooldown gate and an under-threshold cycle
-  # both mean "keep pacing", not "abandoned". Reset now, before either check
-  # can short-circuit the reset away.
-  rm -f "$EMPTYF"
+  # Material exists: the dev has not gone idle, whatever this cycle decides.
+  printf '0' > "$IDLEF"
+  [ -f "$PENDF" ] || printf '%s' "$_ccnow" > "$PENDF"
 
   _ccn=$(printf '%s\n' "$_ccm" | grep -c '')
   _ccl=$(printf '%s\n' "$_ccm" | awk -F'\t' '{s += $1} END {print s + 0}')
+
+  # The fingerprint, not the line total, is what detects activity: a dev who
+  # removes three lines and writes three others leaves $_ccl unchanged while
+  # very much still typing, and a total-based comparison would call that a pause.
+  # Hashed over the candidates' own content rather than over $_ccm (the
+  # delta+path summary): before a baseline exists for a file, coach_delta's
+  # own no-baseline fallback is the file's whole-file line COUNT, which an
+  # in-place edit (same total, different bytes) leaves unchanged — a
+  # count-based fingerprint would misread that edit as a pause.
+  _ccfp=$(printf '%s\n' "$_ccm" | cut -f2 | while IFS= read -r _ccpf; do
+    [ -n "$_ccpf" ] || continue
+    cat "$ROOT/$_ccpf" 2>/dev/null
+  done | cksum | awk '{print $1 "-" $2}')
+  _ccprev=$(cat "$FPF" 2>/dev/null || printf '')
+  if [ "$_ccfp" = "$_ccprev" ]; then
+    _ccq=$(coach_read_int "$QUIETF" 0)
+    _ccq=$((_ccq + 1))
+  else
+    _ccq=0
+    printf '%s' "$_ccfp" > "$FPF"
+  fi
+  printf '%s' "$_ccq" > "$QUIETF"
+
+  _cclast=$(coach_read_int "$LASTF" 0)
+  _ccpend=$(coach_read_int "$PENDF" "$_ccnow")
+  _ccelapsed=$(( (_ccnow - _cclast) / 60 ))
+  [ "$_cclast" = 0 ] && _ccelapsed=$((COOLDOWN + MAXWAIT + 1))
+  _ccwaited=$(( (_ccnow - _ccpend) / 60 ))
+
+  # The floor gates BOTH paths: coachMaxWaitMinutes exists for the dev in
+  # continuous flow, not to force a review of four lines.
+  _ccfire=0
+  if [ "$_ccl" -ge "$MIN_LINES" ]; then
+    [ "$_ccq" -ge "$QUIET_POLLS" ] && _ccfire=1
+    [ "$MAXWAIT" -gt 0 ] && [ "$_ccwaited" -ge "$MAXWAIT" ] && _ccfire=1
+  fi
+  # A cooldown-blocked fire does NOT reset $_ccq (it was already persisted
+  # above): the pause the dev already took is still valid, so the first poll
+  # after the cooldown expires emits, instead of demanding a second pause.
+  [ "$_ccelapsed" -lt "$COOLDOWN" ] && _ccfire=0
+  [ "$_ccfire" = 1 ] || return 2
+
+  _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
+
   # Pilot's tally: added-only lines, recomputed per file with coach_delta_added
   # rather than reused from _ccl above — _ccl stays exactly what it was, for
   # coach's own display and trigger thresholds, which is correct there.
@@ -299,44 +326,23 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
     coach_delta_added "$_ccwf"
     printf '\n'
   done | awk '{s += $1} END {print s + 0}')
-  _ccnow=$(date +%s)
-  _cclast=$(coach_read_int "$LASTF" 0)
-  _ccelapsed=$(( (_ccnow - _cclast) / 60 ))
-  [ "$_cclast" = 0 ] && _ccelapsed=$((COOLDOWN + THR_EVERY + 1))
-
-  if [ "$CADENCE" = threshold ]; then
-    [ "$_ccelapsed" -lt "$COOLDOWN" ] && return 2
-    _ccfire=0
-    [ "$_ccl" -ge "$THR_LINES" ] && _ccfire=1
-    [ "$_ccn" -ge "$THR_FILES" ] && _ccfire=1
-    [ "$THR_EVERY" -gt 0 ] && [ "$_ccelapsed" -ge "$THR_EVERY" ] && _ccfire=1
-    [ "$_ccfire" = 1 ] || return 2
-  fi
-
-  _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
-
-  # Persist what this cycle measured, durably. pilot-record.sh needs it at
-  # SessionEnd, and it cannot read this watcher's TMPDIR state: hooks for one
-  # event run in parallel and learner-cleanup.sh deletes those files at the
-  # same event. Best-effort — a coach cycle must never fail over Pilot's
-  # bookkeeping, so every failure here is swallowed.
-  #
-  # $_ccw, not $_ccl: the writing axis compares against cl_lines, which
-  # `hooks/pilot-record.sh` counts as added lines only (and so does its git-
-  # estimate fallback) — persisting $_ccl's added-AND-removed count here would
-  # compare two different units and double-tax an ordinary edited line.
   if pilot_enabled "$CFG" 2>/dev/null; then
     mkdir -p "$LEARNER_CFG_DIR/learner" 2>/dev/null \
       && printf '%s %s\n' "$SID" "$_ccw" >> "$LEARNER_CFG_DIR/learner/pilot-devlines" 2>/dev/null
   fi
 
   # Same contract as the quiz trigger: parameters and a pointer to the protocol,
-  # never the protocol itself. Rendered in the console, so it stays one screen.
+  # never the protocol itself. `files` and `lines` are what the protocol's
+  # ladder reads to size the review, so they must keep meaning "since the last
+  # review" — not "since HEAD".
   printf '%s\n' "🧑‍🏫 Coach (level: $LEVEL, cycle: ${CYCLE:-1}, files: $_ccn, lines: $_ccl) — $_ccfiles
 Invoke the \`learner\` skill and follow references/coach.md. One challenge, then wait for the dev's answer."
 
   coach_candidates | coach_advance
   printf '%s' "$_ccnow" > "$LASTF"
+  printf '0' > "$QUIETF"
+  rm -f "$PENDF"
+  CYCLE=$(( ${CYCLE:-1} + 1 ))
   return 0
 }
 
@@ -345,42 +351,27 @@ if [ "$ONCE" = 1 ]; then
   exit 0
 fi
 
-# The real loop. Pomodoro sleeps the whole work block and measures once at the
-# end — no polling at all; coachPollSeconds exists only for the threshold
-# cadence. An empty block does NOT advance CYCLE: the work block grows as a
-# reward for writing code, not for leaving the editor open.
+# The real loop. One poll every coachPollSeconds; coach_cycle decides. The
+# post-emission sleep of v1 is gone — coachCooldownMinutes is now the only
+# floor between two reviews, and it is enforced inside coach_cycle where the
+# clock is already being read.
 CYCLE=1
-rm -f "$EMPTYF" "$LASTF"
+rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF"
 while :; do
   # `learner coach off` (or a retune) is a config-file edit made mid-session,
   # with nothing else to re-read it once this loop is running as a Monitor —
-  # re-check on every iteration so it takes effect within one cycle instead of
-  # only at the next re-arm.
+  # re-check on every iteration so it takes effect within one poll.
   CFG=$(learner_config)
   learner_coach_active "$CFG" "$ROOT" || exit 0
   coach_load_cadence
 
-  if [ "$CADENCE" = threshold ]; then
-    sleep "$POLL"
-  else
-    sleep $(( $(learner_coach_work_minutes "$CYCLE" "$CFG") * 60 ))
-  fi
-
+  sleep "$POLL"
   coach_cycle
   # Dispatch on coach_cycle's own return code, never on a file's presence —
-  # that inference is exactly what let a cooldown-blocked or under-threshold
-  # cycle (return 2) get mistaken for an emission (0) or folded into "empty".
+  # that inference is exactly what let a blocked cycle get mistaken for an
+  # emission in v1.
   case $? in
     1) exit 0 ;;
-    0)
-      # Only an actual emission sleeps the challenge window and grows the work
-      # block. The script stays silent at the end of that window — the
-      # challenge ends when the dev answers and goes back to coding, and a
-      # "back to work" line would cost a full turn per cycle for no
-      # information.
-      [ "$CADENCE" = pomodoro ] && [ "$CHALLENGE" -gt 0 ] && sleep $((CHALLENGE * 60))
-      CYCLE=$((CYCLE + 1))
-      ;;
-    *) ;; # 2: no emission, keep going at the same CYCLE
+    *) ;;
   esac
 done

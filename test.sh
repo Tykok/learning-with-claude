@@ -4023,7 +4023,8 @@ git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean 2>/de
 mkdir -p "$CREPO/src"
 lines 12 > "$CREPO/src/A.kt"
 lines 8  > "$CREPO/src/B.kt"
-out=$(cycle_out "$SID_C" 3)
+cycle_out "$SID_C" 3 >/dev/null                 # first sighting: only observes, per the pause cadence
+out=$(cycle_out "$SID_C" 3)                     # unchanged since: quiet -> fires
 
 printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 20)' \
   && ok "trigger line carries level, cycle, files and lines" \
@@ -4046,185 +4047,147 @@ out=$(cycle_out "$SID_C" 4)
 # from a clean tree instead of seeing this test's own leftovers as material.
 git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean2 2>/dev/null
 
-# Idle: coachIdleCycles empty cycles in a row, then one line and exit 0.
-echo '{"level":"S","coach":true,"coachIdleCycles":2}' > "$GCFG"
-SID_I=watch3
-rm -rf "$(basedir "$SID_I")"
-out1=$(cycle_out "$SID_I" 1)   # empty 1 of 2
-[ -z "$out1" ] && ok "first empty cycle says nothing" || ko "first empty cycle says nothing"
-out2=$(cycle_out "$SID_I" 1)   # empty 2 of 2 -> idle
+# --- coach cadence: the pause in the typing ---------------------------------
+# cycle_out already exists above: it runs one --once cycle and prints its stdout.
+# The clock is controlled by writing epochs into the state files rather than by
+# sleeping, so the whole cadence is testable in milliseconds.
+qf()    { echo "$TMPDIR/claude-learner-$1.coach-quiet"; }
+fpf()   { echo "$TMPDIR/claude-learner-$1.coach-fp"; }
+idlef() { echo "$TMPDIR/claude-learner-$1.coach-idle"; }
+pendf() { echo "$TMPDIR/claude-learner-$1.coach-pending"; }
+lastf() { echo "$TMPDIR/claude-learner-$1.coach-last"; }
+cstate() { rm -f "$(qf "$1")" "$(fpf "$1")" "$(idlef "$1")" "$(pendf "$1")" "$(lastf "$1")"; }
+
+# coachQuietPolls 2 so the first poll observes and the second fires.
+echo '{"level":"C","coach":true,"coachQuietPolls":2,"coachMinLines":5,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":30,"coachIdleMinutes":45}' > "$GCFG"
+rm -f "$PCFG"
+
+SID_P=pause1
+rm -rf "$(basedir "$SID_P")"; cstate "$SID_P"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m pausebase 2>/dev/null
+lines 12 > "$CREPO/src/Pause.kt"
+out=$(cycle_out "$SID_P" 1)                     # first sighting: fingerprint is new
+[ -z "$out" ] && ok "a first poll on new material only observes" \
+  || ko "a first poll on new material only observes"
+
+lines 6 | sed 's/^/more /' >> "$CREPO/src/Pause.kt"
+out=$(cycle_out "$SID_P" 1)                     # still typing: fingerprint changed
+[ -z "$out" ] && ok "a changed fingerprint resets the quiet counter" \
+  || ko "a changed fingerprint resets the quiet counter"
+
+out=$(cycle_out "$SID_P" 1)                     # quiet 1
+[ -z "$out" ] && ok "one quiet poll is not enough at coachQuietPolls 2" \
+  || ko "one quiet poll is not enough at coachQuietPolls 2"
+
+out=$(cycle_out "$SID_P" 1)                     # quiet 2 -> fire
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (level: C' \
+  && ok "the review fires on the pause" || ko "the review fires on the pause"
+printf '%s' "$out" | grep -q 'lines: 18' \
+  && ok "the trigger reports the delta since the last review" \
+  || ko "the trigger reports the delta since the last review (got: $out)"
+
+# The emission advanced the baseline, so the next poll has nothing.
+out=$(cycle_out "$SID_P" 2)
+[ -z "$out" ] && ok "an emission advances the baseline" || ko "an emission advances the baseline"
+
+# Material below coachMinLines never fires, and must NOT count as idle: the dev
+# is writing, just under the floor. Cutting them off here is the regression.
+SID_F=pause2
+rm -rf "$(basedir "$SID_F")"; cstate "$SID_F"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":50,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 4 > "$CREPO/src/Small.kt"
+out=$(cycle_out "$SID_F" 1); out2=$(cycle_out "$SID_F" 1); out3=$(cycle_out "$SID_F" 1)
+{ [ -z "$out" ] && [ -z "$out2" ] && [ -z "$out3" ]; } \
+  && ok "material under coachMinLines never fires" || ko "material under coachMinLines never fires"
+printf '%s%s%s' "$out" "$out2" "$out3" | grep -q 'watcher has stopped' \
+  && ko "material under the floor must not trigger the idle cut-off" \
+  || ok "material under the floor must not trigger the idle cut-off"
+rm -f "$CREPO/src/Small.kt"
+
+# Equal line counts, different content: three lines removed and three added
+# leaves the total unchanged while the dev is very much still typing. Comparing
+# totals instead of a fingerprint would read this as a pause.
+SID_FP=pause3
+rm -rf "$(basedir "$SID_FP")"; cstate "$SID_FP"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 9 > "$CREPO/src/Churn.kt"
+cycle_out "$SID_FP" 1 >/dev/null                # observe, quiet 0
+sed -i.bak 's/^line 1$/CHANGED 1/' "$CREPO/src/Churn.kt"; rm -f "$CREPO/src/Churn.kt.bak"
+out=$(cycle_out "$SID_FP" 1)
+[ -z "$out" ] && ok "an edit with an unchanged line total still counts as activity" \
+  || ko "an edit with an unchanged line total still counts as activity"
+rm -f "$CREPO/src/Churn.kt"
+
+# The cooldown blocks a fire without resetting quiet: the next poll after it
+# expires must fire, instead of demanding a second pause from the dev.
+SID_CD=pause4
+rm -rf "$(basedir "$SID_CD")"; cstate "$SID_CD"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":10,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 7 > "$CREPO/src/Cool.kt"
+cycle_out "$SID_CD" 1 >/dev/null                 # observe
+printf '%s' "$(( $(date +%s) - 120 ))" > "$(lastf "$SID_CD")"   # a review 2 min ago
+out=$(cycle_out "$SID_CD" 1)
+[ -z "$out" ] && ok "the cooldown blocks a fire" || ko "the cooldown blocks a fire"
+printf '%s' "$(( $(date +%s) - 1200 ))" > "$(lastf "$SID_CD")"  # now 20 min ago
+out=$(cycle_out "$SID_CD" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "a fire blocked by the cooldown is served at the next poll" \
+  || ko "a fire blocked by the cooldown is served at the next poll"
+rm -f "$CREPO/src/Cool.kt"
+
+# The guard: a dev in continuous flow never pauses, so the pause alone would
+# never fire. coachMaxWaitMinutes emits anyway.
+SID_G=pause5
+rm -rf "$(basedir "$SID_G")"; cstate "$SID_G"
+echo '{"level":"C","coach":true,"coachQuietPolls":99,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":15,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 8 > "$CREPO/src/Flow.kt"
+cycle_out "$SID_G" 1 >/dev/null                 # material is now pending
+printf '%s' "$(( $(date +%s) - 1200 ))" > "$(pendf "$SID_G")"  # pending for 20 min
+out=$(cycle_out "$SID_G" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "coachMaxWaitMinutes fires without a pause" || ko "coachMaxWaitMinutes fires without a pause"
+
+# ...and 0 disables it.
+SID_G0=pause6
+rm -rf "$(basedir "$SID_G0")"; cstate "$SID_G0"
+echo '{"level":"C","coach":true,"coachQuietPolls":99,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+cycle_out "$SID_G0" 1 >/dev/null
+printf '%s' "$(( $(date +%s) - 36000 ))" > "$(pendf "$SID_G0")"
+out=$(cycle_out "$SID_G0" 1)
+[ -z "$out" ] && ok "coachMaxWaitMinutes 0 disables the guard" \
+  || ko "coachMaxWaitMinutes 0 disables the guard"
+rm -f "$CREPO/src/Flow.kt"
+
+# Idle is now a duration: idle_polls * coachPollSeconds >= coachIdleMinutes * 60.
+# 1800s per poll and 45 min of idle means the second empty poll crosses it.
+SID_I=pause7
+rm -rf "$(basedir "$SID_I")"; cstate "$SID_I"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m idlebase 2>/dev/null
+out1=$(cycle_out "$SID_I" 1)
+[ -z "$out1" ] && ok "the first empty poll says nothing" || ko "the first empty poll says nothing"
+out2=$(cycle_out "$SID_I" 1)
 printf '%s' "$out2" | grep -q 'the watcher has stopped' \
-  && ok "idle line is emitted after coachIdleCycles empty cycles" \
-  || ko "idle line is emitted after coachIdleCycles empty cycles"
+  && ok "the idle line is emitted once coachIdleMinutes has elapsed" \
+  || ko "the idle line is emitted once coachIdleMinutes has elapsed"
+printf '%s' "$out2" | grep -q '45 minutes' \
+  && ok "the idle line names the duration, not a cycle count" \
+  || ko "the idle line names the duration, not a cycle count"
 printf '%s' "$out2" | grep -qi 'continue' \
-  && ok "idle line asks about continuing the session" || ko "idle line asks about continuing the session"
+  && ok "the idle line asks about continuing the session" \
+  || ko "the idle line asks about continuing the session"
 CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_I" --once --cycle 1 >/dev/null 2>&1
-[ "$?" = "0" ] && ok "watcher exits 0 on idle" || ko "watcher exits 0 on idle"
+[ "$?" = "0" ] && ok "the watcher exits 0 on idle" || ko "the watcher exits 0 on idle"
 
-# A cycle with material resets the empty counter: two empty blocks must be
-# *consecutive* to stop the watcher.
-SID_R=watch4
-rm -rf "$(basedir "$SID_R")"
-cycle_out "$SID_R" 1 >/dev/null                       # empty 1
-lines 5 > "$CREPO/src/C.kt"
-cycle_out "$SID_R" 1 >/dev/null                       # material -> reset
-out=$(cycle_out "$SID_R" 1)                           # empty 1 again, not 2
-[ -z "$out" ] && ok "material resets the empty-cycle counter" \
-  || ko "material resets the empty-cycle counter"
-rm -f "$CREPO/src/C.kt"
-
-# The threshold cadence fires on the OR of its three triggers.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
-SID_T=watch5
-rm -rf "$(basedir "$SID_T")"
-lines 25 > "$CREPO/src/D.kt"
-out=$(cycle_out "$SID_T" 1)
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold cadence fires on coachLines" || ko "threshold cadence fires on coachLines"
-[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
-  && ok "threshold cadence emits exactly once on coachLines" \
-  || ko "threshold cadence emits exactly once on coachLines"
-
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":1,"coachCooldownMinutes":0}' > "$GCFG"
-rm -rf "$(basedir "$SID_T")"
-out=$(cycle_out "$SID_T" 1)
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold cadence fires on coachFiles" || ko "threshold cadence fires on coachFiles"
-[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
-  && ok "threshold cadence emits exactly once on coachFiles" \
-  || ko "threshold cadence emits exactly once on coachFiles"
-
-# Under both thresholds and inside the cooldown: silence.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
-rm -rf "$(basedir "$SID_T")"
-out=$(cycle_out "$SID_T" 1)
-[ -z "$out" ] && ok "threshold cadence is silent below every trigger" \
-  || ko "threshold cadence is silent below every trigger"
-rm -f "$CREPO/src/D.kt"
-
-# Regression: coach_cycle must return a real three-way result (emitted / stop
-# / keep-going) rather than the caller inferring "emitted" from EMPTYF's
-# presence. Under the old inference, a threshold cycle that found material but
-# did not fire (sub-threshold, or cooldown-blocked) touched neither branch of
-# the presence check, so it neither reset nor advanced the empty counter —
-# leaving a *previous* empty cycle's count still standing. A dev writing
-# steady, sub-threshold edits would then get cut off as "idle" while actively
-# working, on a factually false message.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":9999,"coachCooldownMinutes":0,"coachIdleCycles":2}' > "$GCFG"
-SID_TR=watch6
-rm -rf "$(basedir "$SID_TR")"
-out=$(cycle_out "$SID_TR" 1)                          # poll 1: genuinely empty -> counter 1
-[ -z "$out" ] && ok "threshold: first empty poll is silent" \
-  || ko "threshold: first empty poll is silent"
-lines 5 > "$CREPO/src/E.kt"
-out=$(cycle_out "$SID_TR" 1)                          # poll 2: material, sub-threshold
-[ -z "$out" ] && ok "threshold: sub-threshold material is silent" \
-  || ko "threshold: sub-threshold material is silent"
-rm -f "$CREPO/src/E.kt"
-out=$(cycle_out "$SID_TR" 1)                          # poll 3: empty again — must be the FIRST
-                                                       # empty since poll 2's material reset the
-                                                       # counter, not the second -> no idle line
-[ -z "$out" ] && ok "threshold: sub-threshold material resets the empty-cycle counter" \
-  || ko "threshold: sub-threshold material resets the empty-cycle counter"
-
-# Same defect, cooldown-gated path: a cooldown-blocked poll with material must
-# reset the counter too — cooldown only paces notifications, it says nothing
-# about whether the dev is still working.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":1,"coachFiles":1,"coachCooldownMinutes":5,"coachIdleCycles":2}' > "$GCFG"
-SID_TC=watch7
-rm -rf "$(basedir "$SID_TC")"
-lines 10 > "$CREPO/src/F.kt"
-out=$(cycle_out "$SID_TC" 1)                          # first-ever cycle bypasses cooldown -> fires
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold: first material cycle bypasses cooldown and fires" \
-  || ko "threshold: first material cycle bypasses cooldown and fires"
-rm -f "$CREPO/src/F.kt"
-out=$(cycle_out "$SID_TC" 1)                          # genuinely empty -> counter 1
-[ -z "$out" ] && ok "threshold: empty poll after an emission is silent" \
-  || ko "threshold: empty poll after an emission is silent"
-lines 4 > "$CREPO/src/G.kt"
-out=$(cycle_out "$SID_TC" 1)                          # material, but inside the cooldown window
-[ -z "$out" ] && ok "threshold: cooldown-blocked poll with material is silent" \
-  || ko "threshold: cooldown-blocked poll with material is silent"
-rm -f "$CREPO/src/G.kt"
-out=$(cycle_out "$SID_TC" 1)                          # empty again — must be the FIRST empty since
-                                                       # the cooldown-blocked poll reset the counter,
-                                                       # not the second -> no idle line
-[ -z "$out" ] && ok "threshold: cooldown-blocked material resets the empty-cycle counter" \
-  || ko "threshold: cooldown-blocked material resets the empty-cycle counter"
-
-# `--cycle` injects the number a real loop would hold; two sub-threshold
-# `--cycle 1` polls before this one are only here to build up the material
-# that finally crosses coachLines. The real claim CYCLE-only-advances-on-
-# emission is a loop-arithmetic property this per-process, --cycle-injected
-# harness cannot exercise — that was verified live (cycle 1, then cycle 2 at
-# ~180s) — so this assertion checks a narrower, adjacent thing instead:
-# coach_cycle's own formatting does not add spurious inflation on top of
-# whatever CYCLE value it is handed.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0,"coachIdleCycles":99}' > "$GCFG"
-SID_TI=watch9
-rm -rf "$(basedir "$SID_TI")"
-lines 3 > "$CREPO/src/J.kt"                           # 3 lines, 1 file: under both thresholds
-out=$(cycle_out "$SID_TI" 1)
-[ -z "$out" ] && ok "threshold: a sub-threshold poll does not emit" \
-  || ko "threshold: a sub-threshold poll does not emit"
-lines 4 >> "$CREPO/src/J.kt"                          # 7 lines total: still under coachLines:10
-out=$(cycle_out "$SID_TI" 1)
-[ -z "$out" ] && ok "threshold: a second sub-threshold poll still does not emit" \
-  || ko "threshold: a second sub-threshold poll still does not emit"
-lines 5 >> "$CREPO/src/J.kt"                          # 12 lines total: now over coachLines:10
-out=$(cycle_out "$SID_TI" 1)
-printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
-  && ok "coach_cycle introduces no formatting-side inflation of the injected cycle number" \
-  || ko "coach_cycle introduces no formatting-side inflation of the injected cycle number"
-rm -f "$CREPO/src/J.kt"
-
-# Regression (Finding 1): coachIdleCycles is documented (spec §2.4) as idle
-# periods of one work-block-equivalent (coachWorkMinutes), in EITHER cadence.
-# The unfixed watcher compared the empty-poll counter against coachIdleCycles
-# directly in the threshold branch, so with defaults (coachWorkMinutes=25,
-# coachPollSeconds=45) a dev thinking for 90 seconds — two polls — ended the
-# session, 33x sooner than the pomodoro-equivalent cadence intends.
-# coachWorkMinutes=1 (60s) and coachPollSeconds=10 makes one period 6 polls,
-# so coachIdleCycles=2 must tolerate 12 empty polls, not 2, before stopping.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":10,"coachIdleCycles":2}' > "$GCFG"
-SID_TS=watch10
-rm -rf "$(basedir "$SID_TS")"
-out1=$(cycle_out "$SID_TS" 1)
-out2=$(cycle_out "$SID_TS" 1)
-{ [ -z "$out1" ] && [ -z "$out2" ]; } \
-  && ok "threshold cadence survives two empty polls (coachIdleCycles is not raw polls)" \
-  || ko "threshold cadence survives two empty polls (got '$out1' / '$out2')"
-
-i=3
-while [ "$i" -le 12 ]; do
-  out=$(cycle_out "$SID_TS" 1)
-  if [ "$i" -lt 12 ]; then
-    [ -z "$out" ] || { ko "threshold cadence stopped early, at poll $i instead of 12"; break; }
-  else
-    printf '%s' "$out" | grep -q 'the watcher has stopped' \
-      && ok "threshold cadence stops after a full work-block-equivalent period (12 polls = 2 x 6)" \
-      || ko "threshold cadence stops after a full work-block-equivalent period (got '$out' at poll 12)"
-  fi
-  i=$((i + 1))
-done
-
-# Guard: coachPollSeconds larger than the work block must clamp the
-# polls-per-period ratio to 1, never floor to 0 — an IDLE_LIMIT of 0 would
-# stop the watcher on the very first empty poll, ignoring coachIdleCycles
-# altogether, and is also the shape of bug that can leave a 0 in later
-# arithmetic if this guard is ever removed.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":120,"coachIdleCycles":2}' > "$GCFG"
-SID_TG=watch11
-rm -rf "$(basedir "$SID_TG")"
-out1=$(cycle_out "$SID_TG" 1)
-[ -z "$out1" ] && ok "polls-per-period guard: first empty poll is not an immediate cut-off" \
-  || ko "polls-per-period guard: first empty poll is not an immediate cut-off (got '$out1')"
-out2=$(cycle_out "$SID_TG" 1)
-printf '%s' "$out2" | grep -q 'the watcher has stopped' \
-  && ok "polls-per-period guard clamps to 1, so coachIdleCycles=2 still stops after 2 polls" \
-  || ko "polls-per-period guard clamps to 1 (got '$out2')"
-echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+# Material resets the idle counter: the empty periods have to be consecutive.
+SID_R=pause8
+rm -rf "$(basedir "$SID_R")"; cstate "$SID_R"
+cycle_out "$SID_R" 1 >/dev/null                 # empty 1
+lines 3 > "$CREPO/src/Back.kt"
+cycle_out "$SID_R" 1 >/dev/null                 # material -> reset
+rm -f "$CREPO/src/Back.kt"
+out=$(cycle_out "$SID_R" 1)                     # empty 1 again, not 2
+[ -z "$out" ] && ok "material resets the idle counter" || ko "material resets the idle counter"
 
 # The writing axis is only exact if the watcher's own measurement outlives the
 # session. Its TMPDIR state does not: learner-cleanup.sh deletes it at the same
@@ -4235,10 +4198,12 @@ git -C "$CW_TMP/repo" init -q
 printf 'a\nb\nc\n' > "$CW_TMP/repo/f.txt"
 git -C "$CW_TMP/repo" add f.txt
 git -C "$CW_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
-printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW_TMP/cfg/learner.json"
+printf '{"level":"C","coach":true,"pilotEnabled":true,"coachMinLines":1,"coachQuietPolls":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$CW_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
 (cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)   # first sighting: only observes
+(cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)   # unchanged since: quiet -> fires
 if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
    && grep -q '^CW1 5$' "$CW_TMP/cfg/learner/pilot-devlines"; then
   ok "coach-watch persists the dev's line count for the writing axis"
@@ -4263,13 +4228,17 @@ git -C "$CW2_TMP/repo" init -q
 printf 'a\nb\nc\nd\ne\n' > "$CW2_TMP/repo/f.txt"
 git -C "$CW2_TMP/repo" add f.txt
 git -C "$CW2_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
-printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW2_TMP/cfg/learner.json"
+printf '{"level":"C","coach":true,"pilotEnabled":true,"coachMinLines":1,"coachQuietPolls":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$CW2_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\nz\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # first sighting: only observes
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # unchanged: fires, establishing a baseline
 printf 'a\nb\nC\nd\ne\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # first sighting of the edit: only observes
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # unchanged since: quiet -> fires, against the baseline above
 CW2_LAST=$(grep '^CW2 ' "$CW2_TMP/cfg/learner/pilot-devlines" 2>/dev/null | tail -1)
 [ "$CW2_LAST" = "CW2 1" ] \
   && ok "coach-watch's writing tally counts only added lines, never the removed side of an edit or a pure deletion" \
@@ -4315,14 +4284,20 @@ SID_X="clean-coach"   # quoted: shellcheck reads clean-coach as arithmetic (SC21
 mkdir -p "$TMPDIR/claude-learner-${SID_X}.coach-base"
 touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
       "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
-      "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-fp" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-quiet" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-idle" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-pending" \
       "$TMPDIR/claude-learner-${SID_X}.coach-last" \
       "$TMPDIR/claude-learner-${SID_X}.edits" \
       "$TMPDIR/claude-learner-${SID_X}.pilot-nudged"
 printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
 { [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
-  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-fp" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-quiet" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-idle" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-pending" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.pilot-nudged" ]; } \

@@ -16,7 +16,10 @@ rm -f "$DIR/claude-learner-${SID}.edits" \
       "$DIR/claude-learner-${SID}.count" \
       "$DIR/claude-learner-${SID}.guard" \
       "$DIR/claude-learner-${SID}.coach-scope" \
-      "$DIR/claude-learner-${SID}.coach-empty" \
+      "$DIR/claude-learner-${SID}.coach-fp" \
+      "$DIR/claude-learner-${SID}.coach-quiet" \
+      "$DIR/claude-learner-${SID}.coach-idle" \
+      "$DIR/claude-learner-${SID}.coach-pending" \
       "$DIR/claude-learner-${SID}.coach-last" \
       "$DIR/claude-learner-${SID}.pilot-nudged" \
       "$DIR/claude-learner-${SID}.onboard-roots"
