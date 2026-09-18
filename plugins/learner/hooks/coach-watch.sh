@@ -282,9 +282,14 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
   # delta+path summary): before a baseline exists for a file, coach_delta's
   # own no-baseline fallback is the file's whole-file line COUNT, which an
   # in-place edit (same total, different bytes) leaves unchanged — a
-  # count-based fingerprint would misread that edit as a pause.
+  # count-based fingerprint would misread that edit as a pause. The path is
+  # printed into the stream ahead of each file's content, not just its bytes:
+  # without it, a pure rename of an untracked file, or a block moved out of
+  # file A into the head of file B (A sorting first), reproduces the same
+  # byte stream across two genuinely different states.
   _ccfp=$(printf '%s\n' "$_ccm" | cut -f2 | while IFS= read -r _ccpf; do
     [ -n "$_ccpf" ] || continue
+    printf '%s\n' "$_ccpf"
     cat "$ROOT/$_ccpf" 2>/dev/null
   done | cksum | awk '{print $1 "-" $2}')
   _ccprev=$(cat "$FPF" 2>/dev/null || printf '')
@@ -326,6 +331,16 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
     coach_delta_added "$_ccwf"
     printf '\n'
   done | awk '{s += $1} END {print s + 0}')
+  # Persist what this cycle measured, durably. pilot-record.sh needs it at
+  # SessionEnd, and it cannot read this watcher's TMPDIR state: hooks for one
+  # event run in parallel and learner-cleanup.sh deletes those files at the
+  # same event. Best-effort — a coach cycle must never fail over Pilot's
+  # bookkeeping, so every failure here is swallowed.
+  #
+  # $_ccw, not $_ccl: the writing axis compares against cl_lines, which
+  # `hooks/pilot-record.sh` counts as added lines only (and so does its git-
+  # estimate fallback) — persisting $_ccl's added-AND-removed count here would
+  # compare two different units and double-tax an ordinary edited line.
   if pilot_enabled "$CFG" 2>/dev/null; then
     mkdir -p "$LEARNER_CFG_DIR/learner" 2>/dev/null \
       && printf '%s %s\n' "$SID" "$_ccw" >> "$LEARNER_CFG_DIR/learner/pilot-devlines" 2>/dev/null
