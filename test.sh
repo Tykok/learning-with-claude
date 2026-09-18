@@ -901,13 +901,28 @@ echo '{"level":"C"}' > "$GCFG"
 rm -f "$PCFG"
 out=$(cfgsh 'learner_config')
 { [ "$(echo "$out" | jq -r .coach)" = "false" ] \
-  && [ "$(echo "$out" | jq -r .coachCadence)" = "pomodoro" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "25" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkGrowthMinutes)" = "5" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMaxMinutes)" = "45" ] \
-  && [ "$(echo "$out" | jq -r .coachChallengeMinutes)" = "8" ] \
-  && [ "$(echo "$out" | jq -r .coachIdleCycles)" = "2" ]; } \
+  && [ "$(echo "$out" | jq -r .coachPollSeconds)" = "30" ] \
+  && [ "$(echo "$out" | jq -r .coachQuietPolls)" = "1" ] \
+  && [ "$(echo "$out" | jq -r .coachMinLines)" = "10" ] \
+  && [ "$(echo "$out" | jq -r .coachCooldownMinutes)" = "3" ] \
+  && [ "$(echo "$out" | jq -r .coachMaxWaitMinutes)" = "15" ] \
+  && [ "$(echo "$out" | jq -r .coachIdleMinutes)" = "45" ]; } \
   && ok "coach defaults are present" || ko "coach defaults are present"
+
+# The v1 keys are gone from the defaults. A config that still carries one must
+# not fail — it simply has no effect — but the default set must not resurrect it.
+{ [ "$(echo "$out" | jq -r '.coachCadence // "absent"')" = "absent" ] \
+  && [ "$(echo "$out" | jq -r '.coachWorkMinutes // "absent"')" = "absent" ] \
+  && [ "$(echo "$out" | jq -r '.coachIdleCycles // "absent"')" = "absent" ]; } \
+  && ok "the pomodoro keys are gone from the defaults" \
+  || ko "the pomodoro keys are gone from the defaults"
+
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":25}' > "$GCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "true" ] \
+  && [ "$(echo "$out" | jq -r .coachQuietPolls)" = "1" ]; } \
+  && ok "a config still carrying v1 keys still resolves" \
+  || ko "a config still carrying v1 keys still resolves"
 
 # `coach` is a boolean, so it must survive the `*` merge (which `//` would break).
 echo '{"level":"C","coach":true}' > "$GCFG"
@@ -917,10 +932,10 @@ out=$(cfgsh 'learner_config')
   && ok "project layer can turn coach off" || ko "project layer can turn coach off"
 
 echo '{"level":"C","coach":false}' > "$GCFG"
-echo '{"coach":true,"coachWorkMinutes":10}' > "$PCFG"
+echo '{"coach":true,"coachMinLines":25}' > "$PCFG"
 out=$(cfgsh 'learner_config')
 { [ "$(echo "$out" | jq -r .coach)" = "true" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "10" ]; } \
+  && [ "$(echo "$out" | jq -r .coachMinLines)" = "25" ]; } \
   && ok "project layer can turn coach on and retune it" \
   || ko "project layer can turn coach on and retune it"
 
@@ -942,31 +957,27 @@ echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
 cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
   && ko "coach inactive when learner is disabled" || ok "coach inactive when learner is disabled"
 
-# --- learner_coach_work_minutes --------------------------------------------
-echo '{"level":"C","coach":true}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-wm() { cfgsh "learner_coach_work_minutes $1 '$WCFG'"; }
-[ "$(wm 1)" = "25" ] && ok "work block cycle 1 = 25" || ko "work block cycle 1 = 25"
-[ "$(wm 2)" = "30" ] && ok "work block cycle 2 = 30" || ko "work block cycle 2 = 30"
-[ "$(wm 5)" = "45" ] && ok "work block cycle 5 = 45 (capped)" || ko "work block cycle 5 = 45 (capped)"
-[ "$(wm 99)" = "45" ] && ok "work block stays at the cap" || ko "work block stays at the cap"
+# --- coach cadence clamps ---------------------------------------------------
+# learner_int's third argument is a floor: RAW below it is treated as invalid
+# and FALLBACK is returned instead (see learner_int's own header comment). A
+# zero or negative value in the config must never produce a loop that spins
+# or an emission on every poll — it must resolve to the safe default.
+echo '{"level":"C","coach":true,"coachQuietPolls":0,"coachMinLines":0,"coachPollSeconds":1}' > "$GCFG"
+rm -f "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachQuietPolls)\" 1 1")" = "1" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachMinLines)\" 10 1")" = "10" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachPollSeconds)\" 30 5")" = "30" ]; } \
+  && ok "coachQuietPolls, coachMinLines and coachPollSeconds fall back below their floors" \
+  || ko "coachQuietPolls, coachMinLines and coachPollSeconds fall back below their floors"
 
-echo '{"level":"C","coach":true,"coachWorkGrowthMinutes":0}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 7)" = "25" ] && ok "growth 0 keeps a fixed work block" || ko "growth 0 keeps a fixed work block"
-
-# max below min is unambiguous in intent: clamp, do not reject.
-echo '{"level":"C","coach":true,"coachWorkMinutes":30,"coachWorkMaxMinutes":10}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "30" ] && ok "coachWorkMaxMinutes below min clamps to min" \
-  || ko "coachWorkMaxMinutes below min clamps to min"
-
-# A garbage value must fall back to the default rather than produce an empty
-# sleep interval, which would spin the watcher at 100% CPU.
-echo '{"level":"C","coach":true,"coachWorkMinutes":"soon"}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "25" ] && ok "non-numeric coachWorkMinutes falls back to 25" \
-  || ko "non-numeric coachWorkMinutes falls back to 25"
+# coachCooldownMinutes and coachMaxWaitMinutes legitimately accept 0 (no floor,
+# guard disabled) — their learner_int floor is 0, not 1.
+echo '{"level":"C","coach":true,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$GCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachCooldownMinutes)\" 3 0")" = "0" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachMaxWaitMinutes)\" 15 0")" = "0" ]; } \
+  && ok "cooldown and max-wait accept 0" || ko "cooldown and max-wait accept 0"
 
 # --- learner_int leading-zero safety (regression) ---------------------------
 # /bin/sh's POSIX-mode arithmetic parses a leading-zero digit string as octal
@@ -985,14 +996,6 @@ li() { cfgsh "learner_int '$1' '$2' '$3'"; }
   || ko "learner_int normalises 00 to 0 at floor 0"
 [ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
   || ko "learner_int leaves a plain 25 unchanged"
-
-# End-to-end: the exact crash reported against learner_coach_work_minutes — a
-# leading-zero coachWorkMinutes must not abort the caller's arithmetic (which
-# would print nothing and hand a cadence sleep an empty operand).
-echo '{"level":"C","coach":true,"coachWorkMinutes":"008"}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "8" ] && ok "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)" \
-  || ko "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)"
 
 # --- docs/config.html: threshold-only prose count matches its table --------
 # Counted dynamically rather than hard-coded, so a table row added or removed
@@ -1556,7 +1559,7 @@ jq -e '.level == "S"' "$I8/learner.json" >/dev/null 2>&1 \
   && ok "re-install keeps an existing config" \
   || ko "re-install keeps an existing config"
 
-jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachCadence","coachWorkMinutes","coachWorkGrowthMinutes","coachWorkMaxMinutes","coachChallengeMinutes","coachIdleCycles","coachPollSeconds","coachLines","coachFiles","coachEveryMinutes","coachCooldownMinutes"] | length == 0' \
+jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachPollSeconds","coachQuietPolls","coachMinLines","coachCooldownMinutes","coachMaxWaitMinutes","coachIdleMinutes"] | length == 0' \
   "$ROOT/learner.json.example" >/dev/null 2>&1 \
   && ok "learner.json.example carries only supported keys" \
   || ko "learner.json.example carries only supported keys"

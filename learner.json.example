@@ -8,16 +8,10 @@
   "disabledPaths": [],
 
   "coach": false,
-  "coachCadence": "pomodoro",
-  "coachWorkMinutes": 25,
-  "coachWorkGrowthMinutes": 5,
-  "coachWorkMaxMinutes": 45,
-  "coachChallengeMinutes": 8,
-  "coachIdleCycles": 2,
-
-  "coachPollSeconds": 45,
-  "coachLines": 40,
-  "coachFiles": 3,
-  "coachEveryMinutes": 0,
-  "coachCooldownMinutes": 5
+  "coachPollSeconds": 30,
+  "coachQuietPolls": 1,
+  "coachMinLines": 10,
+  "coachCooldownMinutes": 3,
+  "coachMaxWaitMinutes": 15,
+  "coachIdleMinutes": 45
 }
