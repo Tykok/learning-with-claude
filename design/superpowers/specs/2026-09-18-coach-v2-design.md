@@ -67,12 +67,20 @@ At each poll the watcher computes `coach_material()` as today, and derives three
 
 - `L` — total delta, summed over files (`coach_delta`, added **and** removed lines).
 - `N` — number of files with a non-zero delta.
-- `FP` — a **fingerprint** of the material: `coach_material | cksum`. Empty material has the
-  fingerprint `0`.
+- `FP` — a **fingerprint** of the candidate files' own content: each path from `coach_material`,
+  `cat`-ed in order, through `cksum`. Empty material has no fingerprint.
 
 The fingerprint, not `L`, is what detects activity. A dev who deletes three lines and writes
 three others leaves `L` unchanged while very much still working; comparing totals would read
 that as a pause.
+
+Hashing the files' content rather than `coach_material`'s `<delta>\t<path>` summary is load
+bearing, and the reason is easy to miss: **before a baseline exists for a file**,
+`coach_delta`'s no-baseline branch returns the file's whole-file line *count*. An in-place edit
+— same number of lines, different bytes — therefore leaves that summary byte-identical from one
+poll to the next, and a summary-based fingerprint would call an actively typing dev paused. This
+was caught by the cadence test that asserts an edit with an unchanged line total still counts as
+activity.
 
 ### 1.2 The state machine
 
