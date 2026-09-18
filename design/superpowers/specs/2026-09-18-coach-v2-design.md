@@ -365,8 +365,10 @@ present anywhere in it.
 
 Fix: skip only what Claude wrote **since the last baseline advance**.
 
-- `coach_advance` records the current length of `.session` into
-  `claude-learner-<sid>.coach-sessionmark`: `wc -l < "$SESSION"`, `0` when the file is absent.
+- `coach_advance` records the current length of `.session` into `<basedir>/.sessionmark`
+  (`grep -c '' "$SESSION"`, `0` when the file is absent). It lives in the baseline directory
+  rather than in a `TMPDIR` file of its own so that it advances with the baseline it belongs to,
+  and so that `learner-cleanup.sh`'s existing `rm -rf` of that directory already removes it.
 - `coach_candidates` reads the mark and tests membership against the **tail** only:
   `tail -n +$((MARK + 1)) "$SESSION"`, then `grep -qxF`.
 
