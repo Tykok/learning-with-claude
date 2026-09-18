@@ -66,7 +66,7 @@
 Before anything else: restore the correct implementation, remove every // LEARNER-TODO it left, and verify it compiles/lints/tests. Do not finish while a marker remains.</code></pre>
   </figure>
 
-  <p>Four properties, as they are actually implemented in
+  <p>Five properties, as they are actually implemented in
   <code>hooks/learner-quiz.sh</code>:</p>
 
   <dl>
@@ -87,6 +87,17 @@ Before anything else: restore the correct implementation, remove every // LEARNE
     content: a working-tree file whose exact bytes are already committed somewhere is a
     rename or a copy, not an exercise. A renamed file that was <em>also</em> cut has bytes
     <code>HEAD</code> has never seen, and still counts.</dd>
+
+    <dt>Prose that names the marker is not a hole</dt>
+    <dd>A page explaining this feature writes the marker inside an inline code span, the
+    way this very sentence does; an exercise cuts it into code as a bare comment line. So
+    in a <code>.md</code> file the hook strips the inline spans and looks again — what
+    survives is what counts. The relaxation is that narrow on purpose: it applies to
+    markdown only, and only to inline spans. A fenced block is left intact, because that
+    is where a hole cut into a documented snippet would sit, and backticks never acquit a
+    marker in a source file. Without this, a new documentation page would hold the session
+    hostage to its own text until it was committed, since an untracked file matches
+    neither a <code>HEAD</code> path nor a <code>HEAD</code> blob.</dd>
 
     <dt>Untracked files count</dt>
     <dd>The search runs with <code>--untracked</code>. A file the session created a
