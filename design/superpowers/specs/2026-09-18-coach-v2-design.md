@@ -470,8 +470,10 @@ suite runs under `bash`, not `sh`** — line 3533 uses a process substitution. B
 - the six keys merge through defaults → global → project.
 - a config still carrying `coachCadence` / `coachWorkMinutes` does not fail and the removed keys
   have no effect.
-- `coachMaxWaitMinutes: 0` and `coachCooldownMinutes: 0` are accepted; `coachQuietPolls: 0` and
-  `coachMinLines: 0` clamp to 1.
+- `coachMaxWaitMinutes: 0` and `coachCooldownMinutes: 0` are accepted; `coachQuietPolls: 0`,
+  `coachMinLines: 0` and a `coachPollSeconds` below its floor fall back to their **defaults**
+  (1, 10 and 30), which is what `learner_int RAW FALLBACK FLOOR` does with an out-of-range value
+  — it returns FALLBACK, not FLOOR.
 - `learner_coach_work_minutes` is gone (its tests deleted, not skipped).
 
 **Docs**
