@@ -41,6 +41,28 @@ GUARD="$TMPD/claude-learner-${SID}.guard"
 # missing from HEAD count. Untracked files are included: a file the session just
 # created with Write is the guardrail's primary case.
 GUARD_MAX=2
+
+# Prose that NAMES the marker is documentation, not a hole. A `fill` exercise cuts
+# holes into code, so it writes the marker as a bare comment line; a page explaining
+# the feature writes it inside an inline code span — `// LEARNER-TODO` — the way this
+# project's own READMEs and skill files do. Strip the inline spans from a markdown
+# file and look again: only what survives counts.
+#
+# Scoped to markdown and to INLINE spans on purpose. A fenced block is left intact,
+# because that is where an exercise cutting holes into a documented snippet would put
+# them, and acquitting a fence would hide exactly the case the guardrail exists for.
+# Nothing outside *.md is relaxed at all. Returns 0 (acquit) only for a markdown file
+# whose every occurrence sits in an inline span.
+learner_md_names_only() {
+  case "$1" in
+    *.md|*.markdown) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$1" ] || return 1
+  sed 's/`[^`]*`//g' "$1" 2>/dev/null | grep -qF '// LEARNER-TODO' && return 1
+  return 0
+}
+
 if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
   WORKTREE=$(git -C "$ROOT" grep --untracked -lF '// LEARNER-TODO' 2>/dev/null)
   # Empty in a repo with no commits yet, where `git grep … HEAD` fails: then
@@ -78,6 +100,7 @@ if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
         continue
       fi
     fi
+    learner_md_names_only "$ROOT/$_gf" && continue
     NHOLES=$((NHOLES + 1))
     [ "$NHOLES" -le 20 ] && HOLES="$HOLES $_gf"
   done <<EOF

@@ -2421,6 +2421,53 @@ blocks "$out" \
   || ko "guardrail works in a repo with no commits yet"
 
 # The marker is a code comment: the bare word in prose is not an exercise.
+# A brand-new markdown page that NAMES the marker in an inline code span is
+# documenting the feature — every README and skill file in this project does it —
+# and blocking on it would hold the session hostage to its own docs until they are
+# committed, since an untracked file matches neither a HEAD path nor a HEAD blob.
+G=$(gmk); printf 'Claude cuts `// LEARNER-TODO` holes in a real function.\n' > "$G/DOC.md"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "a new .md naming // LEARNER-TODO in an inline code span does not block" \
+  || ok "a new .md naming // LEARNER-TODO in an inline code span does not block"
+
+# The guarantee that matters, again: relaxing markdown must not swallow a real hole.
+# A fenced block is where an exercise cutting a documented snippet puts its holes.
+G=$(gmk); printf 'Example:\n\n```kotlin\nfun f() {\n  // LEARNER-TODO: body\n}\n```\n' > "$G/FENCE.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("FENCE.md")' >/dev/null 2>&1; } \
+  && ok "a hole inside a fenced block in a .md still blocks" \
+  || ko "a hole inside a fenced block in a .md still blocks"
+
+# Bare prose, no span: nothing says this is documentation, so it still blocks.
+G=$(gmk); printf 'some text\n// LEARNER-TODO: body\nmore text\n' > "$G/BARE.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("BARE.md")' >/dev/null 2>&1; } \
+  && ok "a bare marker line in a .md still blocks" \
+  || ko "a bare marker line in a .md still blocks"
+
+# One page can do both. The span acquits its own line, never the file.
+G=$(gmk); printf 'Claude cuts `// LEARNER-TODO` holes.\n\n    // LEARNER-TODO: cut\n' > "$G/MIXED.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("MIXED.md")' >/dev/null 2>&1; } \
+  && ok "a .md that both names the marker and carries a hole still blocks" \
+  || ko "a .md that both names the marker and carries a hole still blocks"
+
+# The relaxation is markdown-only: a source file is never acquitted by backticks.
+G=$(gmk); printf 'fun f() {\n  // LEARNER-TODO: `body`\n}\n' > "$G/TICKS.kt"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("TICKS.kt")' >/dev/null 2>&1; } \
+  && ok "backticks never acquit a marker outside a markdown file" \
+  || ko "backticks never acquit a marker outside a markdown file"
+
+# The plugin's own README is the case that triggered this: it must not block.
+G=$(gmk); mkdir -p "$G/plugins/learner"
+cp "$ROOT/plugins/learner/README.md" "$G/plugins/learner/README.md"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "the plugin's own README does not trip the guardrail" \
+  || ok "the plugin's own README does not trip the guardrail"
+
 G=$(gmk); printf 'the string LEARNER-TODO appears in this doc\n' > "$G/NOTES.md"
 out=$(guard "$G" "$WORK/cfg")
 [ -z "$out" ] \
@@ -3819,6 +3866,11 @@ grep -qF 'working tree' "$SITE_SAFETY" && grep -qF 'HEAD' "$SITE_SAFETY" \
   && ok "safety.html explains the guardrail counts leftovers only" \
   || ko "safety.html explains the guardrail counts leftovers only"
 
+# The markdown relaxation is a hole in a safety net, so the page that documents the
+# net has to document the hole — and say how narrow it is.
+{ grep -qF 'inline code span' "$SITE_SAFETY" && grep -qF 'fenced block' "$SITE_SAFETY"; } \
+  && ok "safety.html documents the markdown inline-span exemption and its limit" \
+  || ko "safety.html documents the markdown inline-span exemption and its limit"
 
 for p in $PAGES; do
   grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$(page_path "$p")" \
