@@ -4377,42 +4377,65 @@ grep -q 'coach-watch' "$PLUG/hooks/settings.snippet.json" \
 ARMCHK="$PLUG/hooks/coach-armed-check.sh"
 armed()   { echo "$TMPDIR/claude-learner-$1.coach-armed"; }
 armwarn() { echo "$TMPDIR/claude-learner-$1.coach-armwarn"; }
+armseen() { echo "$TMPDIR/claude-learner-$1.coach-armseen"; }
 armin()   { printf '{"session_id":"%s"}' "$1"; }
 
 SID_A=arm1
-rm -f "$(armed "$SID_A")" "$(armwarn "$SID_A")"
+rm -f "$(armed "$SID_A")" "$(armwarn "$SID_A")" "$(armseen "$SID_A")"
 
-# Coach off: the hook is a silent no-op, like every other learner hook.
+# Coach off: the hook is a silent no-op, like every other learner hook — exit
+# 0 AND no output, not output alone. A crash also produces no stdout, which is
+# exactly how Critical 1 (an unguarded `:` redirection killing the hook with
+# exit 2 under dash) hid behind a green "silent" assertion the first time
+# around: capture and check the exit status in every assertion below that
+# claims silence.
 echo '{"level":"C","coach":false}' > "$GCFG"
 rm -f "$PCFG"
-out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
-[ -z "$out" ] && ok "armed-check is silent with the coach off" \
-  || ko "armed-check is silent with the coach off"
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check is silent with the coach off" \
+  || ko "armed-check is silent with the coach off (rc=$rc)"
 
-# Coach on, no marker: one line of additionalContext, and it is valid JSON.
+# Coach on, first prompt of the session: the watcher cannot possibly be armed
+# yet — learner-onboard.sh only ASKS Claude to arm it during turn 1, which
+# happens after this very UserPromptSubmit already fired and returned. This is
+# a grace window, not a report: stay silent, and remember a prompt was seen.
 echo '{"level":"C","coach":true}' > "$GCFG"
-out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
-printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1 \
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "the first prompt of a coach session is a silent grace window" \
+  || ko "the first prompt of a coach session is a silent grace window (rc=$rc)"
+[ -f "$(armseen "$SID_A")" ] && ok "the first prompt records that a prompt was seen" \
+  || ko "the first prompt records that a prompt was seen"
+[ ! -f "$(armwarn "$SID_A")" ] && ok "the grace window does not also spend the once-per-session warning" \
+  || ko "the grace window does not also spend the once-per-session warning"
+
+# Second prompt, still not armed: now the absence of the marker is a real
+# report — one line of additionalContext, and it is valid JSON.
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ "$rc" = 0 ] \
+  && printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1; } \
   && ok "armed-check emits a valid UserPromptSubmit payload" \
-  || ko "armed-check emits a valid UserPromptSubmit payload"
+  || ko "armed-check emits a valid UserPromptSubmit payload (rc=$rc)"
 printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'coach-watch.sh' \
   && ok "the warning names the command that arms the watcher" \
   || ko "the warning names the command that arms the watcher"
 printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q "$SID_A" \
   && ok "the warning carries the session id" || ko "the warning carries the session id"
 
-# Once per session: a second prompt must not repeat it.
-out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
-[ -z "$out" ] && ok "armed-check warns at most once per session" \
-  || ko "armed-check warns at most once per session"
+# Third prompt: once per session, not once per still-absent marker.
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check warns at most once per session" \
+  || ko "armed-check warns at most once per session (rc=$rc)"
 
-# Marker present: nothing to warn about.
+# Marker present: nothing to warn about, at any point — even on what would
+# otherwise be the "first prompt" grace window, since the marker check now
+# runs before that logic (see the reordering below).
 SID_A2=arm2
-rm -f "$(armwarn "$SID_A2")"
+rm -f "$(armwarn "$SID_A2")" "$(armseen "$SID_A2")"
 : > "$(armed "$SID_A2")"
-out=$(armin "$SID_A2" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
-[ -z "$out" ] && ok "armed-check is silent once the watcher is armed" \
-  || ko "armed-check is silent once the watcher is armed"
+out=$(armin "$SID_A2" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check is silent once the watcher is armed" \
+  || ko "armed-check is silent once the watcher is armed (rc=$rc)"
 
 # The watcher's own modes: --once and friends are test/off-cadence entry points
 # and must not claim the session is armed.
@@ -4422,6 +4445,30 @@ rm -rf "$(basedir "$SID_A3")"
 CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_A3" --once >/dev/null 2>&1
 [ ! -e "$(armed "$SID_A3")" ] \
   && ok "--once does not write the armed marker" || ko "--once does not write the armed marker"
+
+# Critical 1 regression guard: a TMPDIR the hook cannot write into at all (here,
+# one that does not exist) must never surface as a nonzero exit. `:` is a
+# POSIX special built-in, so an unguarded redirection failure on it aborts a
+# non-interactive shell outright instead of just failing the command — under
+# dash that turned into exit 2 on UserPromptSubmit, which blocks and erases
+# the dev's prompt. Exercised under both this suite's own /bin/sh and, when
+# available, dash itself — the shell actually behind /bin/sh on Debian/Ubuntu,
+# the apt package's own target, and the one the bash-based macOS /bin/sh does
+# not reproduce the bug under at all.
+SID_A4=arm4
+NOTMP="/nonexistent-tmpdir-for-learner-tests-$$"
+out=$(armin "$SID_A4" | CLAUDE_PROJECT_DIR="$CREPO" TMPDIR="$NOTMP" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "armed-check exits 0 with no output when TMPDIR does not exist" \
+  || ko "armed-check exits 0 with no output when TMPDIR does not exist (rc=$rc)"
+if command -v dash >/dev/null 2>&1; then
+  out=$(armin "$SID_A4" | CLAUDE_PROJECT_DIR="$CREPO" TMPDIR="$NOTMP" dash "$ARMCHK"); rc=$?
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "armed-check exits 0 with no output under dash when TMPDIR does not exist" \
+    || ko "armed-check exits 0 with no output under dash when TMPDIR does not exist (rc=$rc)"
+else
+  echo "  (dash not found on this machine — the dash-specific TMPDIR-missing check was skipped, coverage not claimed)"
+fi
 
 # Wiring: the new hook runs on UserPromptSubmit in both install paths.
 jq -e '.hooks.UserPromptSubmit[0].hooks | map(.command) | any(contains("coach-armed-check.sh"))' \

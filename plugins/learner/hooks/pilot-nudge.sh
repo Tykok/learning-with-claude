@@ -123,7 +123,15 @@ fi
 if [ -n "$SID" ]; then
   MARKER="$TMPD/claude-learner-${SID}.pilot-nudged"
   [ -e "$MARKER" ] && exit 0
-  : > "$MARKER" 2>/dev/null
+  # The subshell is load-bearing: `:` is a POSIX special built-in, so a
+  # redirection failure on it (nonexistent or read-only TMPDIR) aborts a
+  # non-interactive shell outright under dash — this header's own "MUST NEVER
+  # EXIT 2" would be violated by the bare form, silently, on every platform
+  # this file was never tested on. `2>/dev/null` stays outside the parens: a
+  # compound command's redirections are installed before it runs, so it also
+  # swallows the dash error text a bare `>` failure would print to the real
+  # stderr. Do not "simplify" the parens away.
+  ( : > "$MARKER" ) 2>/dev/null
 fi
 
 CTX="Pilot manoeuvre in force (axis: $AXIS): $RULE.

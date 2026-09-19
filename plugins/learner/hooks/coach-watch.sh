@@ -423,7 +423,18 @@ fi
 # The armed marker. coach-armed-check.sh warns the dev when it is missing, so it
 # must be written by the real loop only — --once and --advance are test and
 # off-cadence entry points, not a running cadence.
-: > "$TMPD/claude-learner-${SID}.coach-armed" 2>/dev/null || :
+#
+# The subshell is load-bearing, not decorative: `:` is a POSIX special
+# built-in, so a redirection failure on it (nonexistent or read-only TMPDIR)
+# aborts a non-interactive shell outright, under dash, before the trailing
+# `|| :` ever runs. Unguarded, that would kill the watcher with a nonzero exit
+# right here, before the loop even starts — coach mode silently dead while the
+# gate keeps refusing writes, the exact failure this marker exists to report,
+# caused by the line meant to report it. The `2>/dev/null` sits outside the
+# parens on purpose: a compound command's redirections are installed before it
+# runs, so this also swallows the dash error text the failing `>` would
+# otherwise print to the real stderr. Do not "simplify" the parens away.
+( : > "$TMPD/claude-learner-${SID}.coach-armed" ) 2>/dev/null || :
 CYCLE=1
 rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF"
 while :; do
