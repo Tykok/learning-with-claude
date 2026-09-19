@@ -34,8 +34,9 @@ directory.
 ## Coach mode — you write, Claude challenges
 
 The default regime has Claude write the code and quiz you afterwards. Coach mode inverts it:
-you write the code, and Claude watches your working tree and comes back at intervals with one
-question, a few findings and a couple of leads — never with a patch.
+you write the code, and Claude watches your working tree and comes back when you pause to
+challenge you — one question on a small diff, up to three on a large one, asked one at a
+time — plus findings and leads, never a patch.
 
 ```
 learner coach on
@@ -53,13 +54,14 @@ write the service and the business logic. Both regimes feed the same record: Cla
 on what it wrote, the coach challenges you on what you wrote, and `learner status` sees all of
 it.
 
-Reviews arrive on a pomodoro by default: a 25-minute work block in silence, then one
-notification, then an ~8-minute challenge window. The work block grows 5 minutes per cycle
-(capped at 45) — only for cycles where you actually wrote something. After two consecutive
-empty blocks the watcher stops itself and asks whether you want to continue.
-
-Prefer change-driven reviews to time-driven ones? `learner config coachCadence=threshold`, then
-tune `coachLines`, `coachFiles` and `coachCooldownMinutes`.
+A review fires when you pause typing: the watcher polls your working tree, and once it has
+seen enough consecutive quiet polls with at least `coachMinLines` changed since the last
+review, it fires — floored by `coachCooldownMinutes` so short pauses don't turn into a run of
+interruptions, and forced anyway past `coachMaxWaitMinutes` so a long uninterrupted stretch
+still gets reviewed. The review itself is sized by the diff: one question on a small change, up
+to three — asked one at a time — on a large one, plus findings and leads. Zero changes for
+`coachIdleMinutes` and the watcher stops itself and asks whether you want to continue. Tune all
+of this with the six `coach*` keys — see the site's [Configuration](https://tykok.github.io/learning-with-claude/config.html) page.
 
 Coach mode needs an interactive Claude Code session: the watcher runs as a `Monitor`, which
 does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still

@@ -997,19 +997,10 @@ li() { cfgsh "learner_int '$1' '$2' '$3'"; }
 [ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
   || ko "learner_int leaves a plain 25 unchanged"
 
-# --- docs/config.html: threshold-only prose count matches its table --------
-# Counted dynamically rather than hard-coded, so a table row added or removed
-# later turns this red instead of leaving stale prose silently wrong again.
-tcount=$(grep -c -- '— <code>threshold</code>' "$ROOT/docs/config.html")
-case "$tcount" in
-  4) tword=four ;;
-  5) tword=five ;;
-  6) tword=six ;;
-  *) tword='__no-word-mapped__' ;;
-esac
-grep -qF "last $tword keys" "$ROOT/docs/config.html" \
-  && ok "config.html's threshold-only prose count matches its table ($tcount)" \
-  || ko "config.html's threshold-only prose count matches its table ($tcount)"
+# The threshold/pomodoro split this check used to guard is gone (coach-v2: one
+# pause-driven cadence, no per-clock prose to keep in sync with the table row
+# count), so the dynamic-count check that lived here was removed rather than
+# left to test a distinction the docs no longer draw.
 
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
@@ -3060,9 +3051,18 @@ grep -q 'coach delegate' "$RM" \
 # section itself does.
 grep -qF 'id="coach"' "$SITE_USAGE" && ok "usage.html covers coach mode" \
   || ko "usage.html covers coach mode"
-for k in coachCadence coachWorkMinutes coachIdleCycles; do
+for k in coachPollSeconds coachQuietPolls coachMinLines coachCooldownMinutes coachMaxWaitMinutes coachIdleMinutes; do
   grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
     || ko "config.html documents $k"
+done
+# The v1 keys must be gone from the config page, not merely joined by the new
+# ones: a dev reading a stale table would tune a key nothing reads.
+for k in coachCadence coachWorkMinutes coachChallengeMinutes coachIdleCycles; do
+  grep -q "$k" "$SITE_CONFIG" && ko "config.html no longer documents $k" \
+    || ok "config.html no longer documents $k"
+done
+for k in coachCadence coachWorkMinutes coachIdleCycles; do
+  grep -q "$k" "$RM" && ko "README no longer documents $k" || ok "README no longer documents $k"
 done
 # The interactive-session-only limitation must be stated where a dev will hit it,
 # not only in the design doc they will never read. Anchored to 'claude -p' rather
@@ -3168,10 +3168,9 @@ done
 # and coach-watch.sh joined the original six — "six" quietly went stale in all
 # five at once. Ground truth is read from the filesystem and from
 # hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
-# above (test.sh:1837-1854) and the threshold-only prose-count check further up
-# (search "docs/config.html: threshold-only prose count"), so a ninth hook (or
-# a wiring change) turns every stale copy red automatically instead of leaving
-# a plausible-sounding number wrong forever.
+# above (test.sh:1837-1854), so a ninth hook (or a wiring change) turns every
+# stale copy red automatically instead of leaving a plausible-sounding number
+# wrong forever.
 hook_files=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | sort)
 hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
 case "$hook_n" in
