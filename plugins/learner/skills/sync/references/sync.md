@@ -6,6 +6,10 @@
 sh "$HOOKS/learner-sync.sh" push
 ```
 
+A push snapshots `memory.md`, `recap.md`, `libs.md` and the global `learner.json` — the whole
+record, not just the parts a question can pick, so a defect the coach found and a library it
+already covered survive a machine switch exactly like a weak spot does.
+
 | `error` | What to say |
 |---------|-------------|
 | `jq-missing` / `gh-missing` | Name the missing tool and stop. |
@@ -20,9 +24,9 @@ On `needs-create-ok`, ask the dev before anything is created, and include the wa
 the one thing they cannot undo once the link exists:
 
 > A secret gist is unlisted, not private: anyone who has the URL can read it without a GitHub
-> account. The snapshot carries your repo names, file names and the wording of your weak spots,
-> plus `pushedFrom` (this machine's hostname) and `learner.json`'s `disabledPaths` (absolute
-> local paths). Create it?
+> account. The snapshot carries your repo names, file names, the wording of your weak spots and
+> the libraries the coach has already covered, plus `pushedFrom` (this machine's hostname) and
+> `learner.json`'s `disabledPaths` (absolute local paths). Create it?
 
 Only on an explicit yes:
 
@@ -52,7 +56,7 @@ gist, and merging against it here would read the new remote's absent lines as de
 | *anything else* (`work-dir`, `backup-dir`, `merge`, `config-merge`, `write`, `base-dir`, `sync-json`) | These can fire **after** `memory.md` has already been rewritten in place. Say plainly that the local record may already be merged, point the dev at the most recent folder under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/` (named by UTC timestamp) to compare or restore from, and do **not** run `pull-finish` — that would lock the interrupted state in as agreed.|
 
 On success the script has already merged `memory.md` and `learner.json`, and taken a backup.
-`recap.md` is yours to write, from the four paths it hands back in `recap`:
+`recap.md` and `libs.md` are yours to write:
 
 1. Read `recap.base`, the local `recap.local` and `recap.remote`.
 2. Merge the `To improve` and `Mastered` sections, per §3.
@@ -60,7 +64,14 @@ On success the script has already merged `memory.md` and `learner.json`, and tak
    header row and separator, then the contents of `recap.historyMerged` **pasted verbatim**.
    Never re-sort or re-word a history row: the script already merged them, and the `Theme`
    cells are what `learner export` counts.
-4. Close the pull:
+4. Read `libs.base`, the local `libs.local` and `libs.remote` — the same shape as the three
+   `recap` paths above, but for `libs.md` — then union the rows by `(Library, Angle covered)`:
+   keep a pair present on either side, and when both logged the same pair, keep the more recent
+   `Seen` date. Never drop a row silently: an angle the coach already covered would otherwise
+   look asked-for again, and the dev gets the same question on two machines. A gist pushed
+   before this feature existed has no `libs.md` at all — `libs.remote` then reads empty, which
+   is exactly "nothing to union", not an error.
+5. Close the pull:
 
 ```bash
 sh "$HOOKS/learner-sync.sh" pull-finish <work>
@@ -99,11 +110,12 @@ sh "$HOOKS/learner-sync.sh" status
 ```
 
 Read-only. Report the gist URL, `lastPush` / `lastPull`, and what is not pushed
-(`unpushed.memoryLines`, `unpushed.historyRows`). `remoteAhead: true` → say a pull is due
-before the next push. `hasBase: false` → say the next pull will union both sides, **and** that a
-pull is required before the next push: `push` itself will refuse with `needs-pull` until then,
-since without a base there is nothing to check a push's safety against. `no-gist` → nothing is
-set up yet; `learner sync push` creates it.
+(`unpushed.memoryLines`, `unpushed.historyRows`) — `libs.md` has no count of its own here yet, so
+if the dev asks specifically about a library row, check `libs.md` by eye rather than inventing a
+figure. `remoteAhead: true` → say a pull is due before the next push. `hasBase: false` → say the
+next pull will union both sides, **and** that a pull is required before the next push: `push`
+itself will refuse with `needs-pull` until then, since without a base there is nothing to check a
+push's safety against. `no-gist` → nothing is set up yet; `learner sync push` creates it.
 
 ## 5. `sync use`
 

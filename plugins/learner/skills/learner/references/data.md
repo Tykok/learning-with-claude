@@ -13,6 +13,7 @@ mkdir -p "$CFG/learner"
 
 - `$CFG/learner/memory.md` — working memory.
 - `$CFG/learner/recap.md` — dashboard.
+- `$CFG/learner/libs.md` — the libraries the coach has already covered.
 
 Create either file if it does not exist yet.
 
@@ -64,6 +65,47 @@ lives in `recap.md`.
 the same choice step 2 of § After every answer already makes, written down so it can be
 counted later. Always fill it. A row that ends at `Note`, with no `Theme` cell, was
 written before the column existed: read it as untagged and leave it alone.
+
+`Style` names which mode produced the row: `code`/`architecture`/`fill` from a quiz question,
+`improve` from an improve session, `coach` from a coach challenge or structure question,
+`coach-lib` from a coach library question, `coach-ack` from a coach confirmation.
+
+## `libs.md` — the libraries already covered
+
+Written by coach mode only. Read **before** choosing a library question, so an angle is not
+served twice; written after the dev's answer.
+
+```markdown
+# Libraries covered
+
+| Library | Seen | Angle covered | Verdict |
+|---------|------|---------------|---------|
+| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |
+| zod | 2026-09-18 | refine vs superRefine | ✅ ok |
+```
+
+One row per (library, angle) pair, not per library: coming back to `argon2` three weeks later
+from the salt-storage angle **adds** a row. That is what makes spaced repetition on libraries
+possible at all — a single row per library would only ever say "already done".
+
+## What a coach review writes
+
+- **An answered question** — a `Session history` row as usual, with `Style` `coach` for the
+  challenge and the structure question, `coach-lib` for the library one, and the verdict `✅ ok`
+  / `⚠️ revisit` / `⏭️ skip`. A missed or hesitant answer also opens a `memory.md` line, as
+  everywhere else.
+- **A library question** — additionally, one `libs.md` row.
+- **A finding** — rolled into an existing broad theme of `recap.md` § `To improve`, under its
+  domain. "A missing exception at a critical point" belongs under `Code › Error and exception
+  handling`; it does not become a line of its own. Create a theme only when none fits.
+
+  A finding **never writes to `memory.md`.** That file is the only one read to pick a question,
+  and a defect the dev was never questioned on has no place deciding what they are asked next —
+  it would produce a question about something they have never been given a chance on.
+- **A confirmation** — a `Session history` row with `Style` `coach-ack`, verdict `✅ ok`, and a
+  `Note` naming the reflex ("business logic kept out of the controller"). The same reflex
+  confirmed **twice, on two different diffs** — two `coach-ack` rows carrying the same theme —
+  promotes that theme into `recap.md` § `Mastered`.
 
 ## After every answer
 

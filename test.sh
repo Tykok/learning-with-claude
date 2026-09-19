@@ -2214,6 +2214,32 @@ grep -qF 'CLAUDE_CONFIG_DIR' "$SYNCMD" \
   && ok "sync.md resolves its state under CLAUDE_CONFIG_DIR" \
   || ko "sync.md resolves its state under CLAUDE_CONFIG_DIR"
 
+# --- the coach's record rules -----------------------------------------------
+DMD="$PLUG/skills/learner/references/data.md"
+SMD="$PLUG/skills/sync/references/sync.md"
+
+grep -qF 'libs.md' "$DMD" && ok "data.md documents libs.md" || ko "data.md documents libs.md"
+grep -q 'coach-lib' "$DMD" && ok "data.md documents the coach-lib style" \
+  || ko "data.md documents the coach-lib style"
+grep -q 'coach-ack' "$DMD" && ok "data.md documents the coach-ack style" \
+  || ko "data.md documents the coach-ack style"
+
+# The rule that keeps memory.md usable as the question picker: a finding the dev
+# was never questioned on must not become a weak spot there.
+grep -qi 'never writes to .memory.md.\|not write to .memory.md.' "$DMD" \
+  && ok "data.md keeps findings out of memory.md" \
+  || ko "data.md keeps findings out of memory.md"
+
+grep -qF 'libs.md' "$SMD" && ok "sync carries libs.md" || ko "sync carries libs.md"
+grep -qF 'libs.md' "$ROOT/docs/safety.html" \
+  && ok "safety.html's consent list names libs.md" \
+  || ko "safety.html's consent list names libs.md"
+
+# export is deliberately NOT touched: it builds Notion rows from recap.md's
+# themes, and a library ledger is not a theme.
+grep -qF 'libs.md' "$PLUG/skills/export/references/export.md" \
+  && ko "export must not carry libs.md" || ok "export deliberately does not carry libs.md"
+
 UPD="$PLUG/skills/update/SKILL.md"
 
 grep -qF 'INSTALL_ORIGIN' "$UPD" \

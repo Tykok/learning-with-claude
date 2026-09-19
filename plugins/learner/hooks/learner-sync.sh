@@ -27,6 +27,7 @@ SYNC_DESC="claude-learner-state"
 DATA_DIR="$LEARNER_CFG_DIR/learner"
 MEM_FILE="$DATA_DIR/memory.md"
 REC_FILE="$DATA_DIR/recap.md"
+LIBS_FILE="$DATA_DIR/libs.md"
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
 SYNC_JSON="$DATA_DIR/sync.json"
 BASE_DIR="$DATA_DIR/sync-base"
@@ -177,12 +178,13 @@ read_version() {
   fi
 }
 
-snapshot_into() {  # DIR — the four gist files, or fail empty-record
+snapshot_into() {  # DIR — the gist files, or fail empty-record
   _sd="$1"
   has_content "$MEM_FILE" || has_content "$REC_FILE" || fail empty-record
   mkdir -p "$_sd" || fail snapshot-dir
   if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else : > "$_sd/memory.md"; fi
   if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else : > "$_sd/recap.md"; fi
+  if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else : > "$_sd/libs.md"; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
@@ -218,7 +220,7 @@ gist_file() {  # ID NAME -> the file's content on stdout, exit 1 when absent
 advance_base() {  # DIR — adopt DIR as the new common ancestor
   rm -rf "$BASE_DIR.tmp"
   mkdir -p "$BASE_DIR.tmp" || fail base-dir
-  for f in memory.md recap.md learner.json manifest.json; do
+  for f in memory.md recap.md libs.md learner.json manifest.json; do
     [ -f "$1/$f" ] && cp "$1/$f" "$BASE_DIR.tmp/$f"
   done
   rm -rf "$BASE_DIR"
@@ -237,7 +239,8 @@ cmd_push() {
   if [ -z "$_id" ]; then
     [ "$_create_ok" = 1 ] || { rm -rf "$_work"; fail needs-create-ok; }
     _url=$(gh gist create --secret -d "$SYNC_DESC" \
-             "$_work/memory.md" "$_work/recap.md" "$_work/learner.json" "$_work/manifest.json" \
+             "$_work/memory.md" "$_work/recap.md" "$_work/libs.md" "$_work/learner.json" \
+             "$_work/manifest.json" \
              2>/dev/null | tail -1)
     [ -n "$_url" ] || { rm -rf "$_work"; fail gh-create; }
     _id=${_url##*/}
@@ -260,14 +263,16 @@ cmd_push() {
        && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
       rm -rf "$_work"; fail remote-ahead
     fi
-    # One PATCH with all four files: a gist whose manifest announces a recap.md
+    # One PATCH with every file: a gist whose manifest announces a recap.md
     # that has not landed would make the next pull merge against a lie.
     jq -n \
       --rawfile mem "$_work/memory.md" \
       --rawfile rec "$_work/recap.md" \
+      --rawfile libs "$_work/libs.md" \
       --rawfile cfg "$_work/learner.json" \
       --rawfile man "$_work/manifest.json" \
       '{files:{"memory.md":{content:$mem},"recap.md":{content:$rec},
+               "libs.md":{content:$libs},
                "learner.json":{content:$cfg},"manifest.json":{content:$man}}}' \
       | gh api --method PATCH "/gists/$_id" --input - >/dev/null 2>&1 \
       || { rm -rf "$_work"; fail gh-push; }
@@ -299,7 +304,7 @@ backup_local() {  # sets BACKUP_PATH to the directory it created
   # memory.md with no backup underneath it.
   BACKUP_PATH="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
   mkdir -p "$BACKUP_PATH" || fail backup-dir
-  for f in "$MEM_FILE" "$REC_FILE" "$CFG_FILE"; do
+  for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE"; do
     [ -f "$f" ] && cp "$f" "$BACKUP_PATH/$(basename "$f")"
   done
 }
@@ -331,6 +336,12 @@ cmd_pull() {
     gist_file "$_id" "$f" > "$_work/$f" || { rm -rf "$_work"; fail gh-fetch; }
   done
   [ -s "$_work/manifest.json" ] || { rm -rf "$_work"; fail gh-fetch; }
+
+  # libs.md is fetched leniently, not in the loop above: a gist pushed by an
+  # older learner never had one, and refusing the whole pull over a file that
+  # legitimately predates this feature would be worse than the data it protects.
+  gist_file "$_id" libs.md > "$_work/libs.md" 2>/dev/null
+  [ -s "$_work/libs.md" ] || : > "$_work/libs.md"
 
   _schema=$(jq -r '.schemaVersion // 0' "$_work/manifest.json" 2>/dev/null)
   case "$_schema" in
@@ -383,9 +394,11 @@ cmd_pull() {
   jq -nc --arg id "$_id" --arg bk "$_backup" --arg w "$_work" \
      --arg rl "$REC_FILE" --arg rr "$_work/recap.md" --arg rb "$BASE_DIR/recap.md" \
      --arg rh "$_work/history.md" --argjson first "$_first" \
+     --arg ll "$LIBS_FILE" --arg lr "$_work/libs.md" --arg lb "$BASE_DIR/libs.md" \
      '{ok:true, action:"pulled", gistId:$id, backup:$bk, work:$w, memory:"merged",
        firstSync:$first,
-       recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh}}'
+       recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh},
+       libs:{local:$ll, remote:$lr, base:$lb}}'
 }
 
 cmd_pull_finish() {
