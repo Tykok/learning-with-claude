@@ -236,6 +236,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> (third entry) — decides whether a scoring pass, a weekly brief, or neither is due</td></tr>
       <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
       <tr><td><code>$CFG/hooks/learner-sync.sh</code></td><td>Utility — carries the learning record (<code>memory.md</code>, <code>recap.md</code>, <code>learner.json</code>) between machines through a private gist</td></tr>
+      <tr><td><code>$CFG/hooks/learner-agent-track.sh</code></td><td>Counts the subagents in flight so the salvo knows when you are waiting</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
@@ -254,22 +255,26 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Thirteen hook files ship and ten are wired, into <code>SessionStart</code>
+  <p>Fourteen hook files ship and twelve are wired, into <code>SessionStart</code>
   (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
   and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
-  (<code>coach-gate.sh</code>), <code>PostToolUse</code>, <code>Stop</code>,
-  <code>SessionEnd</code> (twice — <code>learner-cleanup.sh</code> and
-  <code>pilot-record.sh</code>, the latter at a raised <code>timeout</code> of 15
-  since it reads a whole transcript) and <code>UserPromptSubmit</code> (twice —
-  <code>pilot-nudge.sh</code> and <code>coach-armed-check.sh</code>). Three ship
-  unwired: <code>learner-config.sh</code> is
-  sourced-only, and Claude Code never invokes it directly; <code>coach-watch.sh</code>
-  is never a static entry either — <code>learner-onboard.sh</code> arms it as a
-  <code>Monitor</code> at session start, only once coach mode is on; and
-  <code>learner-sync.sh</code> is never wired to a hook event at all — the skill
-  invokes it directly, only when the dev types <code>learner sync</code>. Eleven of the
-  other twelve source <code>learner-config.sh</code> — every hook but
-  <code>learner-cleanup.sh</code>, which needs none of it.</p>
+  (<code>coach-gate.sh</code> on the <code>Write|Edit|NotebookEdit</code> matcher, plus
+  <code>learner-agent-track.sh --start</code> on its own <code>Task</code> matcher),
+  <code>PostToolUse</code> (<code>learner-record-edit.sh</code> on
+  <code>Write|Edit</code>, plus <code>learner-agent-track.sh --end</code> on
+  <code>Task</code>), <code>Stop</code>, <code>SessionEnd</code> (twice —
+  <code>learner-cleanup.sh</code> and <code>pilot-record.sh</code>, the latter at a
+  raised <code>timeout</code> of 15 since it reads a whole transcript) and
+  <code>UserPromptSubmit</code> (twice — <code>pilot-nudge.sh</code> and
+  <code>coach-armed-check.sh</code>). Three ship unwired:
+  <code>learner-config.sh</code> is sourced-only, and Claude Code never invokes it
+  directly; <code>coach-watch.sh</code> is never a static entry either —
+  <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
+  only once coach mode is on; and <code>learner-sync.sh</code> is never wired to a hook
+  event at all — the skill invokes it directly, only when the dev types
+  <code>learner sync</code>. Twelve of the other thirteen source
+  <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
+  which needs none of it.</p>
 
   <h2 id="platforms">Platforms</h2>
 
@@ -310,7 +315,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and thirteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

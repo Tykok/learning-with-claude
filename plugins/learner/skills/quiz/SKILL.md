@@ -11,7 +11,7 @@ on-demand counterpart to the Stop-hook quiz.
 
 ## Load config
 
-Load config the same way as `../learner/SKILL.md` § Config. An explicit `learner quiz` runs even
+Load config as `../learner/references/config.md` describes. An explicit `learner quiz` runs even
 when `enabled` is `false` — the dev asked for it directly.
 
 `level` sets difficulty (level table in `../learner/SKILL.md`); `questionStyles` limits the

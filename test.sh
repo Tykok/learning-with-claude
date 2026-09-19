@@ -998,6 +998,46 @@ li() { cfgsh "learner_int '$1' '$2' '$3'"; }
 [ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
   || ko "learner_int leaves a plain 25 unchanged"
 
+# --- agent salvo: config resolution ------------------------------------------
+sactive() { cfgsh 'learner_salvo_active "$(learner_config)" "$(learner_repo_root)" && echo on || echo off'; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvo')" = "true" ] \
+  && ok "agentSalvo defaults to true" || ko "agentSalvo defaults to true"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvoQuestions')" = "2" ] \
+  && ok "agentSalvoQuestions defaults to 2" || ko "agentSalvoQuestions defaults to 2"
+[ "$(cfgsh 'learner_config | jq -r .agentSalvoFill')" = "true" ] \
+  && ok "agentSalvoFill defaults to true" || ko "agentSalvoFill defaults to true"
+
+[ "$(sactive)" = "on" ] \
+  && ok "the salvo is active with a level set and agentSalvo defaulted" \
+  || ko "the salvo is active with a level set and agentSalvo defaulted"
+
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "agentSalvo=false switches the salvo off" || ko "agentSalvo=false switches the salvo off"
+
+echo '{"level":"S","enabled":false}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "enabled=false switches the salvo off too" || ko "enabled=false switches the salvo off too"
+
+echo '{"agentSalvo":true}' > "$GCFG"
+[ "$(sactive)" = "off" ] \
+  && ok "no level means no salvo" || ko "no level means no salvo"
+
+# agentSalvoQuestions accepts 0 (exercise-only), so its floor is 0, not 1.
+echo '{"level":"S","agentSalvoQuestions":0}' > "$GCFG"
+[ "$(cfgsh 'learner_int "$(learner_config | jq -r .agentSalvoQuestions)" 2 0')" = "0" ] \
+  && ok "agentSalvoQuestions=0 survives learner_int with floor 0" \
+  || ko "agentSalvoQuestions=0 survives learner_int with floor 0"
+
+echo '{"level":"S","agentSalvoQuestions":"many"}' > "$GCFG"
+[ "$(cfgsh 'learner_int "$(learner_config | jq -r .agentSalvoQuestions)" 2 0')" = "2" ] \
+  && ok "a non-numeric agentSalvoQuestions falls back to 2" \
+  || ko "a non-numeric agentSalvoQuestions falls back to 2"
+
+echo '{"level":"S"}' > "$GCFG"
+
 # --- docs/config.html: coach* keys prose count matches its table -----------
 # Retargeted from the old pomodoro/threshold split (coach-v2 collapsed that
 # to one pause-driven cadence, leaving no per-clock prose to guard), but the
@@ -1404,6 +1444,425 @@ else
 fi
 chmod 644 "$(edits "$SIDRO")" 2>/dev/null
 rm -f "$(edits "$SIDRO")"
+# --- agent salvo: tracker ----------------------------------------------------
+TRACK="$PLUG/hooks/learner-agent-track.sh"
+agents()     { echo "$TMPDIR/claude-learner-$1.agents"; }
+dispatched() { echo "$TMPDIR/claude-learner-$1.agents-dispatched"; }
+served()     { echo "$TMPDIR/claude-learner-$1.agents-served"; }
+# $1 session id, $2 description
+tstart() { printf '{"session_id":"%s","tool_name":"Task","tool_input":{"description":"%s"}}' \
+             "$1" "$2" | sh "$TRACK" --start; }
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDA=salvo1
+out=$(tstart "$SIDA" "Refactor the repository layer")
+[ -z "$out" ] \
+  && ok "--start writes nothing to stdout" || ko "--start writes nothing to stdout"
+[ "$(grep -c . "$(agents "$SIDA")")" = "1" ] \
+  && ok "--start records one in-flight agent" || ko "--start records one in-flight agent"
+[ "$(grep -c . "$(dispatched "$SIDA")")" = "1" ] \
+  && ok "--start increments the dispatched counter" || ko "--start increments the dispatched counter"
+grep -qF 'Refactor the repository layer' "$(agents "$SIDA")" \
+  && ok "--start keeps the task description" || ko "--start keeps the task description"
+grep -qF '  ' "$(agents "$SIDA")" \
+  && ko "the recorded description carries no double space" \
+  || ok "the recorded description carries no double space"
+
+# FINDING 2: .agents-dispatched must not lose increments when several --start
+# calls land at once — a batch of parallel Task dispatches is the spec's
+# headline case for this feature, not an edge case. Backgrounded and waited,
+# no sleep.
+SIDPAR=salvopar
+for i in 1 2 3 4 5 6; do
+  tstart "$SIDPAR" "Parallel agent $i" >/dev/null &
+done
+wait
+[ "$(grep -c . "$(agents "$SIDPAR")")" = "6" ] \
+  && ok "six parallel --start calls record six in-flight agents" \
+  || ko "six parallel --start calls record six in-flight agents (got $(grep -c . "$(agents "$SIDPAR")" 2>/dev/null))"
+[ "$(grep -c . "$(dispatched "$SIDPAR")")" = "6" ] \
+  && ok "six parallel --start calls all increment the dispatched counter" \
+  || ko "six parallel --start calls all increment the dispatched counter (got $(grep -c . "$(dispatched "$SIDPAR")" 2>/dev/null))"
+
+# The mirror race on --end is milder — two simultaneous returns can leave the
+# in-flight count one too high, which over-reports but stays bounded and is
+# reaped at SessionEnd either way — so it is left as-is; see the comment in
+# hooks/learner-agent-track.sh.
+grep -qF 'is acceptable' "$PLUG/hooks/learner-agent-track.sh" \
+  && ok "learner-agent-track.sh explains why the --end race is left alone" \
+  || ko "learner-agent-track.sh explains why the --end race is left alone"
+
+# The anti-recursion contract: the salvo's own preparation agent must not arm a salvo.
+SIDP=salvo2
+tstart "$SIDP" "learner-prep: cut a fill exercise in Foo.kt"
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "a learner-prep: dispatch is never recorded" || ko "a learner-prep: dispatch is never recorded"
+tstart "$SIDP" "   learner-prep: leading spaces still count"
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "leading whitespace does not defeat the learner-prep: contract" \
+  || ko "leading whitespace does not defeat the learner-prep: contract"
+tstart "$SIDP" '\tlearner-prep: a leading tab still counts'
+[ ! -f "$(agents "$SIDP")" ] \
+  && ok "a leading tab does not defeat the learner-prep: contract on --start" \
+  || ko "a leading tab does not defeat the learner-prep: contract on --start"
+
+# One agent is always one line, whatever the description contains.
+SIDM=salvo3
+printf '{"session_id":"%s","tool_input":{"description":"two\\nlines\\tand a tab"}}' "$SIDM" \
+  | sh "$TRACK" --start
+[ "$(grep -c . "$(agents "$SIDM")")" = "1" ] \
+  && ok "a multi-line description still records exactly one agent" \
+  || ko "a multi-line description still records exactly one agent"
+
+# Every off switch.
+SIDX=salvo4
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "agentSalvo=false makes --start a no-op" || ko "agentSalvo=false makes --start a no-op"
+echo '{"level":"S","enabled":false}' > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "enabled=false makes --start a no-op" || ko "enabled=false makes --start a no-op"
+printf '{"level":"S","disabledPaths":["%s"]}' "$WORK/proj" > "$GCFG"
+tstart "$SIDX" "Some task"
+[ ! -f "$(agents "$SIDX")" ] \
+  && ok "a disabledPaths prefix makes --start a no-op" || ko "a disabledPaths prefix makes --start a no-op"
+
+# An unknown flag, or none, is a no-op rather than a crash.
+echo '{"level":"S"}' > "$GCFG"
+SIDF=salvo5
+printf '{"session_id":"%s","tool_input":{"description":"x"}}' "$SIDF" | sh "$TRACK" >/dev/null 2>&1
+[ ! -f "$(agents "$SIDF")" ] \
+  && ok "the tracker with no flag is a no-op" || ko "the tracker with no flag is a no-op"
+
+# $1 session id, $2 optional description. A real PostToolUse payload can carry
+# either shape — tool_input present, or absent entirely — and --end must
+# behave correctly either way; the no-description call keeps exercising the
+# no-tool_input shape, the with-description call is what lets the
+# learner-prep: contract be pinned on --end at all.
+tend() {
+  if [ -n "${2:-}" ]; then
+    printf '{"session_id":"%s","tool_name":"Task","tool_input":{"description":"%s"}}' \
+      "$1" "$2" | sh "$TRACK" --end
+  else
+    printf '{"session_id":"%s","tool_name":"Task"}' "$1" | sh "$TRACK" --end
+  fi
+}
+
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDE=salvo6
+tstart "$SIDE" "Agent one"; tstart "$SIDE" "Agent two"; tstart "$SIDE" "Agent three"
+[ "$(grep -c . "$(agents "$SIDE")")" = "3" ] \
+  && ok "three dispatches are three in-flight lines" || ko "three dispatches are three in-flight lines"
+
+tend "$SIDE"
+[ "$(grep -c . "$(agents "$SIDE")")" = "2" ] \
+  && ok "--end removes exactly one in-flight line" || ko "--end removes exactly one in-flight line"
+grep -qF 'Agent one' "$(agents "$SIDE")" \
+  && ko "--end removes the oldest line first (FIFO)" || ok "--end removes the oldest line first (FIFO)"
+[ "$(grep -c . "$(dispatched "$SIDE")")" = "3" ] \
+  && ok "--end leaves the dispatched counter alone while agents remain" \
+  || ko "--end leaves the dispatched counter alone while agents remain"
+
+echo 2 > "$(served "$SIDE")"
+tend "$SIDE"; tend "$SIDE"
+{ [ ! -f "$(agents "$SIDE")" ] && [ ! -f "$(dispatched "$SIDE")" ] && [ ! -f "$(served "$SIDE")" ]; } \
+  && ok "the last --end deletes all three batch files" \
+  || ko "the last --end deletes all three batch files"
+
+# FINDING 1: --end must honour the learner-prep: contract exactly as --start
+# does — the preparation agent's own return must never drain a REAL agent's
+# in-flight count. Leading-space and leading-tab variants both count.
+SIDPE=salvo6b
+tstart "$SIDPE" "Agent one"; tstart "$SIDPE" "Agent two"
+tend "$SIDPE" "learner-prep: cut a fill exercise in Foo.kt"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "a learner-prep: --end never drains a real agent's in-flight count" \
+  || ko "a learner-prep: --end never drains a real agent's in-flight count"
+tend "$SIDPE" "  learner-prep: leading spaces still count on --end"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "leading spaces do not defeat the learner-prep: contract on --end" \
+  || ko "leading spaces do not defeat the learner-prep: contract on --end"
+tend "$SIDPE" '\tlearner-prep: a leading tab still counts on --end'
+[ "$(grep -c . "$(agents "$SIDPE")")" = "2" ] \
+  && ok "a leading tab does not defeat the learner-prep: contract on --end" \
+  || ko "a leading tab does not defeat the learner-prep: contract on --end"
+tend "$SIDPE"
+[ "$(grep -c . "$(agents "$SIDPE")")" = "1" ] \
+  && ok "a real --end still drains normally after prep-agent --ends were ignored" \
+  || ko "a real --end still drains normally after prep-agent --ends were ignored"
+tend "$SIDPE"
+[ ! -f "$(agents "$SIDPE")" ] \
+  && ok "the batch still ends once every real agent has returned" \
+  || ko "the batch still ends once every real agent has returned"
+
+# The reviewer-recommended interleaved sequence: dispatch 3, serve a salvo,
+# --end a learner-prep: agent (must not drain), --end a real agent (must
+# drain), then a third salvo must still be owed. This is exactly what
+# tend()'s old no-tool_input-at-all payload could never exercise — it is why
+# the one-sided --end survived seven task reviews.
+SIDIL=salvo6c
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+tstart "$SIDIL" "Agent one"; tstart "$SIDIL" "Agent two"; tstart "$SIDIL" "Agent three"
+quiz "$SIDIL" >/dev/null                              # serve salvo 1/3
+tend "$SIDIL" "learner-prep: cut a fill exercise"      # must not drain a real slot
+tend "$SIDIL"                                          # a real agent's return
+[ "$(grep -c . "$(agents "$SIDIL")")" = "2" ] \
+  && ok "interleaved: a prep --end plus one real --end leaves 2 in flight" \
+  || ko "interleaved: a prep --end plus one real --end leaves 2 in flight"
+printf '%s' "$(quiz "$SIDIL" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "interleaved: a salvo still serves instead of the batch ending early" \
+  || ko "interleaved: a salvo still serves instead of the batch ending early"
+{ [ "$(cat "$(served "$SIDIL")")" = "2" ] && [ "$(grep -c . "$(dispatched "$SIDIL")")" = "3" ]; } \
+  && ok "interleaved: a third salvo is still owed (served 2 of 3 dispatched)" \
+  || ko "interleaved: a third salvo is still owed (served 2 of 3 dispatched)"
+
+# A dev who switches the key off mid-flight must not be left with frozen counters.
+SIDD=salvo7
+tstart "$SIDD" "In flight when the key flips"
+echo '{"level":"S","agentSalvo":false}' > "$GCFG"
+tend "$SIDD"
+[ ! -f "$(agents "$SIDD")" ] \
+  && ok "--end drains the counters even with agentSalvo=false" \
+  || ko "--end drains the counters even with agentSalvo=false"
+
+# An --end with nothing in flight is harmless.
+echo '{"level":"S"}' > "$GCFG"
+SIDN=salvo8
+tend "$SIDN"
+[ ! -f "$(agents "$SIDN")" ] \
+  && ok "--end with no batch in flight is a no-op" || ko "--end with no batch in flight is a no-op"
+
+# --- agent salvo: the Stop-hook branch ---------------------------------------
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+
+SIDS1=salvoq1
+tstart "$SIDS1" "Port the mapper to the new DTO"
+out=$(quiz "$SIDS1")
+reason=$(echo "$out" | jq -r '.reason')
+echo "$out" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+  && ok "the salvo blocks with an agent in flight and no edits pending" \
+  || ko "the salvo blocks with an agent in flight and no edits pending"
+printf '%s' "$reason" | grep -qF '🤖 Learner salvo' \
+  && ok "the salvo trigger is distinguishable from the quiz trigger" \
+  || ko "the salvo trigger is distinguishable from the quiz trigger"
+printf '%s' "$reason" | grep -qF 'references/agent-salvo.md' \
+  && ok "the salvo trigger points at its own protocol" \
+  || ko "the salvo trigger points at its own protocol"
+printf '%s' "$reason" | grep -qF 'agent 1/1' \
+  && ok "the salvo trigger carries its rank in the batch" \
+  || ko "the salvo trigger carries its rank in the batch"
+printf '%s' "$reason" | grep -qF 'level: S' \
+  && ok "the salvo trigger carries the canonical level letter" \
+  || ko "the salvo trigger carries the canonical level letter"
+printf '%s' "$reason" | grep -qF 'questions: 2' \
+  && ok "the salvo trigger carries the question count" \
+  || ko "the salvo trigger carries the question count"
+printf '%s' "$reason" | grep -qF 'coach: off' \
+  && ok "the salvo trigger states the coach regime" \
+  || ko "the salvo trigger states the coach regime"
+printf '%s' "$reason" | grep -qF 'Port the mapper to the new DTO' \
+  && ok "the salvo trigger carries the delegated task" \
+  || ko "the salvo trigger carries the delegated task"
+lines=$(printf '%s\n' "$reason" | wc -l | tr -d ' ')
+[ "$lines" -le 3 ] \
+  && ok "the salvo reason stays within 3 lines" || ko "the salvo reason stays within 3 lines (got $lines)"
+printf '%s' "$reason" | grep -qiE 'memory\.md|spaced repetition|preparation agent' \
+  && ko "the salvo reason carries no protocol prose" \
+  || ok "the salvo reason carries no protocol prose"
+
+# One salvo per dispatched agent, then the quiz takes over.
+SIDS2=salvoq2
+tstart "$SIDS2" "A"; tstart "$SIDS2" "B"; tstart "$SIDS2" "C"
+n=0
+for i in 1 2 3 4; do
+  printf '%s' "$(quiz "$SIDS2" | jq -r '.reason // ""')" | grep -qF '🤖' && n=$((n + 1))
+done
+[ "$n" = "3" ] \
+  && ok "three dispatched agents earn exactly three salvos" \
+  || ko "three dispatched agents earn exactly three salvos (got $n)"
+
+# No agent in flight, no salvo — even with a stale dispatched counter.
+SIDS3=salvoq3
+tstart "$SIDS3" "A"; tstart "$SIDS3" "B"; tstart "$SIDS3" "C"
+tend "$SIDS3"; tend "$SIDS3"; tend "$SIDS3"
+echo 3 > "$(dispatched "$SIDS3")"   # stale on purpose
+printf '%s' "$(quiz "$SIDS3" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "an empty in-flight list serves no salvo" || ok "an empty in-flight list serves no salvo"
+
+# FINDING 4: a crashed or `claude --resume`d session must not leave $AGENTS
+# stale forever. Batch files are written directly here (bypassing tstart,
+# which always stamps "now") so a line's age can be controlled precisely.
+echo '{"level":"S"}' > "$GCFG"; rm -f "$PCFG"
+NOWTS=$(date +%s)
+STALE_TS=$((NOWTS - 5 * 3600))   # 5h old, past the 4h staleness bound
+
+SIDF1=salvofresh1
+printf '%s\t%s\n' "$STALE_TS" "Stale agent" > "$(agents "$SIDF1")"
+printf '%s\n' "$STALE_TS" > "$(dispatched "$SIDF1")"
+echo 0 > "$(served "$SIDF1")"
+printf '%s' "$(quiz "$SIDF1" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "an all-stale batch serves no salvo" || ok "an all-stale batch serves no salvo"
+{ [ ! -f "$(agents "$SIDF1")" ] && [ ! -f "$(dispatched "$SIDF1")" ] && [ ! -f "$(served "$SIDF1")" ]; } \
+  && ok "an all-stale batch is cleaned up (all three files removed)" \
+  || ko "an all-stale batch is cleaned up (all three files removed)"
+
+SIDF2=salvofresh2
+printf '%s\t%s\n' "$NOWTS" "Fresh agent" > "$(agents "$SIDF2")"
+printf '%s\n' "$NOWTS" > "$(dispatched "$SIDF2")"
+printf '%s' "$(quiz "$SIDF2" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a fresh line still serves a salvo" || ko "a fresh line still serves a salvo"
+
+SIDF3=salvofresh3
+{ printf '%s\t%s\n' "$STALE_TS" "Stale agent"; printf '%s\t%s\n' "$NOWTS" "Fresh agent"; } \
+  > "$(agents "$SIDF3")"
+printf '%s\n%s\n' "$STALE_TS" "$NOWTS" > "$(dispatched "$SIDF3")"
+printf '%s' "$(quiz "$SIDF3" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a mixed stale+fresh batch still serves a salvo (the fresh line is counted)" \
+  || ko "a mixed stale+fresh batch still serves a salvo (the fresh line is counted)"
+
+SIDF4=salvofresh4
+printf '%s\t%s\n' "not-a-number" "Malformed epoch agent" > "$(agents "$SIDF4")"
+printf '%s\n' "$NOWTS" > "$(dispatched "$SIDF4")"
+printf '%s' "$(quiz "$SIDF4" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ok "a line with a malformed epoch counts as fresh, not stale" \
+  || ko "a line with a malformed epoch counts as fresh, not stale"
+grep -qF 'AGENT_STALE_SECONDS=14400' "$PLUG/hooks/learner-quiz.sh" \
+  && ok "the staleness bound is a named constant, not a bare magic number" \
+  || ko "the staleness bound is a named constant, not a bare magic number"
+
+# The salvo consumes pending edits, exactly as the quiz does.
+SIDS4=salvoq4
+rec "$SIDS4" "$WORK/proj/src/Salvo.kt"
+tstart "$SIDS4" "Some delegation"
+printf '%s' "$(quiz "$SIDS4" | jq -r '.reason')" | grep -qF 'Salvo.kt' \
+  && ok "the salvo trigger carries the pending edits" || ko "the salvo trigger carries the pending edits"
+[ -s "$(edits "$SIDS4")" ] \
+  && ko "the salvo consumes the pending edits" || ok "the salvo consumes the pending edits"
+
+# The coach regime reaches the trigger and turns the exercise off downstream.
+SIDS5=salvoq5
+echo '{"level":"S","coach":true}' > "$GCFG"
+tstart "$SIDS5" "Delegated slice"
+printf '%s' "$(quiz "$SIDS5" | jq -r '.reason')" | grep -qF 'coach: on' \
+  && ok "coach mode is announced on the salvo trigger" || ko "coach mode is announced on the salvo trigger"
+
+# Nothing to ask: no questions and no exercise means fall through, not an empty block.
+SIDS6=salvoq6
+echo '{"level":"S","coach":true,"agentSalvoQuestions":0}' > "$GCFG"
+tstart "$SIDS6" "Delegated slice"
+printf '%s' "$(quiz "$SIDS6" | jq -r '.reason // ""')" | grep -qF '🤖' \
+  && ko "a salvo with no questions and no exercise does not block" \
+  || ok "a salvo with no questions and no exercise does not block"
+
+# A malformed count must never reach the trigger as an empty field.
+SIDS7=salvoq7
+echo '{"level":"S","agentSalvoQuestions":"many"}' > "$GCFG"
+tstart "$SIDS7" "Delegated slice"
+printf '%s' "$(quiz "$SIDS7" | jq -r '.reason')" | grep -qF 'questions: 2' \
+  && ok "a malformed agentSalvoQuestions falls back to 2 on the trigger" \
+  || ko "a malformed agentSalvoQuestions falls back to 2 on the trigger"
+
+# The guardrail still outranks everything.
+SIDS8=salvoq8
+echo '{"level":"S"}' > "$GCFG"
+mkdir -p "$WORK/proj/src"   # earlier tests only record paths; the file must really exist here
+printf 'fun f() {\n  // LEARNER-TODO: the body\n}\n' > "$WORK/proj/src/Hole.kt"
+tstart "$SIDS8" "Delegated slice"
+printf '%s' "$(quiz "$SIDS8" | jq -r '.reason')" | grep -qF 'LEARNER-TODO' \
+  && ok "the LEARNER-TODO guardrail still outranks a pending salvo" \
+  || ko "the LEARNER-TODO guardrail still outranks a pending salvo"
+rm -f "$WORK/proj/src/Hole.kt"
+
+# The quiz still works when nothing is in flight.
+SIDS9=salvoq9
+rec "$SIDS9" "$WORK/proj/src/Plain.kt"
+printf '%s' "$(quiz "$SIDS9" | jq -r '.reason')" | grep -qF '🎓 Learner (' \
+  && ok "the quiz trigger is untouched when no agent is in flight" \
+  || ko "the quiz trigger is untouched when no agent is in flight"
+
+# --- agent salvo: wiring and cleanup -----------------------------------------
+for f in "$PLUG/hooks/hooks.json" "$PLUG/hooks/settings.snippet.json"; do
+  b=$(basename "$f")
+  jq -e '[.hooks.PreToolUse[] | select(.matcher == "Task") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
+    && ok "$b wires the tracker on PreToolUse Task" || ko "$b wires the tracker on PreToolUse Task"
+  jq -e '[.hooks.PostToolUse[] | select(.matcher == "Task") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 1' "$f" >/dev/null 2>&1 \
+    && ok "$b wires the tracker on PostToolUse Task" || ko "$b wires the tracker on PostToolUse Task"
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh\" --start"))) | length == 1' "$f" \
+    >/dev/null 2>&1 \
+    && ok "$b passes --start exactly once" || ko "$b passes --start exactly once"
+  jq -e '[.. | .command? // empty] | map(select(test("learner-agent-track.sh\" --end"))) | length == 1' "$f" \
+    >/dev/null 2>&1 \
+    && ok "$b passes --end exactly once" || ko "$b passes --end exactly once"
+  # The Task matcher must not sweep in Write/Edit, or every edit would look like an agent.
+  jq -e '[.hooks.PostToolUse[] | select(.matcher == "Write|Edit") | .hooks[].command]
+         | map(select(test("learner-agent-track.sh"))) | length == 0' "$f" >/dev/null 2>&1 \
+    && ok "$b keeps the tracker out of the Write|Edit matcher" \
+    || ko "$b keeps the tracker out of the Write|Edit matcher"
+done
+
+IT="$WORK/install-tracker"; rm -rf "$IT"; mkdir -p "$IT"
+CLAUDE_CONFIG_DIR="$IT" bash "$ROOT/install.sh" --level S >/dev/null 2>&1
+[ -x "$IT/hooks/learner-agent-track.sh" ] \
+  && ok "install.sh copies the tracker" || ko "install.sh copies the tracker"
+rm -rf "$IT"
+[ "$(grep -cF 'learner-agent-track.sh' "$ROOT/uninstall.sh")" = "2" ] \
+  && ok "uninstall.sh removes the tracker from both install shapes" \
+  || ko "uninstall.sh removes the tracker from both install shapes"
+
+SIDC=salvoc1
+echo '{"level":"S"}' > "$GCFG"
+tstart "$SIDC" "Something"
+echo 1 > "$(served "$SIDC")"
+printf '{"session_id":"%s"}' "$SIDC" | sh "$CLEAN"
+{ [ ! -f "$(agents "$SIDC")" ] && [ ! -f "$(dispatched "$SIDC")" ] && [ ! -f "$(served "$SIDC")" ]; } \
+  && ok "SessionEnd cleans up the three salvo files" \
+  || ko "SessionEnd cleans up the three salvo files"
+
+# --- agent salvo: the skill protocol -----------------------------------------
+SALVO_REF="$PLUG/skills/learner/references/agent-salvo.md"
+SKILLMD="$PLUG/skills/learner/SKILL.md"
+
+[ -f "$SALVO_REF" ] \
+  && ok "the salvo protocol reference exists" || ko "the salvo protocol reference exists"
+grep -qF 'learner-prep:' "$SALVO_REF" \
+  && ok "the protocol states the anti-recursion contract" \
+  || ko "the protocol states the anti-recursion contract"
+grep -qF 'hook-quiz.md' "$SALVO_REF" \
+  && ok "the protocol defers to hook-quiz.md instead of restating it" \
+  || ko "the protocol defers to hook-quiz.md instead of restating it"
+grep -qF 'data.md' "$SALVO_REF" \
+  && ok "the protocol defers to data.md for the record files" \
+  || ko "the protocol defers to data.md for the record files"
+grep -qiF 'coach' "$SALVO_REF" \
+  && ok "the protocol covers the coach-mode case" || ko "the protocol covers the coach-mode case"
+
+# FINDING 3: a 🤖 landing while a salvo is still open must be queued, never
+# dropped — stop_hook_active only suppresses the very next Stop, so a later
+# turn's Stop can fire a second salvo before the first has finished asking.
+grep -qiF 'queued' "$SALVO_REF" \
+  && ok "the protocol states the salvo-vs-salvo queue rule" \
+  || ko "the protocol states the salvo-vs-salvo queue rule"
+grep -qiF 'not dropped' "$SALVO_REF" \
+  && ok "the protocol states a queued salvo is never dropped" \
+  || ko "the protocol states a queued salvo is never dropped"
+
+grep -qF '🤖' "$SKILLMD" \
+  && ok "SKILL.md documents the salvo trigger" || ko "SKILL.md documents the salvo trigger"
+grep -qF 'references/agent-salvo.md' "$SKILLMD" \
+  && ok "SKILL.md points at the salvo protocol" || ko "SKILL.md points at the salvo protocol"
+for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
+  grep -qF "$k" "$SKILLMD" "$PLUG/skills/learner/references/config.md" \
+    && ok "the config key $k is documented" || ko "the config key $k is documented"
+done
+grep -qiF 'salvo' "$PLUG/skills/coach/references/coach.md" \
+  && ok "coach.md states which channel wins when both land" \
+  || ko "coach.md states which channel wins when both land"
 
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
@@ -1463,21 +1922,23 @@ jq -e '.level == "S" and .synthesisFrequency == "often" and .blanksPerExercise =
   || ko "install writes the global config from flags"
 
 n=$(find "$I/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
-[ "$n" = 7 ] \
-  && ok "install lays down 7 learner-*.sh hook files" \
-  || ko "install lays down 7 learner-*.sh hook files (got $n)"
+want_n=$(find "$PLUG/hooks" -name 'learner-*.sh' | wc -l | tr -d ' ')
+{ [ "$n" = "$want_n" ] && [ "$n" -gt 0 ]; } \
+  && ok "install lays down all $want_n learner-*.sh hook files" \
+  || ko "install lays down all $want_n learner-*.sh hook files (got $n)"
 
-# hookcount() greps commands for "learner-", so it counts 5, not the 6 that
-# are actually wired: learner-config.sh is sourced, never invoked, so it was
-# never one of the 5 either way, and coach-gate.sh is a real wired hook that
-# this filter simply doesn't name-match. 5 is the right number for what this
-# helper counts; it is not a count of every wired hook.
+# hookcount() greps commands for "learner-", so it counts 7, not the 7 files
+# that are actually wired by coincidence: learner-config.sh is sourced, never
+# invoked, so it was never one of the 7 either way, and coach-gate.sh is a
+# real wired hook that this filter simply doesn't name-match — it is offset
+# by learner-agent-track.sh wiring twice (--start and --end). 7 is the right
+# number for what this helper counts; it is not a count of every wired hook.
 n1=$(hookcount "$I")
 inst "$I" --level S >/dev/null 2>&1
 n2=$(hookcount "$I")
-{ [ "$n1" = 5 ] && [ "$n2" = 5 ]; } \
-  && ok "hook merge is idempotent (5 name-matched hooks)" \
-  || ko "hook merge is idempotent (got $n1 then $n2, want 5/5)"
+{ [ "$n1" = 7 ] && [ "$n2" = 7 ]; } \
+  && ok "hook merge is idempotent (7 name-matched hooks)" \
+  || ko "hook merge is idempotent (got $n1 then $n2, want 7/7)"
 
 # install.sh's own dedup — exercised end to end, not a re-typed copy of its
 # jq — must catch every hook this project wires, coach's PreToolUse entry
@@ -1573,10 +2034,20 @@ grep -q 'broken' "$I5/settings.json" \
   || ko "install leaves an invalid settings.json untouched"
 
 I6="$WORK/inst6"; mkdir -p "$I6"
-inst "$I6" --level S --dry-run >/dev/null 2>&1
+dry_out=$(inst "$I6" --level S --dry-run 2>&1)
 { [ ! -e "$I6/learner.json" ] && [ ! -e "$I6/hooks" ]; } \
   && ok "--dry-run writes nothing" \
   || ko "--dry-run writes nothing"
+
+# FINDING 5: install.sh's --dry-run hook count must match what its own copy
+# loop actually copies. Derived from disk, the same "ground truth from disk"
+# style as the hook-count drift guard further down (search "hook count drift
+# guard") — this exact class of staleness has now drifted three times on this
+# branch.
+hook_n_dry=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | grep -c .)
+printf '%s' "$dry_out" | grep -qF "would copy $hook_n_dry hooks" \
+  && ok "--dry-run reports the actual hook count ($hook_n_dry)" \
+  || ko "--dry-run reports the actual hook count (want $hook_n_dry, got: $(printf '%s' "$dry_out" | grep 'would copy'))"
 
 I7="$WORK/inst7"
 out=$(PATH="/usr/bin:/bin" HOME="$WORK/nohome" CLAUDE_CONFIG_DIR="$I7" \
@@ -1987,6 +2458,53 @@ blocks "$out" \
   || ko "guardrail works in a repo with no commits yet"
 
 # The marker is a code comment: the bare word in prose is not an exercise.
+# A brand-new markdown page that NAMES the marker in an inline code span is
+# documenting the feature — every README and skill file in this project does it —
+# and blocking on it would hold the session hostage to its own docs until they are
+# committed, since an untracked file matches neither a HEAD path nor a HEAD blob.
+G=$(gmk); printf 'Claude cuts `// LEARNER-TODO` holes in a real function.\n' > "$G/DOC.md"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "a new .md naming // LEARNER-TODO in an inline code span does not block" \
+  || ok "a new .md naming // LEARNER-TODO in an inline code span does not block"
+
+# The guarantee that matters, again: relaxing markdown must not swallow a real hole.
+# A fenced block is where an exercise cutting a documented snippet puts its holes.
+G=$(gmk); printf 'Example:\n\n```kotlin\nfun f() {\n  // LEARNER-TODO: body\n}\n```\n' > "$G/FENCE.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("FENCE.md")' >/dev/null 2>&1; } \
+  && ok "a hole inside a fenced block in a .md still blocks" \
+  || ko "a hole inside a fenced block in a .md still blocks"
+
+# Bare prose, no span: nothing says this is documentation, so it still blocks.
+G=$(gmk); printf 'some text\n// LEARNER-TODO: body\nmore text\n' > "$G/BARE.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("BARE.md")' >/dev/null 2>&1; } \
+  && ok "a bare marker line in a .md still blocks" \
+  || ko "a bare marker line in a .md still blocks"
+
+# One page can do both. The span acquits its own line, never the file.
+G=$(gmk); printf 'Claude cuts `// LEARNER-TODO` holes.\n\n    // LEARNER-TODO: cut\n' > "$G/MIXED.md"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("MIXED.md")' >/dev/null 2>&1; } \
+  && ok "a .md that both names the marker and carries a hole still blocks" \
+  || ko "a .md that both names the marker and carries a hole still blocks"
+
+# The relaxation is markdown-only: a source file is never acquitted by backticks.
+G=$(gmk); printf 'fun f() {\n  // LEARNER-TODO: `body`\n}\n' > "$G/TICKS.kt"
+out=$(guard "$G" "$WORK/cfg")
+{ blocks "$out" && echo "$out" | jq -e '.reason | test("TICKS.kt")' >/dev/null 2>&1; } \
+  && ok "backticks never acquit a marker outside a markdown file" \
+  || ko "backticks never acquit a marker outside a markdown file"
+
+# The plugin's own README is the case that triggered this: it must not block.
+G=$(gmk); mkdir -p "$G/plugins/learner"
+cp "$ROOT/plugins/learner/README.md" "$G/plugins/learner/README.md"
+out=$(guard "$G" "$WORK/cfg")
+blocks "$out" \
+  && ko "the plugin's own README does not trip the guardrail" \
+  || ok "the plugin's own README does not trip the guardrail"
+
 G=$(gmk); printf 'the string LEARNER-TODO appears in this doc\n' > "$G/NOTES.md"
 out=$(guard "$G" "$WORK/cfg")
 [ -z "$out" ] \
@@ -2163,7 +2681,7 @@ for flag in "--project=" "--project"; do
     || ko "the '$flag' error message names the flag (got '$out')"
 done
 { [ -f "$UE/hooks/learner-quiz.sh" ] && [ -f "$UE/learner.json" ] \
-  && [ "$(hookcount "$UE")" = 5 ]; } \
+  && [ "$(hookcount "$UE")" = 7 ]; } \
   && ok "a rejected --project leaves the user-level install untouched" \
   || ko "a rejected --project leaves the user-level install untouched"
 
@@ -2321,7 +2839,7 @@ grep -q 'learner-memory.md\|learner-recap.md' "$SK" "$REFS"/*.md "$PLUG"/skills/
   || ok "skill uses the new data paths, not the old per-project names"
 
 for k in level enabled questionStyles synthesisFrequency blanksPerExercise untrackGlobs disabledPaths; do
-  grep -q "$k" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+  grep -q "$k" "$SK" "$PLUG/skills/learner/references/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 for l in D J C S E; do
@@ -3205,16 +3723,31 @@ for p in $PROFILES; do
     && ok "usage.html names the $p profile" \
     || ko "usage.html names the $p profile"
 done
+# --- agent salvo docs --------------------------------------------------------
+grep -qF 'id="salvo"' "$SITE_USAGE" \
+  && ok "usage.html covers the agent salvo" || ko "usage.html covers the agent salvo"
+grep -qF 'learner-prep:' "$SITE_USAGE" \
+  && ok "usage.html names the learner-prep: contract the dev will see" \
+  || ko "usage.html names the learner-prep: contract the dev will see"
+for k in agentSalvo agentSalvoQuestions agentSalvoFill; do
+  grep -qF "$k" "$SITE_CONFIG" && ok "config.html documents $k" || ko "config.html documents $k"
+done
+grep -qiF 'salvo' "$RM" \
+  && ok "README covers the agent salvo" || ko "README covers the agent salvo"
 
 # --- hook count drift guard ---------------------------------------------------
-# Five prose spots (README twice, index.html, safety.html, install.html) each
-# state how many hook files ship, and none of them turned red when coach-gate.sh
-# and coach-watch.sh joined the original six — "six" quietly went stale in all
-# five at once. Ground truth is read from the filesystem and from
+# Prose spots across README and docs/*.html each state how many hook files
+# ship, and none of them turned red when coach-gate.sh and coach-watch.sh
+# joined the original six — "six" quietly went stale everywhere at once, and
+# it happened again with a ninth hook: config.html and usage.html's shared
+# footer sentence, and index.html's stat-badge number, were never checked and
+# went stale to "eight" while README/index.html's own prose/safety.html/
+# install.html were fixed. Ground truth is read from the filesystem and from
 # hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
-# above (test.sh:1837-1854), so a ninth hook (or a wiring change) turns every
-# stale copy red automatically instead of leaving a plausible-sounding number
-# wrong forever.
+# above (test.sh:1837-1854) and the coach-key prose-count check further up
+# (search "docs/config.html: coach* keys prose count"), so a new hook (or a
+# wiring change) turns every stale copy red automatically instead of leaving
+# a plausible-sounding number wrong forever.
 hook_files=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | sort)
 hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
 case "$hook_n" in
@@ -3226,6 +3759,8 @@ case "$hook_n" in
   11) hook_word=eleven ;;
   12) hook_word=twelve ;;
   13) hook_word=thirteen ;;
+  14) hook_word=fourteen ;;
+  15) hook_word=fifteen ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
@@ -3237,6 +3772,9 @@ case "$wired_n" in
   8) wired_word=eight ;;
   9) wired_word=nine ;;
   10) wired_word=ten ;;
+  11) wired_word=eleven ;;
+  12) wired_word=twelve ;;
+  13) wired_word=thirteen ;;
   *) wired_word='__no-word-mapped__' ;;
 esac
 
@@ -3265,9 +3803,27 @@ grep -qiF "covers all $hook_word shipped hook files" "$RM" \
   && ok "README's hooks/*.sh gloss matches the $hook_n files on disk" \
   || ko "README's hooks/*.sh gloss matches the $hook_n files on disk"
 
-grep -qiF "$hook_word POSIX <code>sh</code> hooks" "$SITE" \
-  && ok "index.html's hook count matches the $hook_n files on disk" \
-  || ko "index.html's hook count matches the $hook_n files on disk"
+# The "One skill and N POSIX <code>sh</code> hooks that quiz you…" sentence is
+# shared footer boilerplate copy-pasted onto every docs page, not just
+# index.html's — checked on whichever pages actually carry it, so a page that
+# drops the footer someday does not silently stop being checked, and a page
+# that keeps it can never again go stale unnoticed the way config.html and
+# usage.html just did.
+for docf in "$ROOT"/docs/*.html; do
+  grep -qF 'POSIX <code>sh</code> hooks that quiz you' "$docf" || continue
+  grep -qiF "$hook_word POSIX <code>sh</code> hooks that quiz you" "$docf" \
+    && ok "$(basename "$docf")'s footer hook count matches the $hook_n files on disk" \
+    || ko "$(basename "$docf")'s footer hook count matches the $hook_n files on disk"
+done
+
+# index.html's stat-band badge states the same count as a bare digit, in a
+# different sentence entirely from the footer above — checked separately
+# because a fix to one does not imply the other is fixed.
+badge_n=$(grep -oE '<b>[0-9]+</b><span>POSIX <code>sh</code> hook files</span>' "$SITE" \
+  | grep -oE '[0-9]+')
+[ "$badge_n" = "$hook_n" ] \
+  && ok "index.html's stat badge matches the $hook_n files on disk" \
+  || ko "index.html's stat badge matches the $hook_n files on disk"
 
 grep -qiF "the $hook_word hook files, the skills" "$SITE_SAFETY" \
   && ok "safety.html's hook count matches the $hook_n files on disk" \
@@ -3384,6 +3940,12 @@ grep -qF 'working tree' "$SITE_SAFETY" && grep -qF 'HEAD' "$SITE_SAFETY" \
   && ok "safety.html explains the guardrail counts leftovers only" \
   || ko "safety.html explains the guardrail counts leftovers only"
 
+# The markdown relaxation is a hole in a safety net, so the page that documents the
+# net has to document the hole — and say how narrow it is.
+{ grep -qF 'inline code span' "$SITE_SAFETY" && grep -qF 'fenced block' "$SITE_SAFETY"; } \
+  && ok "safety.html documents the markdown inline-span exemption and its limit" \
+  || ko "safety.html documents the markdown inline-span exemption and its limit"
+
 for p in $PAGES; do
   grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire' "$(page_path "$p")" \
     && ko "$p.html mentions no removed key or old level" \
@@ -3450,7 +4012,7 @@ grep -qiF 'copyleft' "$RM" \
 # edit to either list that follows.
 HOOK_SH=$(cd "$PLUG/hooks" && ls -- *.sh | sort)
 LIC_SCAN="README.md docs/"
-for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN hooks/$hf"; done
+for hf in $HOOK_SH; do LIC_SCAN="$LIC_SCAN plugins/learner/hooks/$hf"; done
 LIC_SCAN="$LIC_SCAN install.sh uninstall.sh bootstrap.sh
 Formula/learner.rb scripts/bump-formula.sh packaging/deb/build.sh
 packaging/apt-repo/assemble-site.sh"
@@ -3745,10 +4307,21 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "9" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "9" ]; } \
-  && ok "hooks/hooks.json wires exactly 9 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 9 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+# Derived rather than counted by hand. A literal number here conflicts on every
+# branch that adds a hook — it did so three times over — and the number was never
+# the thing worth pinning. What matters is that every wired command goes through
+# the plugin root, and that every script it names is one this payload actually
+# ships: a typo in a path is otherwise a hook that silently never runs.
+n_cmds=$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")
+n_root=$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")
+unknown_hook=""
+for sc in $(jq -r '.hooks[][].hooks[].command' "$PLUGIN_HOOKS" \
+            | sed -n 's#.*/hooks/\([A-Za-z0-9_.-]*\.sh\).*#\1#p' | sort -u); do
+  [ -f "$PLUG/hooks/$sc" ] || unknown_hook="$unknown_hook $sc"
+done
+{ [ "$n_cmds" -gt 0 ] && [ "$n_cmds" = "$n_root" ] && [ -z "$unknown_hook" ]; } \
+  && ok "hooks.json wires $n_cmds commands, every one via \${CLAUDE_PLUGIN_ROOT} and shipped" \
+  || ko "hooks.json wiring is off (commands=$n_cmds via-root=$n_root unknown:$unknown_hook)"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -3757,6 +4330,42 @@ grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
 [ "$(jq -r '.version' "$PLUGIN_JSON")" = "$(cat "$ROOT/VERSION")" ] \
   && ok "plugin.json's version matches the VERSION file" \
   || ko "plugin.json's version matches the VERSION file"
+
+# A marketplace pins this plugin to plugins/learner as a git-subdir, so an install
+# receives that directory and nothing above it: the licence text and the README have
+# to live inside it, not only at the repository root.
+[ -f "$PLUG/LICENSE" ] \
+  && ok "the plugin directory ships its own LICENSE" \
+  || ko "the plugin directory ships its own LICENSE"
+
+cmp -s "$PLUG/LICENSE" "$ROOT/LICENSE" \
+  && ok "the plugin's LICENSE is identical to the repository's" \
+  || ko "the plugin's LICENSE is identical to the repository's"
+
+# plugin.json declares GPL-3.0-or-later; the shipped text has to be that licence.
+{ [ "$(jq -r '.license' "$PLUGIN_JSON")" = "GPL-3.0-or-later" ] \
+  && grep -q 'GNU GENERAL PUBLIC LICENSE' "$PLUG/LICENSE" \
+  && grep -q 'Version 3' "$PLUG/LICENSE"; } \
+  && ok "the plugin's LICENSE carries the licence plugin.json declares" \
+  || ko "the plugin's LICENSE carries the licence plugin.json declares"
+
+[ -f "$PLUG/README.md" ] \
+  && ok "the plugin directory ships its own README" \
+  || ko "the plugin directory ships its own README"
+
+grep -qF 'claude plugin install learner@learning-with-claude' "$PLUG/README.md" \
+  && ok "the plugin README gives the plugin install command" \
+  || ko "the plugin README gives the plugin install command"
+
+# The README must not promise skills the plugin does not ship.
+README_SKILLS=0
+for d in "$PLUG"/skills/*/; do
+  name="$(basename "$d")"
+  grep -qF "\`$name\`" "$PLUG/README.md" && README_SKILLS=$((README_SKILLS + 1))
+done
+[ "$README_SKILLS" = "$(find "$PLUG/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" ] \
+  && ok "the plugin README names every skill the plugin ships" \
+  || ko "the plugin README names every skill the plugin ships"
 
 # --- coach gate -------------------------------------------------------------
 GATE="$PLUG/hooks/coach-gate.sh"
@@ -4840,7 +5449,7 @@ CO="$PLUG/skills/coach/references/coach.md"
 # Every config key the code reads must be documented, or a dev cannot discover it.
 for k in coach coachPollSeconds coachQuietPolls coachMinLines coachCooldownMinutes \
          coachMaxWaitMinutes coachIdleMinutes; do
-  grep -q "\`$k\`" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
+  grep -q "\`$k\`" "$SK" "$PLUG/skills/learner/references/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
 
 # The nine removed v1 keys are already listed as obsolete above. The two v1 keys
@@ -4848,11 +5457,15 @@ done
 # still read: a config carrying v1's `coachPollSeconds: 300` silently gets a
 # five-minute pause cadence instead of an inert key. They must be named as
 # CHANGED, and they were named nowhere at all.
-{ grep -qF 'kept with new meanings' "$SK" \
-  && grep -qF '`coachPollSeconds` (v1 default `45`)' "$SK" \
-  && grep -qF '`coachCooldownMinutes` (v1 default `5`)' "$SK"; } \
-  && ok "SKILL.md names the two coach keys retained with new meanings" \
-  || ko "SKILL.md names the two coach keys retained with new meanings"
+# The migration note lives in references/config.md since main moved the config
+# rules out of SKILL.md; the assertion follows it there rather than pinning the
+# file it used to sit in.
+CFGMD="$PLUG/skills/learner/references/config.md"
+{ grep -qF 'kept with new meanings' "$CFGMD" \
+  && grep -qF '`coachPollSeconds` (v1 default `45`)' "$CFGMD" \
+  && grep -qF '`coachCooldownMinutes` (v1 default `5`)' "$CFGMD"; } \
+  && ok "config.md names the two coach keys retained with new meanings" \
+  || ko "config.md names the two coach keys retained with new meanings"
 
 # CYCLE lives only in the running watcher's shell variable and no file holds it,
 # so the status skill cannot report it however it is asked to.

@@ -26,6 +26,9 @@ rm -f "$DIR/claude-learner-${SID}.edits" \
       "$DIR/claude-learner-${SID}.coach-armed" \
       "$DIR/claude-learner-${SID}.coach-armwarn" \
       "$DIR/claude-learner-${SID}.coach-armseen" \
-      "$DIR/claude-learner-${SID}.coach-stopped"
+      "$DIR/claude-learner-${SID}.coach-stopped" \
+      "$DIR/claude-learner-${SID}.agents" \
+      "$DIR/claude-learner-${SID}.agents-dispatched" \
+      "$DIR/claude-learner-${SID}.agents-served"
 rm -rf "$DIR/claude-learner-${SID}.coach-base"
 exit 0

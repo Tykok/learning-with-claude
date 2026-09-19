@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Stop hook, two jobs.
+# Stop hook, three jobs.
 #
 # 1. Guardrail — while a `// LEARNER-TODO` marker left behind by a crashed
 #    fill-in exercise survives in the working tree, block and force a restore, so
@@ -9,7 +9,10 @@
 #    in a repo where the quiz is switched off. Only `disabledPaths` (or a missing
 #    jq / git repo / session id) silences it, and it blocks at most twice per
 #    outstanding exercise so a session can always end.
-# 2. Quiz trigger — when the session edited tracked files, block once with a
+# 2. Agent salvo — while a dispatched subagent is still in flight, serve one
+#    short quiz salvo per agent so the wait is not dead time. Ahead of the quiz
+#    trigger, behind the guardrail.
+# 3. Quiz trigger — when the session edited tracked files, block once with a
 #    SHORT trigger. The protocol lives in the skill (references/hook-quiz.md),
 #    never here: this reason is rendered in the console.
 
@@ -38,6 +41,28 @@ GUARD="$TMPD/claude-learner-${SID}.guard"
 # missing from HEAD count. Untracked files are included: a file the session just
 # created with Write is the guardrail's primary case.
 GUARD_MAX=2
+
+# Prose that NAMES the marker is documentation, not a hole. A `fill` exercise cuts
+# holes into code, so it writes the marker as a bare comment line; a page explaining
+# the feature writes it inside an inline code span — `// LEARNER-TODO` — the way this
+# project's own READMEs and skill files do. Strip the inline spans from a markdown
+# file and look again: only what survives counts.
+#
+# Scoped to markdown and to INLINE spans on purpose. A fenced block is left intact,
+# because that is where an exercise cutting holes into a documented snippet would put
+# them, and acquitting a fence would hide exactly the case the guardrail exists for.
+# Nothing outside *.md is relaxed at all. Returns 0 (acquit) only for a markdown file
+# whose every occurrence sits in an inline span.
+learner_md_names_only() {
+  case "$1" in
+    *.md|*.markdown) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$1" ] || return 1
+  sed 's/`[^`]*`//g' "$1" 2>/dev/null | grep -qF '// LEARNER-TODO' && return 1
+  return 0
+}
+
 if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
   WORKTREE=$(git -C "$ROOT" grep --untracked -lF '// LEARNER-TODO' 2>/dev/null)
   # Empty in a repo with no commits yet, where `git grep … HEAD` fails: then
@@ -75,6 +100,7 @@ if [ -n "$ROOT" ] && ! learner_path_disabled "$ROOT" "$CFG"; then
         continue
       fi
     fi
+    learner_md_names_only "$ROOT/$_gf" && continue
     NHOLES=$((NHOLES + 1))
     [ "$NHOLES" -le 20 ] && HOLES="$HOLES $_gf"
   done <<EOF
@@ -100,7 +126,7 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   fi
 fi
 
-# --- 2) Quiz trigger --------------------------------------------------------
+# --- 2) Agent salvo ---------------------------------------------------------
 learner_active "$CFG" "$ROOT" || exit 0
 
 # Don't re-block while already continuing from this hook, else Claude never waits
@@ -108,8 +134,9 @@ learner_active "$CFG" "$ROOT" || exit 0
 ACTIVE=$(printf '%s' "$DATA" | jq -r '.stop_hook_active // false')
 [ "$ACTIVE" = "true" ] && exit 0
 
-[ -s "$STATE" ] || exit 0
-
+# Resolved before the pending-edits check below, because the agent salvo needs
+# them on a turn that edited nothing at all — which is exactly the turn that
+# only dispatched subagents.
 LEVEL=$(learner_level "$(printf '%s' "$CFG" | jq -r '.level // empty')")
 STYLES=$(printf '%s' "$CFG" | jq -r '
   if (.questionStyles | type) == "array"
@@ -119,6 +146,83 @@ case "$STYLES" in ''|null) STYLES=auto ;; esac
 BLANKS=$(printf '%s' "$CFG" | jq -r '.blanksPerExercise // 2')
 case "$BLANKS" in ''|*[!0-9]*) BLANKS=2 ;; esac
 [ "$BLANKS" -lt 1 ] && BLANKS=1
+
+# While a subagent is in flight the main conversation has nothing to do but
+# wait, which is the best teaching window a session offers: serve one salvo per
+# dispatched agent, then fall through to the quiz. Deliberately ahead of the
+# pending-edits check and deliberately behind the guardrail above.
+AGENTS="$TMPD/claude-learner-${SID}.agents"
+DISPATCHED="$TMPD/claude-learner-${SID}.agents-dispatched"
+SERVED="$TMPD/claude-learner-${SID}.agents-served"
+
+# A crashed or `claude --resume`d session can leave $AGENTS holding lines for
+# agents that died with it: SessionEnd may never fire and no PostToolUse ever
+# arrives, yet --resume reuses the same session id, so the resumed session
+# would otherwise find a batch that will never drain — salvos served for
+# phantom work, "task:" quoting a dead delegation, and "agent N/M" growing
+# without bound as later dispatches append to it. A named staleness bound, not
+# a bare number: 4 hours comfortably outlives any real Task call.
+AGENT_STALE_SECONDS=14400
+
+if learner_salvo_active "$CFG" "$ROOT" && [ -s "$AGENTS" ]; then
+  NOW=$(date +%s)
+  # A line whose epoch (field 1) is not all digits counts as fresh, never as
+  # stale: dropping a line we cannot date would lose a real in-flight agent,
+  # which this feature must never do.
+  INFLIGHT=$(awk -F'\t' -v now="$NOW" -v max="$AGENT_STALE_SECONDS" '
+    $1 !~ /^[0-9]+$/ || (now - $1) <= max { n++ }
+    END { print n + 0 }
+  ' "$AGENTS")
+  case "$INFLIGHT" in ''|*[!0-9]*) INFLIGHT=0 ;; esac
+
+  if [ "$INFLIGHT" -eq 0 ]; then
+    # Nothing left in flight once staleness is accounted for: the batch is
+    # over and its three files die together, exactly as a normal --end leaves
+    # them, so the next dispatch starts a fresh batch instead of grafting onto
+    # a phantom one.
+    rm -f "$AGENTS" "$DISPATCHED" "$SERVED"
+  else
+    # grep -c rather than wc -l: a last line with no trailing newline still
+    # counts, and $DISPATCHED is append-only for the same reason $AGENTS is —
+    # a plain read/increment/overwrite loses increments when several --start
+    # calls land at once (a parallel batch of Task dispatches).
+    ND=$(grep -c . "$DISPATCHED" 2>/dev/null); case "$ND" in ''|*[!0-9]*) ND=0 ;; esac
+    NS=$(cat "$SERVED" 2>/dev/null); case "$NS" in ''|*[!0-9]*) NS=0 ;; esac
+
+    QN=$(learner_int "$(printf '%s' "$CFG" | jq -r '.agentSalvoQuestions // empty')" 2 0)
+    FILL=$(printf '%s' "$CFG" | jq -r '.agentSalvoFill')
+    COACH=off
+    learner_coach_active "$CFG" "$ROOT" && COACH=on
+
+    # No questions AND no exercise is an empty salvo. Don't spend the turn's
+    # one block on it — the quiz below may still have something to ask.
+    EMPTY=0
+    if [ "$QN" -eq 0 ]; then
+      if [ "$FILL" != "true" ] || [ "$COACH" = "on" ]; then EMPTY=1; fi
+    fi
+
+    if [ "$INFLIGHT" -gt 0 ] && [ "$NS" -lt "$ND" ] && [ "$EMPTY" -eq 0 ]; then
+      NS=$((NS + 1)); echo "$NS" > "$SERVED"
+      # The most recent dispatch is the delegation the dev just watched Claude make.
+      TASK=$(tail -n 1 "$AGENTS" | cut -f2-)
+      SFILES=''
+      [ -s "$STATE" ] && SFILES=$(sort -u "$STATE" | head -n 20 | tr '\n' ' ')
+
+      SREASON="🤖 Learner salvo (level: $LEVEL, questions: $QN, blanks: $BLANKS, styles: $STYLES, agent $NS/$ND, coach: $COACH) — task: $TASK — files: $SFILES
+Invoke the \`learner\` skill and follow references/agent-salvo.md. Ask ONE question at a time, then wait for the dev's answer."
+
+      # Same batch discipline as the quiz: one channel per batch of edits, never two.
+      : > "$STATE"
+
+      jq -n --arg r "$SREASON" '{decision:"block", reason:$r}'
+      exit 0
+    fi
+  fi
+fi
+
+# --- 3) Quiz trigger --------------------------------------------------------
+[ -s "$STATE" ] || exit 0
+
 EVERY=$(learner_synthesis_n "$(printf '%s' "$CFG" | jq -r '.synthesisFrequency // "normal"')")
 
 # Per-session question counter drives the synthesis cadence.

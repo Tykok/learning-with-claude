@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Thirteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
+Fourteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
 `status`, `improve`, `coach`, `export`, `sync`, `update`) and `pilot`, invocable as `/learner:quiz` and
 friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
@@ -97,7 +97,7 @@ reference, including the four axes, the weekly brief and the privacy paragraph, 
 [the site](https://tykok.github.io/learning-with-claude/usage.html#pilot).
 ## Sync — carry your record between machines
 
-`learner sync` moves your learning record — `memory.md`, `recap.md` and the global
+`learner sync` moves your learning record — `memory.md`, `recap.md`, `libs.md` and the global
 `learner.json` — between machines through one private GitHub gist. It is the only path that
 ever sends the record off the machine, and it is **manual only**: no hook pushes anything;
 nothing leaves until you type it.
@@ -124,6 +124,21 @@ view, not a restore path; the gist carries the raw state.
 
 Requires `gh`, authenticated (`gh auth login`). Habit worth keeping: `learner sync push` before
 you switch machines, so the record you left behind is the one you pick back up.
+## Agent salvo — questions while the subagents work
+
+When Claude hands work to subagents, the main conversation would otherwise go quiet. Instead it
+owes you a short burst per dispatched agent: two questions about the delegation, the diff and
+your open weak spots, then one fill-in exercise cut in your own code by a dedicated agent while
+you answer. Three agents dispatched at once earn three salvos, served one per turn; the moment
+the last agent returns, the rest are dropped.
+
+    learner config agentSalvo=false     # off
+    learner config agentSalvoQuestions=1
+    learner config agentSalvoFill=false # questions only
+
+In coach mode the salvo is questions-only: the exercise would need a write, and the coach gate
+denies it. If your client runs subagents synchronously, the salvo lands just after the result
+instead of during the wait — the questions are still asked.
 
 ## Requirements
 
@@ -285,7 +300,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `plugins/learner/hooks/*.sh` glob covers all thirteen shipped hook files, including `learner-config.sh`. CI
+The `plugins/learner/hooks/*.sh` glob covers all fourteen shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step. CI also runs `claude plugin validate` on the marketplace, on the

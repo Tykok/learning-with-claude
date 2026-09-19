@@ -138,7 +138,8 @@ if [ -n "$PROJECT" ]; then
         "$TARGET/.claude/hooks/coach-armed-check.sh" \
         "$TARGET/.claude/hooks/pilot-record.sh" \
         "$TARGET/.claude/hooks/pilot-brief.sh" \
-        "$TARGET/.claude/hooks/pilot-nudge.sh"
+        "$TARGET/.claude/hooks/pilot-nudge.sh" \
+        "$TARGET/.claude/hooks/learner-agent-track.sh"
   rm -rf "$TARGET/.claude/skills/learner"
   strip_wiring "$TARGET/.claude/settings.json"
   GI="$TARGET/.gitignore"
@@ -170,7 +171,8 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/coach-armed-check.sh" \
       "$CFG_DIR/hooks/pilot-record.sh" \
       "$CFG_DIR/hooks/pilot-brief.sh" \
-      "$CFG_DIR/hooks/pilot-nudge.sh"
+      "$CFG_DIR/hooks/pilot-nudge.sh" \
+      "$CFG_DIR/hooks/learner-agent-track.sh"
 # Skill directories to remove, derived from what install.sh actually ships
 # alongside this script rather than named one by one — a second skill
 # (pilot) must not need a second line here, or removal only fixes one at a

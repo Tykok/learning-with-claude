@@ -18,10 +18,11 @@
 #   learner_coach_active CFG ROOT   true when the coach regime is on here
 #   pilot_enabled CFG               true when Pilot may read this session
 #   pilot_int RAW FALLBACK FLOOR    positive integer from config, or FALLBACK
+#   learner_salvo_active CFG ROOT   true when the agent salvo may run here
 
 LEARNER_CFG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachPollSeconds":30,"coachQuietPolls":1,"coachMinLines":10,"coachCooldownMinutes":3,"coachMaxWaitMinutes":15,"coachIdleMinutes":45,"pilotEnabled":false,"pilotCadenceDays":7,"pilotJudgeIntervalHours":24,"pilotNudge":true}'
+LEARNER_DEFAULTS='{"enabled":true,"questionStyles":"auto","synthesisFrequency":"normal","blanksPerExercise":2,"untrackGlobs":[],"disabledPaths":[],"coach":false,"coachPollSeconds":30,"coachQuietPolls":1,"coachMinLines":10,"coachCooldownMinutes":3,"coachMaxWaitMinutes":15,"coachIdleMinutes":45,"pilotEnabled":false,"pilotCadenceDays":7,"pilotJudgeIntervalHours":24,"pilotNudge":true,"agentSalvo":true,"agentSalvoQuestions":2,"agentSalvoFill":true}'
 
 # A JSON object from a file, or {} when the file is missing, unreadable or not an object.
 _learner_read_json() {
@@ -221,5 +222,17 @@ learner_coach_active() {
   _lcaroot="$2"
   learner_active "$_lcacfg" "$_lcaroot" || return 1
   [ "$(printf '%s' "$_lcacfg" | jq -r '.coach')" = "true" ] || return 1
+  return 0
+}
+# learner_salvo_active CFG ROOT — true when the agent salvo may run here. The
+# salvo is the learner regime plus one switch, exactly like the coach: anything
+# that silences the quiz (no level, enabled:false, a disabledPaths prefix)
+# silences the salvo too. A malformed `agentSalvo` reads as off rather than on:
+# a default-true key whose value is garbage should go quiet, not louder.
+learner_salvo_active() {
+  _lsacfg="$1"
+  _lsaroot="$2"
+  learner_active "$_lsacfg" "$_lsaroot" || return 1
+  [ "$(printf '%s' "$_lsacfg" | jq -r '.agentSalvo')" = "true" ] || return 1
   return 0
 }

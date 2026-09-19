@@ -14,6 +14,12 @@
         "hooks": [
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/coach-gate.sh\"", "timeout": 10 }
         ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-agent-track.sh\" --start", "timeout": 10 }
+        ]
       }
     ],
     "PostToolUse": [
@@ -21,6 +27,12 @@
         "matcher": "Write|Edit",
         "hooks": [
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-record-edit.sh\"", "timeout": 10 }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/learner-agent-track.sh\" --end", "timeout": 10 }
         ]
       }
     ],

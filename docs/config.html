@@ -87,6 +87,11 @@
       <tr><td><code>pilotJudgeIntervalHours</code></td><td>int ≥ 1</td><td><code>24</code></td><td>Minimum gap between queue drains</td></tr>
       <tr><td><code>pilotNudge</code></td><td>bool</td><td><code>true</code></td><td>Whether a live manoeuvre may speak on UserPromptSubmit</td></tr>
     </tbody>
+    <tbody class="group-salvo">
+      <tr><td><code>agentSalvo</code></td><td>bool</td><td><code>true</code></td><td>Questions while a subagent is working</td></tr>
+      <tr><td><code>agentSalvoQuestions</code></td><td>int ≥ 0</td><td><code>2</code></td><td>Questions in a salvo, before the exercise</td></tr>
+      <tr><td><code>agentSalvoFill</code></td><td>bool</td><td><code>true</code></td><td>Cut a fill-in exercise at the end of a salvo</td></tr>
+    </tbody>
   </table>
   </div>
 
@@ -185,7 +190,7 @@
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and thirteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>
