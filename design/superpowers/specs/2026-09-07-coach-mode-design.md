@@ -1,5 +1,9 @@
 # Coach mode — the dev writes the code, Claude challenges it
 
+> **Superseded in part** by `2026-09-18-coach-v2-design.md`: the cadence (§2.3, §2.4) and the
+> review protocol (§4) are replaced there. The gate (§3) and the candidate/delta machinery
+> (§2.1, §2.2) still describe the shipped behaviour.
+
 Date: 2026-09-07
 Status: approved design, not yet implemented
 

@@ -178,15 +178,15 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   <code>learner sync push</code> or <code>learner sync pull</code> yourself. No hook ever
   calls it; nothing leaves on its own, on any cadence, from any regime.</p>
 
-  <p>A push snapshots <code>memory.md</code>, <code>recap.md</code> and your global
-  <code>learner.json</code> into one GitHub gist, created <code>--secret</code> the first time,
-  after asking. A <strong>secret gist is unlisted, not access-controlled</strong>: GitHub does
-  not check who is asking, only whether they have the URL. Anyone with that URL can read the
+  <p>A push snapshots <code>memory.md</code>, <code>recap.md</code>, <code>libs.md</code> and your
+  global <code>learner.json</code> into one GitHub gist, created <code>--secret</code> the first
+  time, after asking. A <strong>secret gist is unlisted, not access-controlled</strong>: GitHub
+  does not check who is asking, only whether they have the URL. Anyone with that URL can read the
   gist without a GitHub account of their own. Since the snapshot carries your repo names, file
-  names and the wording of your weak spots — plus <code>pushedFrom</code> (this machine's
-  hostname) and <code>learner.json</code>'s <code>disabledPaths</code> (absolute local paths) —
-  treat the gist URL the way you would treat a password, and expect anyone it reaches to be able
-  to read everything in it.</p>
+  names, the wording of your weak spots and the libraries you've been coached on — plus
+  <code>pushedFrom</code> (this machine's hostname) and <code>learner.json</code>'s
+  <code>disabledPaths</code> (absolute local paths) — treat the gist URL the way you would treat a
+  password, and expect anyone it reaches to be able to read everything in it.</p>
 
   <h2 id="uninstall">Uninstall</h2>
 
@@ -194,7 +194,7 @@ Before anything else: restore the correct implementation, remove every // LEARNE
 ./uninstall.sh --purge                    # also delete learner.json and learner/
 ./uninstall.sh --project /path/to/repo    # clean up a legacy per-project install</code></pre>
 
-  <p>The plain form is the exact reverse of the install: the thirteen hook files, the skills,
+  <p>The plain form is the exact reverse of the install: the fourteen hook files, the skills,
   and every learner entry in <code>settings.json</code>, dropping any hook event left
   empty. Your config and your progress survive, so a reinstall picks up where you left
   off. <code>--purge</code> deletes those too.</p>
@@ -238,7 +238,7 @@ Before anything else: restore the correct implementation, remove every // LEARNE
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and thirteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

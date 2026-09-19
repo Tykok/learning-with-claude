@@ -665,12 +665,9 @@ tbody tr:last-child td { border-bottom: 0; }
 td code { white-space: nowrap; }
 td.wrap code { white-space: normal; }
 
-/* Groups two rulesets of coach* keys apart: the pomodoro-cadence keys (read
-   regardless of coachCadence) from the threshold-only keys below them, the
-   same split the spec's own config table draws with its "threshold only"
-   suffix — carried here into an actual visual seam rather than prose alone. */
+/* Separates each feature's key group (quiz / coach / pilot) with a visual
+   seam, since the config table's <tbody> elements group by subsystem. */
 tbody + tbody { border-top: 2px solid var(--rule); }
-tbody.group-coach-threshold td { background: var(--surface-2); }
 
 dt { font-weight: 640; margin-top: 1.25rem; }
 dl > dt:first-child { margin-top: 0; }

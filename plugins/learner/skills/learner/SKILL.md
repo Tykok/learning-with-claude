@@ -42,9 +42,10 @@ A bare config instruction with no subcommand (`level=S`, `disable`) is `config` 
 **Invoked by the Stop hook.** The hook blocks with a trigger line of the form `🎓 Learner (level: S, mode: granular, styles: auto, blanks: 2) — files: a.kt b.kt`. When you see it, read `references/hook-quiz.md` and follow it with those values. Do not treat the trigger as the protocol — it is only parameters.
 
 **Invoked by the coach watcher.** A `Monitor` armed at session start blocks with
-`🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. When you see it,
-read the `coach` skill and follow it with those values. As with the quiz trigger, the line is
-parameters, not the protocol.
+`🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt`. The review fires
+when the dev pauses typing, not on a clock or a quota; `files` and `lines` then size it. When you
+see it, read the `coach` skill and follow it with those values. As with the quiz trigger, the
+line is parameters, not the protocol.
 
 **Invoked by the agent salvo.** While a subagent is in flight, the Stop hook blocks with
 `🤖 Learner salvo (level: S, questions: 2, blanks: 2, styles: auto, agent 2/3, coach: off) — task: … — files: …`.

@@ -27,6 +27,7 @@ SYNC_DESC="claude-learner-state"
 DATA_DIR="$LEARNER_CFG_DIR/learner"
 MEM_FILE="$DATA_DIR/memory.md"
 REC_FILE="$DATA_DIR/recap.md"
+LIBS_FILE="$DATA_DIR/libs.md"
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
 SYNC_JSON="$DATA_DIR/sync.json"
 BASE_DIR="$DATA_DIR/sync-base"
@@ -165,6 +166,21 @@ history_rows() {  # FILE -> how many Session history rows it holds
   ' "$_hf"
 }
 
+libs_rows() {  # FILE -> how many libs.md rows it holds
+  _lf=$(readable_or_empty "$1")
+  awk '
+    /^[ \t]*\|/ {
+      norm = $0
+      gsub(/[ \t]+/, " ", norm); gsub(/ *\| */, "|", norm)
+      sub(/^ +/, "", norm); sub(/ +$/, "", norm)
+      if (norm ~ /^\|[-|]+\|$/) next        # separator row
+      if (norm ~ /^\|Library\|/) next       # header row
+      n++
+    }
+    END { print n + 0 }
+  ' "$_lf"
+}
+
 bullet_lines() {  # FILE -> how many "- " lines it holds
   if [ -f "$1" ]; then n=$(grep -c '^-[ \t]' "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
@@ -177,12 +193,29 @@ read_version() {
   fi
 }
 
-snapshot_into() {  # DIR — the four gist files, or fail empty-record
+snapshot_into() {  # DIR — the gist files, or fail empty-record
   _sd="$1"
   has_content "$MEM_FILE" || has_content "$REC_FILE" || fail empty-record
   mkdir -p "$_sd" || fail snapshot-dir
-  if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else : > "$_sd/memory.md"; fi
-  if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else : > "$_sd/recap.md"; fi
+  # `mkdir -p` above only proves $_sd exists as a directory, not that it is
+  # writable: it succeeds unconditionally on an already-existing path,
+  # including one that exists read-only (a caller-supplied snapshot dir, a
+  # TMPDIR remounted mid-session). Each `else` branch's `:` is a POSIX special
+  # built-in, so a redirection failure on it aborts a non-interactive shell
+  # outright under dash — before the `||` below ever runs, before this
+  # script's own `fail()` gets a chance to print its one JSON object, and
+  # with the raw dash error escaping straight to the real stderr instead.
+  # Every caller of this script (skills/sync's references/sync.md) depends on
+  # stdout carrying exactly one machine-readable object; an unguarded abort
+  # here hands it nothing at all. The subshell confines the abort to itself,
+  # `2>/dev/null` sits outside it because a compound command's redirections
+  # are installed before it runs, and `|| :` degrades to a no-op cp source
+  # would have degraded to anyway — the manifest write further down still
+  # catches the underlying unwritable directory and reports it through
+  # `fail()` properly.
+  if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else ( : > "$_sd/memory.md" ) 2>/dev/null || :; fi
+  if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else ( : > "$_sd/recap.md" ) 2>/dev/null || :; fi
+  if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else ( : > "$_sd/libs.md" ) 2>/dev/null || :; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
@@ -192,8 +225,9 @@ snapshot_into() {  # DIR — the four gist files, or fail empty-record
     --argjson mem "$(bullet_lines "$MEM_FILE")" \
     --argjson theme "$(bullet_lines "$REC_FILE")" \
     --argjson hist "$(history_rows "$REC_FILE")" \
+    --argjson libs "$(libs_rows "$LIBS_FILE")" \
     '{schemaVersion:$schema, pushedAt:$at, pushedFrom:$from, learnerVersion:$ver,
-      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist}}' \
+      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist, libsRows:$libs}}' \
     > "$_sd/manifest.json" || fail manifest
 }
 
@@ -218,6 +252,11 @@ gist_file() {  # ID NAME -> the file's content on stdout, exit 1 when absent
 advance_base() {  # DIR — adopt DIR as the new common ancestor
   rm -rf "$BASE_DIR.tmp"
   mkdir -p "$BASE_DIR.tmp" || fail base-dir
+  # libs.md carries no base entry (see the "libs.md has no base entry" note
+  # below, in cmd_pull's manifest): it is append-only, so there is no "deleted
+  # on one side" question for a base to answer, and nothing anywhere reads
+  # $BASE_DIR/libs.md. Copying it here would be dead state kept only to look
+  # symmetric with memory.md and recap.md.
   for f in memory.md recap.md learner.json manifest.json; do
     [ -f "$1/$f" ] && cp "$1/$f" "$BASE_DIR.tmp/$f"
   done
@@ -237,7 +276,8 @@ cmd_push() {
   if [ -z "$_id" ]; then
     [ "$_create_ok" = 1 ] || { rm -rf "$_work"; fail needs-create-ok; }
     _url=$(gh gist create --secret -d "$SYNC_DESC" \
-             "$_work/memory.md" "$_work/recap.md" "$_work/learner.json" "$_work/manifest.json" \
+             "$_work/memory.md" "$_work/recap.md" "$_work/libs.md" "$_work/learner.json" \
+             "$_work/manifest.json" \
              2>/dev/null | tail -1)
     [ -n "$_url" ] || { rm -rf "$_work"; fail gh-create; }
     _id=${_url##*/}
@@ -260,14 +300,31 @@ cmd_push() {
        && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
       rm -rf "$_work"; fail remote-ahead
     fi
-    # One PATCH with all four files: a gist whose manifest announces a recap.md
+    # libs.md is append-only and has no base copy to three-way merge against
+    # (see advance_base), so nothing downstream can notice it shrinking. It
+    # shrinks for one reason: the model skipped `sync.md`'s step 4 union after a
+    # pull — a documented instruction with no code behind it — leaving this
+    # machine with fewer rows than the remote it just adopted. The PATCH below
+    # would then replace a populated remote ledger with an empty file, `ok:true`
+    # and unrecoverable. counts.libsRows in the base manifest is what the last
+    # pull or push agreed on; fewer rows than that is never a legitimate push.
+    # An older base manifest carries no count and skips the check, exactly like
+    # the pull's own count guards.
+    _base_libs=$(jq -r '.counts.libsRows // empty' "$BASE_DIR/manifest.json" 2>/dev/null)
+    case "$_base_libs" in ''|*[!0-9]*) _base_libs='' ;; esac
+    if [ -n "$_base_libs" ] && [ "$(libs_rows "$LIBS_FILE")" -lt "$_base_libs" ]; then
+      rm -rf "$_work"; fail needs-pull
+    fi
+    # One PATCH with every file: a gist whose manifest announces a recap.md
     # that has not landed would make the next pull merge against a lie.
     jq -n \
       --rawfile mem "$_work/memory.md" \
       --rawfile rec "$_work/recap.md" \
+      --rawfile libs "$_work/libs.md" \
       --rawfile cfg "$_work/learner.json" \
       --rawfile man "$_work/manifest.json" \
       '{files:{"memory.md":{content:$mem},"recap.md":{content:$rec},
+               "libs.md":{content:$libs},
                "learner.json":{content:$cfg},"manifest.json":{content:$man}}}' \
       | gh api --method PATCH "/gists/$_id" --input - >/dev/null 2>&1 \
       || { rm -rf "$_work"; fail gh-push; }
@@ -299,7 +356,7 @@ backup_local() {  # sets BACKUP_PATH to the directory it created
   # memory.md with no backup underneath it.
   BACKUP_PATH="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
   mkdir -p "$BACKUP_PATH" || fail backup-dir
-  for f in "$MEM_FILE" "$REC_FILE" "$CFG_FILE"; do
+  for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE"; do
     [ -f "$f" ] && cp "$f" "$BACKUP_PATH/$(basename "$f")"
   done
 }
@@ -332,6 +389,23 @@ cmd_pull() {
   done
   [ -s "$_work/manifest.json" ] || { rm -rf "$_work"; fail gh-fetch; }
 
+  # libs.md is fetched leniently, not in the loop above: a gist pushed by an
+  # older learner never had one, and refusing the whole pull over a file that
+  # legitimately predates this feature would be worse than the data it protects.
+  gist_file "$_id" libs.md > "$_work/libs.md" 2>/dev/null
+  # `:` is a POSIX special built-in: a redirection failure on it aborts a
+  # non-interactive shell outright under dash, before the `||` above it ever
+  # runs — unlike the ordinary `gist_file … >` redirect on the line above,
+  # whose failure just leaves $_work/libs.md absent or short and falls
+  # through to this line normally. $_work is mktemp's own fresh directory, so
+  # it is writable when created, but a TMPDIR remounted read-only between
+  # that mktemp and this point (or a libs.md this same statement already
+  # wrote as read-only, on a filesystem that preserves an inherited mode
+  # across the empty write above) reproduces the same abort this file's other
+  # guarded sites exist to prevent — with no `fail()` JSON to show for it, on
+  # a script whose entire contract with its caller is one JSON object.
+  ( [ -s "$_work/libs.md" ] || : > "$_work/libs.md" ) 2>/dev/null || :
+
   _schema=$(jq -r '.schemaVersion // 0' "$_work/manifest.json" 2>/dev/null)
   case "$_schema" in
     ''|*[!0-9]*) rm -rf "$_work"; fail gh-fetch ;;
@@ -349,6 +423,16 @@ cmd_pull() {
     || { rm -rf "$_work"; fail gh-fetch; }
   _want_hist=$(jq -r '.counts.historyRows // empty' "$_work/manifest.json" 2>/dev/null)
   [ -z "$_want_hist" ] || [ "$(history_rows "$_work/recap.md")" = "$_want_hist" ] \
+    || { rm -rf "$_work"; fail gh-fetch; }
+  # libs.md was fetched leniently above (empty on any failure, indistinguishable
+  # from a gist that genuinely has none), so it gets the same manifest-declared
+  # count guard as memory.md and recap.md rather than the required loop: a
+  # pre-feature manifest has no counts.libsRows and skips the check, but a
+  # manifest that does declare a nonzero count catches the one failure mode
+  # leniency alone cannot — a transient fetch error silently emptying a
+  # populated remote ledger the next time this machine pushes.
+  _want_libs=$(jq -r '.counts.libsRows // empty' "$_work/manifest.json" 2>/dev/null)
+  [ -z "$_want_libs" ] || [ "$(libs_rows "$_work/libs.md")" = "$_want_libs" ] \
     || { rm -rf "$_work"; fail gh-fetch; }
 
   # Past this line the local record changes, so the net goes up first.
@@ -380,12 +464,18 @@ cmd_pull() {
   # mistyped id never sticks.
   sync_json_set '.github.gistId' "$_id"
 
+  # libs.md has no base entry: nothing is ever removed from it (a row only ever
+  # gets added, per data.md), so there is no "deleted on one side" question for
+  # a base to answer — unlike recap.md's themes, where the base decides whether
+  # an absent entry was dropped or never pushed.
   jq -nc --arg id "$_id" --arg bk "$_backup" --arg w "$_work" \
      --arg rl "$REC_FILE" --arg rr "$_work/recap.md" --arg rb "$BASE_DIR/recap.md" \
      --arg rh "$_work/history.md" --argjson first "$_first" \
+     --arg ll "$LIBS_FILE" --arg lr "$_work/libs.md" \
      '{ok:true, action:"pulled", gistId:$id, backup:$bk, work:$w, memory:"merged",
        firstSync:$first,
-       recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh}}'
+       recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh},
+       libs:{local:$ll, remote:$lr}}'
 }
 
 cmd_pull_finish() {

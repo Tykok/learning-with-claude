@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Thirteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
+Fourteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
 `status`, `improve`, `coach`, `export`, `sync`, `update`) and `pilot`, invocable as `/learner:quiz` and
 friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
@@ -34,8 +34,9 @@ directory.
 ## Coach mode — you write, Claude challenges
 
 The default regime has Claude write the code and quiz you afterwards. Coach mode inverts it:
-you write the code, and Claude watches your working tree and comes back at intervals with one
-question, a few findings and a couple of leads — never with a patch.
+you write the code, and Claude watches your working tree and comes back when you pause to
+challenge you — one question on a small diff, up to three on a large one (three arrive one at
+a time; fewer arrive together) — plus findings and leads, never a patch.
 
 ```
 learner coach on
@@ -53,13 +54,15 @@ write the service and the business logic. Both regimes feed the same record: Cla
 on what it wrote, the coach challenges you on what you wrote, and `learner status` sees all of
 it.
 
-Reviews arrive on a pomodoro by default: a 25-minute work block in silence, then one
-notification, then an ~8-minute challenge window. The work block grows 5 minutes per cycle
-(capped at 45) — only for cycles where you actually wrote something. After two consecutive
-empty blocks the watcher stops itself and asks whether you want to continue.
-
-Prefer change-driven reviews to time-driven ones? `learner config coachCadence=threshold`, then
-tune `coachLines`, `coachFiles` and `coachCooldownMinutes`.
+A review fires when you pause typing: the watcher polls your working tree, and once it has
+seen enough consecutive quiet polls with at least `coachMinLines` changed since the last
+review, it fires — floored by `coachCooldownMinutes` so short pauses don't turn into a run of
+interruptions, and forced anyway past `coachMaxWaitMinutes` so a long uninterrupted stretch
+still gets reviewed. The review itself is sized by the diff: one question on a small change, up
+to three on a large one — one or two arrive together, three are asked one at a time — plus
+findings and leads. Zero changes for `coachIdleMinutes` and the watcher stops itself and asks
+whether you want to continue. Tune all of this with the seven `coach*` keys — see the site's
+[Configuration](https://tykok.github.io/learning-with-claude/config.html) page.
 
 Coach mode needs an interactive Claude Code session: the watcher runs as a `Monitor`, which
 does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still
@@ -94,7 +97,7 @@ reference, including the four axes, the weekly brief and the privacy paragraph, 
 [the site](https://tykok.github.io/learning-with-claude/usage.html#pilot).
 ## Sync — carry your record between machines
 
-`learner sync` moves your learning record — `memory.md`, `recap.md` and the global
+`learner sync` moves your learning record — `memory.md`, `recap.md`, `libs.md` and the global
 `learner.json` — between machines through one private GitHub gist. It is the only path that
 ever sends the record off the machine, and it is **manual only**: no hook pushes anything;
 nothing leaves until you type it.
@@ -297,7 +300,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `plugins/learner/hooks/*.sh` glob covers all thirteen shipped hook files, including `learner-config.sh`. CI
+The `plugins/learner/hooks/*.sh` glob covers all fourteen shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step. CI also runs `claude plugin validate` on the marketplace, on the

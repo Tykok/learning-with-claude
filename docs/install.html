@@ -231,6 +231,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/learner-quiz.sh</code></td><td><code>Stop</code> — the quiz trigger, and the <code>LEARNER-TODO</code> guardrail</td></tr>
       <tr><td><code>$CFG/hooks/learner-cleanup.sh</code></td><td><code>SessionEnd</code> — deletes this session's scratch files</td></tr>
       <tr><td><code>$CFG/hooks/coach-watch.sh</code></td><td>No static entry — armed as a <code>Monitor</code> by <code>learner-onboard.sh</code> at session start, when coach mode is on; runs the review cadence</td></tr>
+      <tr><td><code>$CFG/hooks/coach-armed-check.sh</code></td><td><code>UserPromptSubmit</code> (second entry) — warns, at most once per session, when coach mode is on but the watcher was never armed</td></tr>
       <tr><td><code>$CFG/hooks/pilot-record.sh</code></td><td><code>SessionEnd</code> (second entry, <code>timeout</code> 15) — turns one finished transcript into one line of delegation counters, when Pilot is enabled</td></tr>
       <tr><td><code>$CFG/hooks/pilot-brief.sh</code></td><td><code>SessionStart</code> (third entry) — decides whether a scoring pass, a weekly brief, or neither is due</td></tr>
       <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
@@ -254,7 +255,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Thirteen hook files ship and eleven are wired, into <code>SessionStart</code>
+  <p>Fourteen hook files ship and twelve are wired, into <code>SessionStart</code>
   (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
   and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
   (<code>coach-gate.sh</code> on the <code>Write|Edit|NotebookEdit</code> matcher, plus
@@ -264,13 +265,14 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   <code>Task</code>), <code>Stop</code>, <code>SessionEnd</code> (twice —
   <code>learner-cleanup.sh</code> and <code>pilot-record.sh</code>, the latter at a
   raised <code>timeout</code> of 15 since it reads a whole transcript) and
-  <code>UserPromptSubmit</code> (<code>pilot-nudge.sh</code>). Three ship unwired:
+  <code>UserPromptSubmit</code> (twice — <code>pilot-nudge.sh</code> and
+  <code>coach-armed-check.sh</code>). Three ship unwired:
   <code>learner-config.sh</code> is sourced-only, and Claude Code never invokes it
   directly; <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
   only once coach mode is on; and <code>learner-sync.sh</code> is never wired to a hook
   event at all — the skill invokes it directly, only when the dev types
-  <code>learner sync</code>. Eleven of the other twelve source
+  <code>learner sync</code>. Twelve of the other thirteen source
   <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
   which needs none of it.</p>
 
@@ -313,7 +315,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and thirteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>
