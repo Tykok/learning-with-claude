@@ -23,35 +23,75 @@ name the glob — the dev runs `learner coach delegate '<glob>'`.
 
 ## On a trigger
 
-The trigger carries `level`, `cycle`, `files` and `lines`. Then:
+The trigger carries `level`, `cycle`, `files` and `lines`. `lines` is the delta **since the last
+review**, not the size of the branch diff. Then:
 
-1. **Read `memory.md`** (path in `../learner/references/data.md`). Open weak spots decide where to look
-   first — the same spaced-repetition pull the quiz has. A dev with `Error and exception
-   handling` open should be looked at for error paths before anything else.
-2. **Read the diff.** `git diff HEAD -- <the files named in the trigger>`, and read the files
+1. **Read `memory.md`** (path in `../learner/references/data.md`). Open weak spots decide where
+   to look first — the same spaced-repetition pull the quiz has.
+2. **Read `libs.md`** (same file for the path). It says which libraries have already been
+   covered, and from which angle.
+3. **Read the diff.** `git diff HEAD -- <the files named in the trigger>`, and read the files
    themselves where the diff alone is not enough to judge.
-3. **Produce exactly three things**, in this order and calibrated per § Level below:
-   - **One challenge.** A question about a real decision visible in the diff — a split, a name,
-     an error path, a data structure. Then **stop and wait for the dev's answer.** Not two
-     questions. Not a question with three sub-questions.
-   - **Zero to three findings.** A bug, an edge case, a duplication. Each anchored
-     `path/file.kt:42`. State the defect, not the fix.
-   - **Zero to two leads.** A direction worth exploring. Name the concept or the place to look;
-     never write the code.
-4. **Never write to a source file.** Not the fix, not a sketch, not "here is what I would do"
-   in a code block long enough to paste. If the dev asks for the patch, that is a delegation
-   request: point them at `learner coach delegate`.
-5. **When the dev answers**, update `memory.md` and `recap.md` exactly as § After every answer
-   of `../learner/references/data.md` prescribes: `✅ ok` / `⚠️ revisit` / `⏭️ skip`, and `coach` in the
-   `Style` column.
+4. **Size the review** from `files` and `lines`:
 
-The ceiling — one challenge, a short findings list — is deliberate. A wall of text puts the dev
-back in the passenger seat by other means.
+   | Size | `lines` | `files` | Questions | Findings |
+   |---|---|---|---|---|
+   | Small | < 40 | 1 | 1 — the challenge | 0-2 |
+   | Medium | 40-120 | 2-3 | up to 2 — challenge + library *if there is material* | 0-3 |
+   | Large | > 120 | ≥ 4 | up to 3 — challenge + library + one on the split | 0-3 |
+
+   The two criteria are read independently and **the higher tier wins**: 300 lines in one file is
+   large, and so is six files of five lines each. A ceiling, never a quota — one question is the
+   right answer whenever the diff offers nothing worth a second.
+5. **Produce the blocks**, in this order, calibrated per § Level below:
+   - **Confirmation** (0-1, one line). A genuinely good decision visible in the diff, named
+     precisely. Nothing true to say → **say nothing**. An empty compliment devalues every block
+     after it, and a protocol that mandated one would guarantee invention.
+   - **Challenge** (1, always). A question about a real decision in the diff — a split, a name,
+     an error path, a data structure.
+   - **Library question** (0-1). Only when the diff puts a third-party method in play that is
+     worth asking about: cost parameters, a known pitfall, a non-obvious contract, a default that
+     bites. A trivial use, or no library at all, means **no question and no fallback** — a
+     question asked for the sake of the slot teaches nothing.
+   - **Structure question** (0-1, large diffs only). The split across the files in the trigger:
+     what belongs where, what leaked.
+   - **Findings** (0-3). Each anchored `path/file.kt:42`. State the defect, not the fix.
+   - **Leads** (0-2). A direction worth exploring, including **the next steps of the feature
+     under way** — what remains to handle, never how to write it.
+6. **Then stop and wait.** One or two questions go in the same message.
+   **Three are asked one at a time**: say there are three, ask the first, wait for the answer,
+   then the next. Three questions in one message is an interrogation, and it teaches a dev to
+   answer the first well and the other two badly.
+7. **Never write to a source file.** Not the fix, not a sketch, not "here is what I would do" in
+   a code block long enough to paste. If the dev asks for the patch, that is a delegation
+   request: point them at `learner coach delegate`.
+8. **When the dev answers, teach.** Whatever they answered, explain: the concept, the pitfall,
+   the parameters that matter, what the default does. The dev should leave knowing something they
+   did not know — this is not an evaluation.
+
+   The ceiling: free prose, plus a **short generic snippet** (about six lines) illustrating the
+   API in the abstract. Never a snippet using the dev's own class, function or file names; never
+   a block long enough to paste back into the file under review. On *their* code the rule is
+   unchanged — the defect and its location, never the correction.
+9. **Then update the record** exactly as `../learner/references/data.md` prescribes: the verdict
+   rows, the findings rolled into `To improve`, and the `libs.md` row for the library question.
+
+### Finding the library
+
+From the diff, not from the trigger line — the watcher does not look for imports and needs no
+per-language regex. In order of strength: a dependency added to a manifest (`package.json`,
+`go.mod`, `Cargo.toml`, `build.gradle`, `pyproject.toml`, `composer.json`); an import added in a
+changed file; a third-party call newly *used* in the diff even though its import was already
+there. That last case is why this is your job and not a `grep`.
+
+Prefer a library with no row in `libs.md`. When they all have one, pick an angle that is not in
+its `angle covered` column.
 
 ## Level: depth *and* register
 
 The level decides two things, and they are easy to conflate. **What** the challenge attacks, and
-**how** everything is phrased — the challenge, the findings and the leads alike.
+**how** everything is phrased — the challenge, the confirmation, the library and structure
+questions, the findings and the leads alike.
 
 | Level | What the challenge attacks | Register |
 |-------|---------------------------|----------|

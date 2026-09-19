@@ -4577,9 +4577,8 @@ CO="$PLUG/skills/coach/references/coach.md"
 [ -f "$CO" ] && ok "the coach skill exists" || ko "the coach skill exists"
 
 # Every config key the code reads must be documented, or a dev cannot discover it.
-for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
-         coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
-         coachEveryMinutes coachCooldownMinutes; do
+for k in coach coachPollSeconds coachQuietPolls coachMinLines coachCooldownMinutes \
+         coachMaxWaitMinutes coachIdleMinutes; do
   grep -q "\`$k\`" "$SK" && ok "SKILL.md documents $k" || ko "SKILL.md documents $k"
 done
 
@@ -4601,13 +4600,58 @@ grep -qF 'the `coach` skill' "$SK" && ok "SKILL.md points at the coach skill" \
   || ko "SKILL.md points at the coach skill"
 
 # The protocol must state its own ceiling and its own prohibition, since those
-# are the two things that keep the dev in the driver's seat.
-grep -qi 'one challenge' "$CO" && ok "the coach skill states the one-challenge ceiling" \
-  || ko "the coach skill states the one-challenge ceiling"
+# are the two things that keep the dev in the driver's seat. Anchored to the
+# exact "Challenge** (1, always)" block heading rather than a bare "challenge"
+# grep, which the register table's own prose ("what the challenge attacks")
+# would satisfy before this ceiling existed.
+grep -qF 'Challenge** (1, always)' "$CO" && ok "the coach skill states the challenge is mandatory and singular" \
+  || ko "the coach skill states the challenge is mandatory and singular"
 grep -qi 'never write' "$CO" && ok "the coach skill forbids writing to source" \
   || ko "the coach skill forbids writing to source"
 grep -q 'references/data.md' "$CO" && ok "the coach skill defers to data.md for the data rules" \
   || ko "the coach skill defers to data.md for the data rules"
+
+# --- coach protocol ---------------------------------------------------------
+CMD="$PLUG/skills/coach/references/coach.md"
+
+# The ladder: a review's size follows the dev's diff, and the two criteria are
+# read independently. Without the "higher tier wins" rule, 300 lines in one file
+# would be classified as a small diff on the files criterion alone.
+grep -qi 'higher tier wins' "$CMD" \
+  && ok "coach.md states how the two ladder criteria combine" \
+  || ko "coach.md states how the two ladder criteria combine"
+for t in 'Small' 'Medium' 'Large'; do
+  grep -q "$t" "$CMD" && ok "coach.md documents the $t tier" || ko "coach.md documents the $t tier"
+done
+
+# Three questions must be asked one at a time. This is the rule most likely to
+# be dropped in a rewrite, and the one that decides whether a large review is a
+# conversation or an interrogation.
+grep -qi 'one at a time' "$CMD" \
+  && ok "coach.md requires three questions to be asked one at a time" \
+  || ko "coach.md requires three questions to be asked one at a time"
+
+# The library question is conditional and has NO fallback: v1's instinct was to
+# always have something to ask.
+grep -qi 'no fallback' "$CMD" \
+  && ok "coach.md rules out a fallback library question" \
+  || ko "coach.md rules out a fallback library question"
+
+# The teaching phase and its ceiling.
+grep -qi 'generic' "$CMD" && ok "coach.md bounds the teaching snippet to a generic one" \
+  || ko "coach.md bounds the teaching snippet to a generic one"
+grep -qF 'libs.md' "$CMD" && ok "coach.md reads libs.md before choosing a library" \
+  || ko "coach.md reads libs.md before choosing a library"
+
+# The confirmation must be allowed to be absent — an invented compliment is
+# worse than none, and a protocol that mandates one guarantees invention.
+# Anchored to the bolded "**say nothing**" rather than a bare 'say nothing':
+# § On the idle line already says "say nothing further about it" about a
+# different question entirely, and a loose grep would pass on that alone,
+# before the confirmation block existed at all.
+grep -qF '**say nothing**' "$CMD" \
+  && ok "coach.md allows the confirmation to be skipped" \
+  || ko "coach.md allows the confirmation to be skipped"
 
 # --- learner sync: skeleton -------------------------------------------------
 SYNC="$PLUG/hooks/learner-sync.sh"
