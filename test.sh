@@ -4679,6 +4679,38 @@ else
 fi
 echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
+# Minor 1 (R11 fix round): the idle cut-off is the loop's OTHER exit path, and
+# it shares the same stale-marker risk as the coach-off exit just above — but
+# had no test pinning its own `rm -f "$ARMED"`. A fake, no-op `sleep` drives
+# the real loop through `coachIdleMinutes` in wall-clock milliseconds instead
+# of minutes, without touching the cadence math itself: coachPollSeconds and
+# coachIdleMinutes stay at their real floors (5s, 1 minute), so the loop still
+# needs its true 12 empty cycles (12 * 5s >= 60s) to trip the cut-off — the
+# fake sleep just makes each of those cycles take microseconds instead of five
+# real seconds.
+git -C "$CREPO" add -A >/dev/null 2>&1
+git -C "$CREPO" commit -q -m "settle before idle-cutoff test" >/dev/null 2>&1
+FAKESLEEP="$WORK/fakesleep"; mkdir -p "$FAKESLEEP"
+printf '#!/bin/sh\nexit 0\n' > "$FAKESLEEP/sleep"
+chmod +x "$FAKESLEEP/sleep"
+echo '{"level":"C","coach":true,"coachPollSeconds":5,"coachIdleMinutes":1,"coachCooldownMinutes":0}' > "$GCFG"
+SID_IDLE=watch-idle-cutoff
+rm -rf "$(basedir "$SID_IDLE")"
+PATH="$FAKESLEEP:$PATH" CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_IDLE" > "$WORK/loop-idle.out" 2>&1 &
+IDLE_PID=$!
+i=0
+while kill -0 "$IDLE_PID" 2>/dev/null && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+kill -0 "$IDLE_PID" 2>/dev/null && kill -9 "$IDLE_PID" 2>/dev/null
+wait "$IDLE_PID" 2>/dev/null
+{ grep -q 'no tracked changes' "$WORK/loop-idle.out" \
+  && [ ! -e "$(armed "$SID_IDLE")" ]; } \
+  && ok "the idle cut-off both fires and removes the armed marker" \
+  || ko "the idle cut-off both fires and removes the armed marker ($(cat "$WORK/loop-idle.out"))"
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
 # --- coach documentation ----------------------------------------------------
 SK="$PLUG/skills/learner/SKILL.md"
 CO="$PLUG/skills/coach/references/coach.md"
@@ -5465,7 +5497,13 @@ cat > "$ROMKTEMP/mktemp" <<MKFAKE
 case " \$* " in
   *" -d "*)
     d=\$("$REAL_MKTEMP" "\$@") || exit 1
-    : > "\$d/libs.md" 2>/dev/null
+    # Same guard this whole batch exists to apply: \`:\` is a POSIX special
+    # built-in, so an unguarded redirection failure on it would abort this
+    # helper outright under dash. It cannot realistically fail here (\$d is a
+    # mktemp -d fresh directory), but this script is itself #!/bin/sh, and
+    # leaving the bare form in the test that exercises this exact defect
+    # would be the one inconsistency in a batch about eliminating it.
+    ( : > "\$d/libs.md" ) 2>/dev/null || :
     chmod 444 "\$d/libs.md" 2>/dev/null
     printf '%s\n' "\$d"
     ;;
