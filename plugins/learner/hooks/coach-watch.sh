@@ -183,7 +183,20 @@ coach_material() {
 coach_advance() {
   mkdir -p "$BASEDIR" 2>/dev/null || return 0
   _canew="$BASEDIR/.manifest.new"
-  : > "$_canew"
+  # The `mkdir -p` above only catches a MISSING $BASEDIR (or a TMPDIR gone
+  # entirely) — it succeeds unconditionally on a $BASEDIR that already exists,
+  # unwritable or not. `:` is a POSIX special built-in, so a redirection
+  # failure on it aborts a non-interactive shell outright under dash, before
+  # the `||` below ever runs. This function runs as the right side of a pipe
+  # (`coach_candidates | coach_advance`), so the abort only kills that forked
+  # subshell rather than the whole watcher — but it still leaks the raw dash
+  # error straight to the real stderr (unguarded, no `2>/dev/null` ahead of
+  # it) and it still skips every line below, leaving the baseline stuck and
+  # the same material re-offered forever. `2>/dev/null` sits outside the
+  # parens because a compound command's redirections are installed before it
+  # runs, so it also swallows that diagnostic. Do not "simplify" the parens
+  # away.
+  ( : > "$_canew" ) 2>/dev/null || return 0
   while IFS= read -r _car; do
     [ -n "$_car" ] || continue
     _cak=$(coach_key "$_car")
@@ -434,7 +447,8 @@ fi
 # parens on purpose: a compound command's redirections are installed before it
 # runs, so this also swallows the dash error text the failing `>` would
 # otherwise print to the real stderr. Do not "simplify" the parens away.
-( : > "$TMPD/claude-learner-${SID}.coach-armed" ) 2>/dev/null || :
+ARMED="$TMPD/claude-learner-${SID}.coach-armed"
+( : > "$ARMED" ) 2>/dev/null || :
 CYCLE=1
 rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF"
 while :; do
@@ -442,7 +456,13 @@ while :; do
   # with nothing else to re-read it once this loop is running as a Monitor —
   # re-check on every iteration so it takes effect within one poll.
   CFG=$(learner_config)
-  learner_coach_active "$CFG" "$ROOT" || exit 0
+  # The marker must not outlive the loop that earns it: coach-armed-check.sh's
+  # own `[ -f "$ARMED" ]` test, and skills/status/SKILL.md's status line, both
+  # read its presence as "the watcher is running". Leaving it behind here
+  # would report an armed watcher for the rest of the session even though
+  # this process is about to exit — and coach-armed-check.sh, seeing it,
+  # would never warn the dev that coach mode has gone silently inert.
+  learner_coach_active "$CFG" "$ROOT" || { rm -f "$ARMED"; exit 0; }
   coach_load_cadence
 
   sleep "$POLL"
@@ -451,7 +471,9 @@ while :; do
   # that inference is exactly what let a blocked cycle get mistaken for an
   # emission in v1.
   case $? in
-    1) exit 0 ;;
+    # The idle cut-off exits the loop too, same stale-marker risk as the
+    # coach-off path above.
+    1) rm -f "$ARMED"; exit 0 ;;
     *) ;;
   esac
 done

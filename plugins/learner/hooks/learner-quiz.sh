@@ -136,7 +136,21 @@ REASON="🎓 Learner (level: $LEVEL, mode: $MODE, styles: $STYLES, blanks: $BLAN
 Invoke the \`learner\` skill, follow references/hook-quiz.md for this mode. Ask ONE question, then wait for the dev's answer."
 
 # Consume the pending edits: one granular question per batch, not per stop.
-: > "$STATE"
+#
+# The subshell is load-bearing: `:` is a POSIX special built-in, so a
+# redirection failure on it (a read-only .edits file, a full disk, a TMPDIR
+# gone read-only mid-session) aborts a non-interactive shell outright under
+# dash, before the trailing `||` ever runs. This hook fires on Stop, where
+# exit 2 IS the deliberate block signal — an unguarded abort here would hand
+# the dev a block they never asked for and Claude cannot explain, dismiss, or
+# even see the cause of, since the raw dash error goes to stderr instead of
+# the reason text. `2>/dev/null` sits outside the parens on purpose: a
+# compound command's redirections are installed before it runs, so it also
+# swallows the dash diagnostic the failing `>` would otherwise print to the
+# real stderr. On failure, skip this trigger rather than fire a block whose
+# pending state we could not clear — it is offered again next Stop. Do not
+# "simplify" the parens away.
+( : > "$STATE" ) 2>/dev/null || exit 0
 
 jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
 exit 0

@@ -197,9 +197,25 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   _sd="$1"
   has_content "$MEM_FILE" || has_content "$REC_FILE" || fail empty-record
   mkdir -p "$_sd" || fail snapshot-dir
-  if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else : > "$_sd/memory.md"; fi
-  if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else : > "$_sd/recap.md"; fi
-  if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else : > "$_sd/libs.md"; fi
+  # `mkdir -p` above only proves $_sd exists as a directory, not that it is
+  # writable: it succeeds unconditionally on an already-existing path,
+  # including one that exists read-only (a caller-supplied snapshot dir, a
+  # TMPDIR remounted mid-session). Each `else` branch's `:` is a POSIX special
+  # built-in, so a redirection failure on it aborts a non-interactive shell
+  # outright under dash — before the `||` below ever runs, before this
+  # script's own `fail()` gets a chance to print its one JSON object, and
+  # with the raw dash error escaping straight to the real stderr instead.
+  # Every caller of this script (skills/sync's references/sync.md) depends on
+  # stdout carrying exactly one machine-readable object; an unguarded abort
+  # here hands it nothing at all. The subshell confines the abort to itself,
+  # `2>/dev/null` sits outside it because a compound command's redirections
+  # are installed before it runs, and `|| :` degrades to a no-op cp source
+  # would have degraded to anyway — the manifest write further down still
+  # catches the underlying unwritable directory and reports it through
+  # `fail()` properly.
+  if [ -f "$MEM_FILE" ]; then cp "$MEM_FILE" "$_sd/memory.md"; else ( : > "$_sd/memory.md" ) 2>/dev/null || :; fi
+  if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else ( : > "$_sd/recap.md" ) 2>/dev/null || :; fi
+  if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else ( : > "$_sd/libs.md" ) 2>/dev/null || :; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
@@ -236,7 +252,12 @@ gist_file() {  # ID NAME -> the file's content on stdout, exit 1 when absent
 advance_base() {  # DIR — adopt DIR as the new common ancestor
   rm -rf "$BASE_DIR.tmp"
   mkdir -p "$BASE_DIR.tmp" || fail base-dir
-  for f in memory.md recap.md libs.md learner.json manifest.json; do
+  # libs.md carries no base entry (see the "libs.md has no base entry" note
+  # below, in cmd_pull's manifest): it is append-only, so there is no "deleted
+  # on one side" question for a base to answer, and nothing anywhere reads
+  # $BASE_DIR/libs.md. Copying it here would be dead state kept only to look
+  # symmetric with memory.md and recap.md.
+  for f in memory.md recap.md learner.json manifest.json; do
     [ -f "$1/$f" ] && cp "$1/$f" "$BASE_DIR.tmp/$f"
   done
   rm -rf "$BASE_DIR"
@@ -357,7 +378,18 @@ cmd_pull() {
   # older learner never had one, and refusing the whole pull over a file that
   # legitimately predates this feature would be worse than the data it protects.
   gist_file "$_id" libs.md > "$_work/libs.md" 2>/dev/null
-  [ -s "$_work/libs.md" ] || : > "$_work/libs.md"
+  # `:` is a POSIX special built-in: a redirection failure on it aborts a
+  # non-interactive shell outright under dash, before the `||` above it ever
+  # runs — unlike the ordinary `gist_file … >` redirect on the line above,
+  # whose failure just leaves $_work/libs.md absent or short and falls
+  # through to this line normally. $_work is mktemp's own fresh directory, so
+  # it is writable when created, but a TMPDIR remounted read-only between
+  # that mktemp and this point (or a libs.md this same statement already
+  # wrote as read-only, on a filesystem that preserves an inherited mode
+  # across the empty write above) reproduces the same abort this file's other
+  # guarded sites exist to prevent — with no `fail()` JSON to show for it, on
+  # a script whose entire contract with its caller is one JSON object.
+  ( [ -s "$_work/libs.md" ] || : > "$_work/libs.md" ) 2>/dev/null || :
 
   _schema=$(jq -r '.schemaVersion // 0' "$_work/manifest.json" 2>/dev/null)
   case "$_schema" in

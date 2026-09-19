@@ -1378,6 +1378,32 @@ out=$(quiz "no-edits-sid")
 [ -z "$out" ] && ok "quiz silent when nothing was edited" \
              || ko "quiz silent when nothing was edited"
 
+# Item 1 sweep regression: the Stop hook's final `: > "$STATE"` consumes the
+# pending-edit file after building the trigger. `:` is a POSIX special
+# built-in, so a redirection failure on it aborts a non-interactive shell
+# outright under dash — on a Stop hook that abort's exit 2 IS the deliberate
+# block signal, so a read-only .edits file would hand the dev an inexplicable
+# block instead of the quiz simply skipping a turn. Capture the status, not
+# just stdout: an assertion on empty output alone would also pass against a
+# crashed script.
+SIDRO=quiz-ro
+rec "$SIDRO" "$WORK/proj/src/F.kt"
+chmod 444 "$(edits "$SIDRO")"
+out=$(quiz "$SIDRO" 2>/dev/null); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "quiz exits 0 with no output when its .edits file cannot be truncated" \
+  || ko "quiz exits 0 with no output when its .edits file cannot be truncated (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  out=$(printf '{"session_id":"%s","stop_hook_active":false}' "$SIDRO" | dash "$QUIZ" 2>/dev/null); rc=$?
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "quiz exits 0 with no output under dash when its .edits file cannot be truncated" \
+    || ko "quiz exits 0 with no output under dash when its .edits file cannot be truncated (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-.edits check was skipped, coverage not claimed)"
+fi
+chmod 644 "$(edits "$SIDRO")" 2>/dev/null
+rm -f "$(edits "$SIDRO")"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
@@ -4415,6 +4441,40 @@ grep -q 'coach-watch' "$PLUG/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
 
+# Item 1 sweep regression: coach_advance's `: > "$_canew"` writes a brand-new
+# file inside $BASEDIR, so unlike a missing TMPDIR (already caught by the
+# `mkdir -p … || return 0` guard above it in the source), a $BASEDIR that
+# already EXISTS but is not writable reaches this line unguarded. `:` is a
+# POSIX special built-in, so an unguarded redirection failure on it aborts a
+# non-interactive shell outright under dash — here that kills only the forked
+# subshell running this function (the right side of `coach_candidates |
+# coach_advance`), so `--advance`'s own hardcoded `exit 0` still runs, but the
+# abort still leaks the raw dash diagnostic to the real stderr and leaves the
+# baseline stuck re-offering the same material. Exercised under both this
+# suite's own /bin/sh and, when available, dash itself.
+echo '{"level":"C","coach":true}' > "$GCFG"
+SID_W2=watch-ro
+rm -rf "$(basedir "$SID_W2")"
+mkdir -p "$(basedir "$SID_W2")"; chmod 555 "$(basedir "$SID_W2")"
+out=$(CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W2" --advance 2>&1); rc=$?
+chmod 755 "$(basedir "$SID_W2")"
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "coach-watch --advance exits 0 with no output when its baseline dir is read-only" \
+  || ko "coach-watch --advance exits 0 with no output when its baseline dir is read-only (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  rm -rf "$(basedir "$SID_W2")"
+  mkdir -p "$(basedir "$SID_W2")"; chmod 555 "$(basedir "$SID_W2")"
+  out=$(CLAUDE_PROJECT_DIR="$CREPO" dash "$WATCH" "$SID_W2" --advance 2>&1); rc=$?
+  chmod 755 "$(basedir "$SID_W2")"
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "coach-watch --advance exits 0 with no output under dash when its baseline dir is read-only" \
+    || ko "coach-watch --advance exits 0 with no output under dash when its baseline dir is read-only (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-baseline check was skipped, coverage not claimed)"
+fi
+chmod 755 "$(basedir "$SID_W2")" 2>/dev/null
+rm -rf "$(basedir "$SID_W2")"
+
 # --- coach-armed-check.sh ---------------------------------------------------
 ARMCHK="$PLUG/hooks/coach-armed-check.sh"
 armed()   { echo "$TMPDIR/claude-learner-$1.coach-armed"; }
@@ -4604,11 +4664,18 @@ echo '{"level":"C","coach":false}' > "$GCFG"
 sleep 7
 if kill -0 "$LOOP_PID" 2>/dev/null; then
   ko "learner coach off stops a running watcher within one poll"
+  skip "the armed marker does not outlive a watcher that never stopped"
   kill -9 "$LOOP_PID" 2>/dev/null
   wait "$LOOP_PID" 2>/dev/null
 else
   wait "$LOOP_PID" 2>/dev/null
   ok "learner coach off stops a running watcher within one poll"
+  # Item 4: the loop's own exit path used to leave the armed marker behind, so
+  # coach-armed-check.sh's `[ -f "$ARMED" ]` test — and skills/status/SKILL.md's
+  # status line — would go on reporting a watcher that had already quit.
+  [ ! -e "$(armed "$SID_LOOP")" ] \
+    && ok "the armed marker does not outlive a watcher stopped by coach off" \
+    || ko "the armed marker does not outlive a watcher stopped by coach off"
 fi
 echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
@@ -4962,6 +5029,38 @@ man="$WORK/snap/manifest.json"
   && ok "files with real content but zero bullets snapshot successfully" \
   || ko "files with real content but zero bullets snapshot successfully (out=$out man=$(cat "$man"))"
 
+# Item 1 sweep regression: three "else : > …" fallbacks in snapshot_into (one
+# per gist file) each hit the same special-built-in abort as coach-watch.sh's
+# above. `mkdir -p "$_sd"` only proves the destination exists, not that it is
+# writable, and it succeeds unconditionally on one that already exists
+# read-only. `:` is a POSIX special built-in, so a redirection failure on it
+# aborts a non-interactive shell outright under dash — before this script's
+# own fail() ever gets to print its one JSON object. memory.md and libs.md are
+# both absent here (their two guarded lines run directly); recap.md's own cp
+# (REC_FILE has content, satisfying has_content) fails ordinarily instead of
+# aborting, and the manifest write further down still catches the underlying
+# unwritable directory through fail() — proof the abort no longer escapes
+# unguarded.
+rm -f "$SDATA/memory.md" "$SDATA/libs.md"
+printf '## To improve\n\n### Code\n- Error handling\n' > "$SDATA/recap.md"
+SNAP_RO="$WORK/snap-ro"; rm -rf "$SNAP_RO"; mkdir -p "$SNAP_RO"; chmod 555 "$SNAP_RO"
+out=$(sh "$SYNC" snapshot "$SNAP_RO" 2>/dev/null); rc=$?
+chmod 755 "$SNAP_RO"
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "manifest" ]; } \
+  && ok "a snapshot into a read-only destination fails cleanly through fail(), not a shell abort" \
+  || ko "a snapshot into a read-only destination fails cleanly through fail(), not a shell abort (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  rm -rf "$SNAP_RO"; mkdir -p "$SNAP_RO"; chmod 555 "$SNAP_RO"
+  out=$(dash "$SYNC" snapshot "$SNAP_RO" 2>/dev/null); rc=$?
+  chmod 755 "$SNAP_RO"
+  { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "manifest" ]; } \
+    && ok "a snapshot into a read-only destination fails cleanly through fail() under dash" \
+    || ko "a snapshot into a read-only destination fails cleanly through fail() under dash (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-snapshot check was skipped, coverage not claimed)"
+fi
+rm -rf "$SNAP_RO"
+
 # --- learner sync: push -----------------------------------------------------
 # Replace Task 1's minimal fake gh with a fuller one that serves a "remote gist"
 # out of $GH_REMOTE and logs argv to $GH_LOG, now that push needs create/patch/view.
@@ -5109,6 +5208,19 @@ bk=$(printf '%s' "$out" | jq -r .backup)
 { [ -d "$bk" ] && grep -qF 'fixtures' "$bk/memory.md"; } \
   && ok "pull backs the local record up before writing" \
   || ko "pull backs the local record up before writing (bk=$bk)"
+
+# Item 2: backup_local's loop already reads
+# `for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE"`, but nothing
+# pinned $LIBS_FILE specifically — a mutation test found that dropping it from
+# that loop changed nothing in this suite. Distinct, greppable content in
+# libs.md before a pull, checked against the backup that same pull makes.
+setup_pull
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| item2-pin | 2026-09-19 | mutation guard | ✅ ok |\n' > "$SDATA/libs.md"
+out=$(sh "$SYNC" pull)
+bk2=$(printf '%s' "$out" | jq -r .backup)
+{ [ -d "$bk2" ] && grep -qF 'item2-pin' "$bk2/libs.md"; } \
+  && ok "pull's backup carries libs.md too, not just memory.md" \
+  || ko "pull's backup carries libs.md too, not just memory.md (bk=$bk2)"
 
 grep -qF 'Test design' "$SDATA/recap.md" \
   && ok "pull leaves recap.md to the model" \
@@ -5332,6 +5444,53 @@ lines=$(printf '%s\n' "$out" | grep -c .)
   && ok "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write" \
   || ko "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write (rc=$rc out=$out)"
 rm -f "$SDATA/backups"
+
+# Item 1 sweep regression: cmd_pull's own lenient libs.md fallback (the guard
+# right above "libs.md is fetched leniently") ends in the same special-built-in
+# abort as the snapshot_into sites above. `:` is a POSIX special built-in, so a
+# redirection failure on it aborts a non-interactive shell outright under dash
+# — before this script's own fail() ever runs, and before the `||` on this
+# very line. $_work is mktemp's own fresh directory, so it is always writable
+# the instant cmd_pull gets it; reproducing "exists but cannot be written into"
+# means intercepting mktemp itself here, standing in for a TMPDIR remounted
+# read-only mid-session. The interceptor only touches `-d` calls, passing
+# everything else straight to the real mktemp, so readable_or_empty's own
+# single-file mktemp (a separate, pre-existing, explicitly out-of-scope leak)
+# is untouched.
+setup_pull
+REAL_MKTEMP=$(command -v mktemp)
+ROMKTEMP="$WORK/ro-mktemp-bin"; rm -rf "$ROMKTEMP"; mkdir -p "$ROMKTEMP"
+cat > "$ROMKTEMP/mktemp" <<MKFAKE
+#!/bin/sh
+case " \$* " in
+  *" -d "*)
+    d=\$("$REAL_MKTEMP" "\$@") || exit 1
+    : > "\$d/libs.md" 2>/dev/null
+    chmod 444 "\$d/libs.md" 2>/dev/null
+    printf '%s\n' "\$d"
+    ;;
+  *)
+    exec "$REAL_MKTEMP" "\$@"
+    ;;
+esac
+MKFAKE
+chmod +x "$ROMKTEMP/mktemp"
+out=$(PATH="$ROMKTEMP:$PATH" sh "$SYNC" pull 2>/dev/null); rc=$?
+lines=$(printf '%s\n' "$out" | grep -c .)
+{ [ "$rc" = 0 ] && [ "$lines" = 1 ] && printf '%s' "$out" | jq -e .ok >/dev/null 2>&1; } \
+  && ok "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly" \
+  || ko "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  setup_pull
+  out=$(PATH="$ROMKTEMP:$PATH" dash "$SYNC" pull 2>/dev/null); rc=$?
+  lines=$(printf '%s\n' "$out" | grep -c .)
+  { [ "$rc" = 0 ] && [ "$lines" = 1 ] && printf '%s' "$out" | jq -e .ok >/dev/null 2>&1; } \
+    && ok "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly under dash" \
+    || ko "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly under dash (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-libs.md-placeholder check was skipped, coverage not claimed)"
+fi
+rm -rf "$ROMKTEMP"
 
 # --- learner sync: Important 4 — pull <gist> drops a stale base from a different gist ---
 setup_pull
