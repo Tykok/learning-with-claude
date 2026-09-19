@@ -140,22 +140,22 @@
   </dl>
 
   <p>A review fires when <strong>you pause typing</strong>: the watcher polls your working tree
-  every <code>coachPollSeconds</code> and, once it sees <code>coachQuietPolls</code> polls in a
-  row with nothing new, treats that quiet as a pause and fires — as long as at least
-  <code>coachMinLines</code> lines have changed since the last one. <code>coachCooldownMinutes</code>
-  is a floor between two reviews, so a run of short pauses does not turn into a run of
-  interruptions. <code>coachMaxWaitMinutes</code> is the other side of that: material that has
-  sat unreviewed this long fires anyway, even without a pause, so a long uninterrupted stretch
-  doesn't wait for the day's end to get a review. Zero changes for
-  <code>coachIdleMinutes</code> and the watcher stops itself and asks whether you want to
-  continue. See <a href="config.html">Configuration</a> for the six <code>coach*</code> keys
-  that tune all of this.</p>
+  every <code>coachPollSeconds</code>, and once it has seen <code>coachQuietPolls</code>
+  consecutive quiet polls with at least <code>coachMinLines</code> changed since the last
+  review, it fires — floored by <code>coachCooldownMinutes</code> so a run of short pauses does
+  not turn into a run of interruptions, and forced anyway past
+  <code>coachMaxWaitMinutes</code> so a long uninterrupted stretch doesn't wait for the day's
+  end to get a review. Zero changes for <code>coachIdleMinutes</code> and the watcher stops
+  itself and asks whether you want to continue. See <a href="config.html">Configuration</a> for
+  the seven <code>coach*</code> keys that tune all of this.</p>
 
   <p>A review is sized by the diff it is reviewing, not fixed in advance: a small change gets
   one question — the challenge — and nothing else; a larger one may add a question about a
   third-party library actually in play, and, past a size threshold, a question about how the
-  change is split across files. Up to three questions total, asked <strong>one at a time</strong>
-  — never stacked in one message. Alongside the questions, the review may open with a one-line
+  change is split across files. One or two questions arrive together, in the same message; only
+  when a review earns all three are they asked <strong>one at a time</strong> — say there are
+  three, ask the first, wait for your answer, then the next, never all three stacked in one
+  message. Alongside the questions, the review may open with a one-line
   confirmation of a genuinely good decision it found in the diff (silence otherwise — an empty
   compliment teaches nothing), and it closes with findings anchored <code>file:line</code> and
   leads for what comes next. Once you answer, Claude teaches: the concept, the pitfall, the

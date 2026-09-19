@@ -997,10 +997,27 @@ li() { cfgsh "learner_int '$1' '$2' '$3'"; }
 [ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
   || ko "learner_int leaves a plain 25 unchanged"
 
-# The threshold/pomodoro split this check used to guard is gone (coach-v2: one
-# pause-driven cadence, no per-clock prose to keep in sync with the table row
-# count), so the dynamic-count check that lived here was removed rather than
-# left to test a distinction the docs no longer draw.
+# --- docs/config.html: coach* keys prose count matches its table -----------
+# Retargeted from the old pomodoro/threshold split (coach-v2 collapsed that
+# to one pause-driven cadence, leaving no per-clock prose to guard), but the
+# underlying guard is the same: the prose's key-count word must track the
+# table's actual row count, counted dynamically rather than hard-coded, so a
+# row added or removed later turns this red instead of leaving a stale count
+# silently wrong — the exact defect ("twelve" surviving a table that grew to
+# ten, then a table shrunk to seven still saying "six") this table has hit
+# twice now.
+tcount=$(awk '/<tbody class="group-coach">/,/<\/tbody>/' "$ROOT/docs/config.html" | grep -c '<tr>')
+case "$tcount" in
+  4) tword=four ;;
+  5) tword=five ;;
+  6) tword=six ;;
+  7) tword=seven ;;
+  8) tword=eight ;;
+  *) tword='__no-word-mapped__' ;;
+esac
+grep -qF "The $tword <code>coach*</code> keys" "$ROOT/docs/config.html" \
+  && ok "config.html's coach* key-count prose matches its table ($tcount)" \
+  || ko "config.html's coach* key-count prose matches its table ($tcount)"
 
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
@@ -3078,8 +3095,8 @@ grep -qF 'claude -p' "$SITE_USAGE" \
 # --- pilot docs ---------------------------------------------------------------
 # The four keys already ship in config.html's table (checked earlier, further up,
 # against LEARNER_DEFAULTS itself for their values); this pins the config page to
-# actually mentioning all four by name, the same standard the coachCadence loop
-# above holds config.html to for the coach keys.
+# actually mentioning all four by name, the same standard the coach key-presence
+# loop above holds config.html to for the coach keys.
 for k in pilotEnabled pilotCadenceDays pilotJudgeIntervalHours pilotNudge; do
   grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
     || ko "config.html documents $k"

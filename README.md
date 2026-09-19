@@ -35,8 +35,8 @@ directory.
 
 The default regime has Claude write the code and quiz you afterwards. Coach mode inverts it:
 you write the code, and Claude watches your working tree and comes back when you pause to
-challenge you — one question on a small diff, up to three on a large one, asked one at a
-time — plus findings and leads, never a patch.
+challenge you — one question on a small diff, up to three on a large one (three arrive one at
+a time; fewer arrive together) — plus findings and leads, never a patch.
 
 ```
 learner coach on
@@ -59,9 +59,10 @@ seen enough consecutive quiet polls with at least `coachMinLines` changed since 
 review, it fires — floored by `coachCooldownMinutes` so short pauses don't turn into a run of
 interruptions, and forced anyway past `coachMaxWaitMinutes` so a long uninterrupted stretch
 still gets reviewed. The review itself is sized by the diff: one question on a small change, up
-to three — asked one at a time — on a large one, plus findings and leads. Zero changes for
-`coachIdleMinutes` and the watcher stops itself and asks whether you want to continue. Tune all
-of this with the six `coach*` keys — see the site's [Configuration](https://tykok.github.io/learning-with-claude/config.html) page.
+to three on a large one — one or two arrive together, three are asked one at a time — plus
+findings and leads. Zero changes for `coachIdleMinutes` and the watcher stops itself and asks
+whether you want to continue. Tune all of this with the seven `coach*` keys — see the site's
+[Configuration](https://tykok.github.io/learning-with-claude/config.html) page.
 
 Coach mode needs an interactive Claude Code session: the watcher runs as a `Monitor`, which
 does not exist in `claude -p`, in a subagent or in a cloud session. The write refusal still
