@@ -356,6 +356,13 @@ and §3.4 shrinks to nothing.
 `recap.md` and the global `learner.json` in what push and pull carry, and `docs/safety.html`'s
 consent list names it.
 
+Both of those are *descriptions* of `hooks/learner-sync.sh`, which hardcodes the file set in
+five places — so the script is what actually has to change. Writing only the prose would put a
+false claim on the consent page: a file named as leaving the machine that no code ever sends.
+On push `libs.md` is carried like the others; on **pull it is fetched leniently**, because a gist
+written before this feature has no `libs.md` and a required fetch would fail hard on every
+existing one.
+
 `export` is **not** touched: it builds Notion rows from `recap.md`'s themes only, and a library
 ledger is not a theme. Exporting it would be a second, unrelated data model in the same
 database.
