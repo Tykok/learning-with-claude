@@ -65,6 +65,14 @@ coach_baseline_head() { cat "$BASEDIR/.head" 2>/dev/null || printf ''; }
 # challenged on.
 coach_candidates() {
   _cbh=$(coach_baseline_head)
+  # Claude's writes belong to the quiz, the dev's to the coach — but only for
+  # the CURRENT window. .session is append-only and never cleared, so testing
+  # the whole file excluded a shared file for the rest of the session: one
+  # question to Claude about the file you are working on and the coach never
+  # looked at it again. The mark is how far .session had grown when the last
+  # review fired; only what Claude appended after it still belongs to Claude.
+  _cbmark=$(cat "$BASEDIR/.sessionmark" 2>/dev/null)
+  case "$_cbmark" in ''|*[!0-9]*) _cbmark=0 ;; esac
   {
     git -C "$ROOT" diff --name-only HEAD 2>/dev/null
     git -C "$ROOT" ls-files -o --exclude-standard 2>/dev/null
@@ -80,7 +88,8 @@ coach_candidates() {
     # coach. Per-hunk authorship is not available to a shell script, so a file
     # both touched is attributed to Claude — reviewing Claude's own code as if
     # it were the dev's would produce a challenge the dev cannot answer.
-    if [ -f "$SESSION" ] && grep -qxF "$_ca" "$SESSION" 2>/dev/null; then
+    if [ -f "$SESSION" ] \
+      && tail -n +$((_cbmark + 1)) "$SESSION" 2>/dev/null | grep -qxF "$_ca" 2>/dev/null; then
       continue
     fi
     # A line count over a PNG is noise. Non-empty and no text line = binary; an
@@ -197,6 +206,32 @@ coach_advance() {
   if ! git -C "$ROOT" rev-parse HEAD > "$BASEDIR/.head" 2>/dev/null; then
     _caempty=$(git -C "$ROOT" hash-object -t tree /dev/null 2>/dev/null)
     printf '%s' "$_caempty" > "$BASEDIR/.head"
+  fi
+  # coach_candidates just excluded everything Claude appended to .session this
+  # window from the stdin this function read above, so those paths got no
+  # content copy. Without one, the moment the dev inherits such a file its
+  # WHOLE current content — Claude's lines included — reads as delta the
+  # instant it becomes a candidate again, defeating the very split .session
+  # exists to make. Snapshot exactly the slice of .session this window closes
+  # over (old mark, read before we overwrite it below, up to now) so next
+  # window's diff starts from what the dev actually inherited.
+  if [ -f "$SESSION" ]; then
+    _caoldmark=$(cat "$BASEDIR/.sessionmark" 2>/dev/null)
+    case "$_caoldmark" in ''|*[!0-9]*) _caoldmark=0 ;; esac
+    tail -n +$((_caoldmark + 1)) "$SESSION" 2>/dev/null | sort -u | while IFS= read -r _cap; do
+      [ -n "$_cap" ] && [ -f "$_cap" ] || continue
+      case "$_cap" in
+        "$ROOT"/*) cp "$_cap" "$BASEDIR/$(coach_key "${_cap#"$ROOT"/}")" 2>/dev/null ;;
+      esac
+    done
+  fi
+  # How far .session had grown when this baseline was taken. Everything Claude
+  # appended before this line belongs to a window that is now closed, and the
+  # dev's later edits to those same files are theirs to be challenged on.
+  if [ -f "$SESSION" ]; then
+    grep -c '' "$SESSION" > "$BASEDIR/.sessionmark" 2>/dev/null
+  else
+    printf '0' > "$BASEDIR/.sessionmark"
   fi
 }
 

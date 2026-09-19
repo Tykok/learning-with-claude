@@ -3895,6 +3895,46 @@ out=$(material "$SID_W")
   || ko "a path Claude wrote this session is excluded"
 rm -f "$(sess "$SID_W")"
 
+# The exclusion is scoped to one review window, not to the whole session.
+# .session is append-only and never cleared (the quiz's synthesis question reads
+# all of it), so v1's "is this path anywhere in .session" test excluded a file
+# for good: ask Claude one question about the file you are working on and it
+# left your candidate set permanently, which — if it emptied the set — ran the
+# idle counter out and killed the watcher.
+SID_WIN=watchwin
+rm -rf "$(basedir "$SID_WIN")"; rm -f "$(sess "$SID_WIN")"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m winbase 2>/dev/null
+
+lines 12 > "$CREPO/src/Shared.kt"
+echo "$CREPO/src/Shared.kt" > "$(sess "$SID_WIN")"      # Claude wrote it
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a file Claude wrote is excluded inside the current window" \
+  || ko "a file Claude wrote is excluded inside the current window"
+
+# A review fires: the baseline advances and records how far .session had got.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_WIN" --once --advance >/dev/null
+lines 9 | sed 's/^/dev /' >> "$CREPO/src/Shared.kt"     # now the DEV works on it
+out=$(material "$SID_WIN")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" = "9" ] \
+  && ok "the dev's later work on that same file is coach material again" \
+  || ko "the dev's later work on that same file is coach material again (got: $out)"
+
+# Claude writing it again re-excludes it, for that window only.
+echo "$CREPO/src/Shared.kt" >> "$(sess "$SID_WIN")"
+lines 4 | sed 's/^/claude /' >> "$CREPO/src/Shared.kt"
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a fresh write by Claude re-excludes the file for the new window" \
+  || ko "a fresh write by Claude re-excludes the file for the new window"
+
+# No .session at all: the mark is 0 and nothing is excluded.
+rm -f "$(sess "$SID_WIN")"
+out=$(material "$SID_WIN")
+[ -n "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "no .session means nothing is excluded" || ko "no .session means nothing is excluded"
+rm -f "$CREPO/src/Shared.kt"
+
 # Regression (Finding 2): learner-record-edit.sh wrote the RAW file_path into
 # .session, but coach-watch.sh compares candidates (built from the always-
 # physical ROOT) against .session with a plain string match. On a repo
