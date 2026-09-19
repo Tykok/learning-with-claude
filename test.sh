@@ -3676,10 +3676,10 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$PLUGIN_HOOKS" \
   && ok "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}" \
   || ko "hooks/hooks.json commands use \${CLAUDE_PLUGIN_ROOT}"
 
-{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "8" ] \
-  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "8" ]; } \
-  && ok "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
-  || ko "hooks/hooks.json wires exactly 8 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
+{ [ "$(jq '[.hooks[][].hooks[]] | length' "$PLUGIN_HOOKS")" = "9" ] \
+  && [ "$(jq '[.hooks[][].hooks[].command | select(contains("CLAUDE_PLUGIN_ROOT"))] | length' "$PLUGIN_HOOKS")" = "9" ]; } \
+  && ok "hooks/hooks.json wires exactly 9 commands, every one via \${CLAUDE_PLUGIN_ROOT}" \
+  || ko "hooks/hooks.json wires exactly 9 commands, every one via \${CLAUDE_PLUGIN_ROOT}"
 
 grep -qF 'learner-update-check.sh' "$PLUGIN_HOOKS" \
   && ko "hooks/hooks.json does not wire learner-update-check.sh" \
@@ -4372,6 +4372,65 @@ grep -q 'coach-watch' "$PLUG/hooks/hooks.json" \
 grep -q 'coach-watch' "$PLUG/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
+
+# --- coach-armed-check.sh ---------------------------------------------------
+ARMCHK="$PLUG/hooks/coach-armed-check.sh"
+armed()   { echo "$TMPDIR/claude-learner-$1.coach-armed"; }
+armwarn() { echo "$TMPDIR/claude-learner-$1.coach-armwarn"; }
+armin()   { printf '{"session_id":"%s"}' "$1"; }
+
+SID_A=arm1
+rm -f "$(armed "$SID_A")" "$(armwarn "$SID_A")"
+
+# Coach off: the hook is a silent no-op, like every other learner hook.
+echo '{"level":"C","coach":false}' > "$GCFG"
+rm -f "$PCFG"
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
+[ -z "$out" ] && ok "armed-check is silent with the coach off" \
+  || ko "armed-check is silent with the coach off"
+
+# Coach on, no marker: one line of additionalContext, and it is valid JSON.
+echo '{"level":"C","coach":true}' > "$GCFG"
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
+printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1 \
+  && ok "armed-check emits a valid UserPromptSubmit payload" \
+  || ko "armed-check emits a valid UserPromptSubmit payload"
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'coach-watch.sh' \
+  && ok "the warning names the command that arms the watcher" \
+  || ko "the warning names the command that arms the watcher"
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q "$SID_A" \
+  && ok "the warning carries the session id" || ko "the warning carries the session id"
+
+# Once per session: a second prompt must not repeat it.
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
+[ -z "$out" ] && ok "armed-check warns at most once per session" \
+  || ko "armed-check warns at most once per session"
+
+# Marker present: nothing to warn about.
+SID_A2=arm2
+rm -f "$(armwarn "$SID_A2")"
+: > "$(armed "$SID_A2")"
+out=$(armin "$SID_A2" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK")
+[ -z "$out" ] && ok "armed-check is silent once the watcher is armed" \
+  || ko "armed-check is silent once the watcher is armed"
+
+# The watcher's own modes: --once and friends are test/off-cadence entry points
+# and must not claim the session is armed.
+SID_A3=arm3
+rm -f "$(armed "$SID_A3")"
+rm -rf "$(basedir "$SID_A3")"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_A3" --once >/dev/null 2>&1
+[ ! -e "$(armed "$SID_A3")" ] \
+  && ok "--once does not write the armed marker" || ko "--once does not write the armed marker"
+
+# Wiring: the new hook runs on UserPromptSubmit in both install paths.
+jq -e '.hooks.UserPromptSubmit[0].hooks | map(.command) | any(contains("coach-armed-check.sh"))' \
+  "$PLUG/hooks/hooks.json" >/dev/null 2>&1 \
+  && ok "coach-armed-check.sh is wired on UserPromptSubmit" \
+  || ko "coach-armed-check.sh is wired on UserPromptSubmit"
+grep -q 'coach-armed-check' "$PLUG/hooks/settings.snippet.json" \
+  && ok "coach-armed-check.sh is wired in the snippet too" \
+  || ko "coach-armed-check.sh is wired in the snippet too"
 
 # --- pilot wiring -------------------------------------------------------------
 # Wiring drift is the failure mode that silently disables a whole feature, so

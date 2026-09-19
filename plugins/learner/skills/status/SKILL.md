@@ -19,7 +19,12 @@ allowed-tools: Read, Grep, Bash
    `learner quiz`.
 3. Print one line for the level and version, then one line for coach status — on/off, the
    current cycle if a coach session is running, and the delegated globs read from
-   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists — then, if
+   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists. When coach is on,
+   also say whether the watcher is armed, read as the existence of
+   `$TMPDIR/claude-learner-<session-id>.coach-armed`; if it is absent, say so in that same line
+   and name `coach-watch.sh` as the fix (arm it with the Monitor tool, as `learner-onboard.sh`
+   asked at session start) — this is the one place a dev asks "is coach actually running?" —
+   then, if
    `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
    `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a
    handful of bullets: broad competency themes grouped by domain, skipping anything already under

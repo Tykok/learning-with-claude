@@ -419,6 +419,11 @@ fi
 # post-emission sleep of v1 is gone — coachCooldownMinutes is now the only
 # floor between two reviews, and it is enforced inside coach_cycle where the
 # clock is already being read.
+#
+# The armed marker. coach-armed-check.sh warns the dev when it is missing, so it
+# must be written by the real loop only — --once and --advance are test and
+# off-cadence entry points, not a running cadence.
+: > "$TMPD/claude-learner-${SID}.coach-armed" 2>/dev/null || :
 CYCLE=1
 rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF"
 while :; do

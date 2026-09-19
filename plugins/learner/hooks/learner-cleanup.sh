@@ -22,6 +22,8 @@ rm -f "$DIR/claude-learner-${SID}.edits" \
       "$DIR/claude-learner-${SID}.coach-pending" \
       "$DIR/claude-learner-${SID}.coach-last" \
       "$DIR/claude-learner-${SID}.pilot-nudged" \
-      "$DIR/claude-learner-${SID}.onboard-roots"
+      "$DIR/claude-learner-${SID}.onboard-roots" \
+      "$DIR/claude-learner-${SID}.coach-armed" \
+      "$DIR/claude-learner-${SID}.coach-armwarn"
 rm -rf "$DIR/claude-learner-${SID}.coach-base"
 exit 0

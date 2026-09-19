@@ -92,6 +92,11 @@
             "type": "command",
             "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/pilot-nudge.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/coach-armed-check.sh\"",
+            "timeout": 10
           }
         ]
       }
