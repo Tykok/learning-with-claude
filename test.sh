@@ -4653,6 +4653,27 @@ grep -qF '**say nothing**' "$CMD" \
   && ok "coach.md allows the confirmation to be skipped" \
   || ko "coach.md allows the confirmation to be skipped"
 
+# The idle-line quote in § On the idle line must track what coach-watch.sh
+# actually prints, not what it used to print: the watcher moved from a
+# work-block count to a minutes duration, and coach.md's quoted string went
+# stale silently because nothing tied the two together. Ground truth is read
+# from coach-watch.sh itself, the same style as the hook-count and
+# LEARNER_DEFAULTS derivations elsewhere in this file (search "hook count
+# drift guard"), rather than restated by hand here where it could go stale
+# again the same way. Full string equality is impractical — coach.md quotes
+# the line with a literal "N" where the watcher interpolates $IDLE_MINUTES —
+# so the two fixed fragments framing that variable are pulled out of the
+# watcher's own printf and both are required verbatim in coach.md; either one
+# missing means the two files disagree on what the dev will actually see.
+IDLE_LINE=$(grep -o 'no tracked changes for \$IDLE_MINUTES minutes; the watcher has stopped\.' \
+  "$PLUG/hooks/coach-watch.sh")
+IDLE_PRE=$(printf '%s' "$IDLE_LINE" | sed 's/\$IDLE_MINUTES.*//')
+IDLE_POST=$(printf '%s' "$IDLE_LINE" | sed 's/.*MINUTES //')
+{ [ -n "$IDLE_PRE" ] && [ -n "$IDLE_POST" ] \
+  && grep -qF "$IDLE_PRE" "$CMD" && grep -qF "$IDLE_POST" "$CMD"; } \
+  && ok "coach.md's idle-line quote matches what coach-watch.sh actually emits" \
+  || ko "coach.md's idle-line quote matches what coach-watch.sh actually emits"
+
 # --- learner sync: skeleton -------------------------------------------------
 SYNC="$PLUG/hooks/learner-sync.sh"
 

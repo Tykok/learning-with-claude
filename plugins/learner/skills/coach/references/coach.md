@@ -119,10 +119,10 @@ quiz question, never both at once.
 
 ## On the idle line
 
-`🧑‍🏫 Coach — no tracked changes for N work blocks; the watcher has stopped.` means the watcher
-has already exited. Ask the dev, in one line, whether they want to continue the coaching
-session. If they do, arm it again with the `Monitor` tool exactly as the `SessionStart` context
-described. If they do not, say nothing further about it.
+`🧑‍🏫 Coach — no tracked changes for N minutes; the watcher has stopped.` means the watcher has
+already exited. Ask the dev, in one line, whether they want to continue the coaching session. If
+they do, arm it again with the `Monitor` tool exactly as the `SessionStart` context described. If
+they do not, say nothing further about it.
 
 ## `learner coach delegate <glob> …`
 
@@ -150,5 +150,5 @@ sh <hooks-dir>/coach-watch.sh "<session-id>" --once --print-material
 sh <hooks-dir>/coach-watch.sh "<session-id>" --once --advance
 ```
 
-Advancing matters: without it the running work block would serve the same material again and
-the dev would be challenged twice on one diff.
+Advancing matters: without it, the next poll would still see the same unreviewed material and
+serve it again, and the dev would be challenged twice on one diff.
