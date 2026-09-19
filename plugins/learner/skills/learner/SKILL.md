@@ -95,8 +95,8 @@ source file (see `references/hook-quiz.md`).
 To edit: read the target file, merge the new values over the existing ones, validate
 (`level` in the five letters; `enabled` boolean; `questionStyles` `"auto"` or a subset;
 `synthesisFrequency` one of the four words; ints ≥ 1; the two glob keys arrays of
-non-empty strings; `coach` boolean; every `coach*` integer key is a positive integer
-(`coachCooldownMinutes` and `coachMaxWaitMinutes` may be `0`)), write it, then confirm with
+non-empty strings; `coach` boolean; every `coach*` integer key at or above the floor in the
+table above), write it, then confirm with
 `jq -e . <file> >/dev/null && echo OK`. Reject invalid values and re-ask instead of
 writing them. A config still carrying a v1 key (`coachCadence`, `coachWorkMinutes`,
 `coachWorkGrowthMinutes`, `coachWorkMaxMinutes`, `coachChallengeMinutes`, `coachIdleCycles`,

@@ -43,19 +43,25 @@ review**, not the size of the branch diff. Then:
    The two criteria are read independently and **the higher tier wins**: 300 lines in one file is
    large, and so is six files of five lines each. A ceiling, never a quota — one question is the
    right answer whenever the diff offers nothing worth a second.
-5. **Produce the blocks**, in this order, calibrated per § Level below:
-   - **Confirmation** (0-1, one line). A genuinely good decision visible in the diff, named
-     precisely. Nothing true to say → **say nothing**. An empty compliment devalues every block
-     after it, and a protocol that mandated one would guarantee invention.
+5. **Produce the blocks**, in this order, calibrated per § Level below. The tier's `Questions` and
+   `Findings` columns from step 4 are the **ceiling** the blocks below fill, never a target the
+   blocks add up past: a Small diff gets the challenge and nothing else, even when it also
+   imports something worth a second question — that question waits for a diff sized to carry it.
+   - **Confirmation** (0-1, one line, every tier). A genuinely good decision visible in the diff,
+     named precisely. Nothing true to say → **say nothing**. An empty compliment devalues every
+     block after it, and a protocol that mandated one would guarantee invention. It sits outside
+     the tier's question budget — it is a line, not a question.
    - **Challenge** (1, always). A question about a real decision in the diff — a split, a name,
-     an error path, a data structure.
-   - **Library question** (0-1). Only when the diff puts a third-party method in play that is
-     worth asking about: cost parameters, a known pitfall, a non-obvious contract, a default that
-     bites. A trivial use, or no library at all, means **no question and no fallback** — a
-     question asked for the sake of the slot teaches nothing.
-   - **Structure question** (0-1, large diffs only). The split across the files in the trigger:
-     what belongs where, what leaked.
-   - **Findings** (0-3). Each anchored `path/file.kt:42`. State the defect, not the fix.
+     an error path, a data structure. Fills the Small tier's single question slot on its own.
+   - **Library question** (0-1, Medium and Large only — Small has no second slot for it). Only
+     when the diff puts a third-party method in play that is worth asking about: cost parameters,
+     a known pitfall, a non-obvious contract, a default that bites. A trivial use, no library at
+     all, or a Small diff, means **no question and no fallback** — a question asked for the sake
+     of the slot teaches nothing.
+   - **Structure question** (0-1, Large only). The split across the files in the trigger: what
+     belongs where, what leaked.
+   - **Findings** (per the tier's `Findings` column above, never more). Each anchored
+     `path/file.kt:42`. State the defect, not the fix.
    - **Leads** (0-2). A direction worth exploring, including **the next steps of the feature
      under way** — what remains to handle, never how to write it.
 6. **Then stop and wait.** One or two questions go in the same message.
@@ -73,6 +79,12 @@ review**, not the size of the branch diff. Then:
    API in the abstract. Never a snippet using the dev's own class, function or file names; never
    a block long enough to paste back into the file under review. On *their* code the rule is
    unchanged — the defect and its location, never the correction.
+
+   This is where the volume risk now lives: a review can already carry a confirmation, up to
+   three questions, findings and leads, and this teaching paragraph lands on top of all of it. A
+   wall of text puts the dev back in the passenger seat by other means, whether it arrives as one
+   long challenge or five full blocks stacked in one message — teach at the length the answer
+   earned, not the length every block together would allow.
 9. **Then update the record** exactly as `../learner/references/data.md` prescribes: the verdict
    rows, the findings rolled into `To improve`, and the `libs.md` row for the library question.
 
@@ -149,6 +161,10 @@ material and advance the baseline in one step:
 sh <hooks-dir>/coach-watch.sh "<session-id>" --once --print-material
 sh <hooks-dir>/coach-watch.sh "<session-id>" --once --advance
 ```
+
+There is no trigger line here to read `files` and `lines` off — derive them yourself from
+`--print-material`'s `<delta>\t<rel>` rows before sizing the review: `files` is the row count,
+`lines` is the sum of the `<delta>` column.
 
 Advancing matters: without it, the next poll would still see the same unreviewed material and
 serve it again, and the dev would be challenged twice on one diff.

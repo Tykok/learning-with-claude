@@ -1,5 +1,5 @@
 ---
-description: Coach mode — the dev writes the code, Claude challenges it with one question, findings and leads, never a patch. Covers "coach on"/"coach off", "coach delegate <glob>", "coach review". Also the protocol to follow on a 🧑‍🏫 Coach trigger line from the change watcher. Use for "learner coach", "mode coach", "passe en mode coach", "challenge-moi", "délègue-moi".
+description: Coach mode — the dev writes the code, Claude challenges it with one to three questions sized to the diff, asked one at a time, plus an optional confirmation of a good decision, library teaching, findings and leads — never a patch. Covers "coach on"/"coach off", "coach delegate <glob>", "coach review". Also the protocol to follow on a 🧑‍🏫 Coach trigger line from the change watcher. Use for "learner coach", "mode coach", "passe en mode coach", "challenge-moi", "délègue-moi".
 allowed-tools: Read, Write, Edit, Grep, Bash
 ---
 

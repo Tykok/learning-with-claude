@@ -4620,9 +4620,22 @@ CMD="$PLUG/skills/coach/references/coach.md"
 grep -qi 'higher tier wins' "$CMD" \
   && ok "coach.md states how the two ladder criteria combine" \
   || ko "coach.md states how the two ladder criteria combine"
-for t in 'Small' 'Medium' 'Large'; do
-  grep -q "$t" "$CMD" && ok "coach.md documents the $t tier" || ko "coach.md documents the $t tier"
-done
+
+# The tier boundaries and per-tier question/finding counts are the load-bearing
+# part of this task's behaviour. An unanchored `grep -q "$t"` for the tier name
+# alone would stay green if "< 40" silently became "< 400" — exactly the class
+# of non-discriminating grep this repo has been bitten by three times already.
+# Anchor on each row verbatim instead, so a changed boundary or count turns
+# the suite red.
+grep -qF '| Small | < 40 | 1 | 1 — the challenge | 0-2 |' "$CMD" \
+  && ok "coach.md's ladder pins the Small tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Small tier's boundary and counts"
+grep -qF '| Medium | 40-120 | 2-3 | up to 2 — challenge + library *if there is material* | 0-3 |' "$CMD" \
+  && ok "coach.md's ladder pins the Medium tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Medium tier's boundary and counts"
+grep -qF '| Large | > 120 | ≥ 4 | up to 3 — challenge + library + one on the split | 0-3 |' "$CMD" \
+  && ok "coach.md's ladder pins the Large tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Large tier's boundary and counts"
 
 # Three questions must be asked one at a time. This is the rule most likely to
 # be dropped in a rewrite, and the one that decides whether a large review is a
@@ -4637,9 +4650,14 @@ grep -qi 'no fallback' "$CMD" \
   && ok "coach.md rules out a fallback library question" \
   || ko "coach.md rules out a fallback library question"
 
-# The teaching phase and its ceiling.
+# The teaching phase and its ceiling. 'generic' alone tests vocabulary, not the
+# rule — it would still match inside a negation of the rule. The substantive
+# clause is the prohibition on the dev's own names, so assert that too.
 grep -qi 'generic' "$CMD" && ok "coach.md bounds the teaching snippet to a generic one" \
   || ko "coach.md bounds the teaching snippet to a generic one"
+grep -qiF "never a snippet using the dev's own class, function or file names" "$CMD" \
+  && ok "coach.md forbids a teaching snippet that uses the dev's own names" \
+  || ko "coach.md forbids a teaching snippet that uses the dev's own names"
 grep -qF 'libs.md' "$CMD" && ok "coach.md reads libs.md before choosing a library" \
   || ko "coach.md reads libs.md before choosing a library"
 
