@@ -299,13 +299,31 @@ LASTF="$TMPD/claude-learner-${SID}.coach-last"
 
 coach_read_int() { _cri=$(cat "$1" 2>/dev/null); case "$_cri" in ''|*[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$_cri" ;; esac; }
 
+# The idle cut-off, reached from both of coach_cycle's branches. One line, then
+# stop: the watcher costs nothing while it waits, but every notification opens a
+# turn, so an abandoned session must not keep producing them. Factored into one
+# function rather than printed at both call sites because coach.md quotes this
+# exact sentence and test.sh derives that quote from this printf — two copies
+# would make that derivation ambiguous, and let the two copies drift apart.
+coach_cutoff() {
+  printf '%s\n' "🧑‍🏫 Coach — no tracked changes for $IDLE_MINUTES minutes; the watcher has stopped.
+Ask the dev whether they want to continue the coaching session. If they do, re-arm the watcher."
+  rm -f "$IDLEF"
+}
+
+# True once the idle counter's polls add up to coachIdleMinutes.
+coach_idle_due() { [ $(( $1 * POLL )) -ge $(( IDLE_MINUTES * 60 )) ]; }
+
 # One measurement + decision + emission. Three-way result, deliberately not
 # inferred by the caller from any file's presence:
 #   0 = emitted            1 = stop (idle cut-off)      2 = no emission, keep going
 # "No emission" is a real, distinct outcome: material under the floor, a fire
-# blocked by the cooldown, and a dev still typing are none of them idle, and
-# none of them an emission. CYCLE is read from the environment so --once can
-# inject it.
+# blocked by the cooldown, and a dev still typing are none of them an emission,
+# and none of them a stop while the dev keeps touching the repo. Idle is
+# measured on the fingerprint, not on the presence of material, so "stop" is
+# reachable from BOTH branches: an empty tree and a tree nobody has typed into
+# for coachIdleMinutes are the same abandoned session. CYCLE is read from the
+# environment so --once can inject it.
 coach_cycle() {
   _ccm=$(coach_material)
   _ccnow=$(date +%s)
@@ -318,24 +336,29 @@ coach_cycle() {
     _cci=$(coach_read_int "$IDLEF" 0)
     _cci=$((_cci + 1))
     printf '%s' "$_cci" > "$IDLEF"
-    if [ $((_cci * POLL)) -ge $((IDLE_MINUTES * 60)) ]; then
-      # One line, then stop. The watcher costs nothing while it waits, but every
-      # notification opens a turn — so an abandoned session must not keep
-      # producing them.
-      printf '%s\n' "🧑‍🏫 Coach — no tracked changes for $IDLE_MINUTES minutes; the watcher has stopped.
-Ask the dev whether they want to continue the coaching session. If they do, re-arm the watcher."
-      rm -f "$IDLEF"
+    if coach_idle_due "$_cci"; then
+      coach_cutoff
       return 1
     fi
     return 2
   fi
 
-  # Material exists: the dev has not gone idle, whatever this cycle decides.
-  printf '0' > "$IDLEF"
-  [ -f "$PENDF" ] || printf '%s' "$_ccnow" > "$PENDF"
-
   _ccn=$(printf '%s\n' "$_ccm" | grep -c '')
   _ccl=$(printf '%s\n' "$_ccm" | awk -F'\t' '{s += $1} END {print s + 0}')
+
+  # .coach-pending times how long material has waited for the review
+  # coachMaxWaitMinutes owes it, so it may only start once there IS a review to
+  # wait for. Stamped on the first poll with ANY material, sub-floor included,
+  # it accumulated through a stretch in which no review could possibly fire:
+  # three lines written before lunch and eight more an hour later made the
+  # guard fire on the dev's very first keystroke back, with no pause at all.
+  # Cleared rather than left stale below the floor, so a dev who reverts back
+  # under it does not keep an hour-old stamp waiting to ambush them.
+  if [ "$_ccl" -ge "$MIN_LINES" ]; then
+    [ -f "$PENDF" ] || printf '%s' "$_ccnow" > "$PENDF"
+  else
+    rm -f "$PENDF"
+  fi
 
   # The fingerprint, not the line total, is what detects activity: a dev who
   # removes three lines and writes three others leaves $_ccl unchanged while
@@ -355,14 +378,28 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
     cat "$ROOT/$_ccpf" 2>/dev/null
   done | cksum | awk '{print $1 "-" $2}')
   _ccprev=$(cat "$FPF" 2>/dev/null || printf '')
+  # The idle counter follows the fingerprint, never the mere presence of
+  # material. Material is a STATIC diff against the baseline, not activity: four
+  # lines written before the laptop closed sit in the tree unchanged all
+  # evening. Clearing .coach-idle on any non-empty material pinned it at 0 for
+  # the rest of the session, so a dev below coachMinLines got neither a review
+  # (under the floor) nor a cut-off (idle never grew) and the watcher polled a
+  # dead session forever. An unchanged fingerprint means nobody typed, whatever
+  # is sitting in the tree — that poll is idle time exactly like a poll with no
+  # material at all. A CHANGED one means the dev is at the keyboard, below the
+  # floor or not, which is what keeps the cut-off off an active dev.
   if [ "$_ccfp" = "$_ccprev" ]; then
     _ccq=$(coach_read_int "$QUIETF" 0)
     _ccq=$((_ccq + 1))
+    _cci=$(coach_read_int "$IDLEF" 0)
+    _cci=$((_cci + 1))
   else
     _ccq=0
     printf '%s' "$_ccfp" > "$FPF"
+    _cci=0
   fi
   printf '%s' "$_ccq" > "$QUIETF"
+  printf '%s' "$_cci" > "$IDLEF"
 
   _cclast=$(coach_read_int "$LASTF" 0)
   _ccpend=$(coach_read_int "$PENDF" "$_ccnow")
@@ -381,9 +418,25 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
   # above): the pause the dev already took is still valid, so the first poll
   # after the cooldown expires emits, instead of demanding a second pause.
   [ "$_ccelapsed" -lt "$COOLDOWN" ] && _ccfire=0
-  [ "$_ccfire" = 1 ] || return 2
+  if [ "$_ccfire" = 0 ]; then
+    # Nothing to review and nobody typing: the same cut-off the no-material
+    # branch applies. Tested AFTER the fire decision on purpose — material that
+    # is owed a review gets its review; only material no review will ever be
+    # served for is allowed to time the session out.
+    if coach_idle_due "$_cci"; then
+      coach_cutoff
+      return 1
+    fi
+    return 2
+  fi
 
   _ccfiles=$(printf '%s\n' "$_ccm" | cut -f2 | head -n 20 | tr '\n' ' ')
+  # The list is capped at 20 while `files:` reports the true count, and the
+  # ladder sizes the review off `files` while the structure question is defined
+  # as "the split across the files in the trigger". Unannounced, the cap left
+  # Claude reasoning about files it was never shown; naming what is missing
+  # keeps the two numbers honest.
+  [ "$_ccn" -gt 20 ] && _ccfiles="$_ccfiles(+$((_ccn - 20)) more not listed) "
 
   # Pilot's tally: added-only lines, recomputed per file with coach_delta_added
   # rather than reused from _ccl above — _ccl stays exactly what it was, for
@@ -412,8 +465,16 @@ Ask the dev whether they want to continue the coaching session. If they do, re-a
   # never the protocol itself. `files` and `lines` are what the protocol's
   # ladder reads to size the review, so they must keep meaning "since the last
   # review" — not "since HEAD".
+  #
+  # The second line must never prescribe a question count. It is the most
+  # proximate instruction Claude receives, so "One challenge, then wait" beat
+  # coach.md's whole 1/2/3 ladder outright: a Large review asked one question
+  # and stopped, shipping v1 behaviour under v2 documentation. It points at the
+  # protocol and names the two parameters that size it, nothing more. coach.md
+  # quotes this sentence and test.sh derives that quote from this very printf,
+  # so the two cannot drift again.
   printf '%s\n' "🧑‍🏫 Coach (level: $LEVEL, cycle: ${CYCLE:-1}, files: $_ccn, lines: $_ccl) — $_ccfiles
-Invoke the \`learner\` skill and follow references/coach.md. One challenge, then wait for the dev's answer."
+Invoke the \`learner\` skill and follow references/coach.md. Size the review from \`files\` and \`lines\`, then wait for the dev's answer."
 
   coach_candidates | coach_advance
   printf '%s' "$_ccnow" > "$LASTF"
@@ -449,8 +510,13 @@ fi
 # otherwise print to the real stderr. Do not "simplify" the parens away.
 ARMED="$TMPD/claude-learner-${SID}.coach-armed"
 ( : > "$ARMED" ) 2>/dev/null || :
+# The idle cut-off leaves this behind instead of $ARMED, and coach-armed-check.sh
+# reads it as "deliberately stopped, do not report a broken install". A watcher
+# starting now supersedes any earlier one's stop, so clear it here — otherwise a
+# re-armed watcher would keep the check silenced for the rest of the session.
+STOPPED="$TMPD/claude-learner-${SID}.coach-stopped"
 CYCLE=1
-rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF"
+rm -f "$FPF" "$QUIETF" "$IDLEF" "$PENDF" "$LASTF" "$STOPPED"
 while :; do
   # `learner coach off` (or a retune) is a config-file edit made mid-session,
   # with nothing else to re-read it once this loop is running as a Monitor —
@@ -472,8 +538,17 @@ while :; do
   # emission in v1.
   case $? in
     # The idle cut-off exits the loop too, same stale-marker risk as the
-    # coach-off path above.
-    1) rm -f "$ARMED"; exit 0 ;;
+    # coach-off path above. It also leaves $STOPPED behind: without it,
+    # coach-armed-check.sh sees only a missing $ARMED and tells the dev, one
+    # turn after the cut-off line already asked them whether to continue, that
+    # coach mode is on but no review will ever fire — a deliberate state
+    # reported as a broken install. The subshell and the outside-the-parens
+    # `2>/dev/null` are the same special-built-in guard as the $ARMED write
+    # above: `:` is a POSIX special built-in, so an unguarded redirection
+    # failure on it aborts a non-interactive shell outright under dash, killing
+    # the watcher with a nonzero exit and a raw dash error on stderr instead of
+    # exiting 0 quietly. Do not "simplify" the parens away.
+    1) ( : > "$STOPPED" ) 2>/dev/null || :; rm -f "$ARMED"; exit 0 ;;
     *) ;;
   esac
 done

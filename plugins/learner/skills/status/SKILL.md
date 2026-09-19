@@ -17,13 +17,18 @@ allowed-tools: Read, Grep, Bash
 2. Open weak spots: read the `To improve` sections of the recap (see
    `../learner/references/data.md` for paths). If nothing is recorded, say so and suggest
    `learner quiz`.
-3. Print one line for the level and version, then one line for coach status — on/off, the
-   current cycle if a coach session is running, and the delegated globs read from
-   `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file exists. When coach is on,
+3. Print one line for the level and version, then one line for coach status — on/off and the
+   delegated globs read from `$TMPDIR/claude-learner-<session-id>.coach-scope` when that file
+   exists. Do not report a cycle number: it lives only in the running watcher's shell variable,
+   no file holds it, and the trigger line already carries it. When coach is on,
    also say whether the watcher is armed, read as the existence of
-   `$TMPDIR/claude-learner-<session-id>.coach-armed`; if it is absent, say so in that same line
+   `$TMPDIR/claude-learner-<session-id>.coach-armed` (resolve `<session-id>` exactly as
+   `../coach/references/coach.md` § *Resolving `<session-id>`* prescribes — a coach session may
+   well have no `.session` file); if it is absent, say so in that same line
    and name `coach-watch.sh` as the fix (arm it with the Monitor tool, as `learner-onboard.sh`
-   asked at session start) — this is the one place a dev asks "is coach actually running?" —
+   asked at session start) — this is the one place a dev asks "is coach actually running?".
+   One exception: when `$TMPDIR/claude-learner-<session-id>.coach-stopped` exists, the idle
+   cut-off stopped the watcher on purpose — report that, not a broken install —
    then, if
    `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
    `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a

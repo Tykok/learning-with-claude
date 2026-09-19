@@ -101,7 +101,7 @@ One poll, in order:
 
 ```
 M  = coach_material()
-L  = sum of deltas        N = file count        FP = cksum of M
+L  = sum of deltas        N = file count        FP = cksum of the candidates' content
 now = epoch seconds
 
 # --- no material at all -------------------------------------------------
@@ -114,13 +114,16 @@ if L == 0:
     return 2                                                  # keep going
 
 # --- material present ---------------------------------------------------
-idle = 0
-if .coach-pending is unset:  .coach-pending = now
+if L >= coachMinLines:
+    if .coach-pending is unset:  .coach-pending = now
+else:
+    clear .coach-pending                 # nothing here can fire a review yet
 
 if FP != previous FP:
-    quiet = 0 ;  previous FP = FP        # the dev is typing
+    quiet = 0 ;  idle = 0                # the dev is typing
+    previous FP = FP
 else:
-    quiet += 1                           # the dev has stopped
+    quiet += 1 ;  idle += 1              # the dev has stopped
 
 elapsed = (now - .coach-last) / 60       # minutes since the last review
 waited  = (now - .coach-pending) / 60    # minutes this material has been pending
@@ -132,7 +135,10 @@ if coachMaxWaitMinutes > 0 and L >= coachMinLines
    and waited >= coachMaxWaitMinutes:                    fire = 1   # the guard
 if elapsed < coachCooldownMinutes:                       fire = 0   # the floor
 
-if fire == 0:  return 2
+if fire == 0:
+    if idle * coachPollSeconds >= coachIdleMinutes * 60:
+        emit the idle line; remove .coach-idle; return 1      # stop
+    return 2
 
 emit the trigger line
 coach_candidates | coach_advance
@@ -145,8 +151,19 @@ Four properties this ordering buys, each of which a naive rewrite loses:
 
 - **The cooldown never resets `quiet`.** A pause that arrives inside the cooldown window fires at
   the first poll after it expires, instead of requiring the dev to pause a second time.
-- **Material below `coachMinLines` is not idle.** The dev is writing; they are simply below the
-  floor. `idle` stays at 0 and the watcher does not cut itself off under someone who is working.
+- **A dev typing below `coachMinLines` is not idle.** They are writing, simply below the floor,
+  and the watcher must not cut itself off under someone who is working. What proves they are
+  working is the **fingerprint**, not the presence of material: material is a static diff against
+  the baseline, so clearing `idle` on its mere presence pinned `idle` at 0 forever and made the
+  cut-off unreachable — four lines written before the laptop closed left the watcher polling a
+  dead session for the rest of it. An unchanged fingerprint is idle time whatever sits in the
+  tree; a changed one clears `idle`, floor or no floor.
+- **`.coach-pending` starts only at or above the floor.** It times the wait
+  `coachMaxWaitMinutes` owes the material, and stamping it on sub-floor material accumulated a
+  wait through a stretch in which no review could fire — three lines before lunch and eight after
+  it fired the guard on the dev's first keystroke back.
+- **The cut-off is tested after the fire decision.** Material that is owed a review gets its
+  review; only material no review will ever be served for may time the session out.
 - **The guard also respects the floor.** `coachMaxWaitMinutes` exists for the dev in continuous
   flow, not to force a review of four lines.
 - **`quiet` is only reset by an emission or by real activity**, never by a blocked fire.
@@ -175,12 +192,21 @@ anything.
 
 ### 1.4 The trigger line
 
-Unchanged in shape; only the idle line's wording changes.
+Unchanged in its parameter list; the idle line's wording changes, and so does the instruction
+sentence. v1's "One challenge, then wait" is an *imperative*, and the most proximate instruction
+Claude receives — it beat §2.1's whole 1/2/3 ladder outright, so a Large review asked one
+question and stopped. The second line must point at the protocol and name what sizes it, and
+must prescribe no question count. `coach.md` § *On a trigger* quotes it verbatim and `test.sh`
+derives that quote from the watcher's own `printf`, so the two cannot drift apart again.
 
 ```
 🧑‍🏫 Coach (level: C, cycle: 3, files: 2, lines: 62) — Service.kt Mapper.kt
-Invoke the `learner` skill and follow references/coach.md. One challenge, then wait for the dev's answer.
+Invoke the `learner` skill and follow references/coach.md. Size the review from `files` and `lines`, then wait for the dev's answer.
 ```
+
+The file list is capped at 20 names while `files:` reports the true count; past the cap the line
+names how many are not shown, so the ladder and the structure question are not sized off a list
+Claude cannot see.
 
 ```
 🧑‍🏫 Coach — no tracked changes for 45 minutes; the watcher has stopped.
@@ -192,7 +218,11 @@ meaning: `lines` is the delta since the last review, not the size of the branch 
 
 ### 1.5 Config
 
-Six keys, from ten.
+Six keys, from eleven: nine are removed and two — `coachPollSeconds` and
+`coachCooldownMinutes`, v1 defaults `45` and `5`, threshold-cadence-only — are **retained with
+new meanings**. Retained-with-a-new-meaning is the more dangerous of the two migrations, because
+the key is still read: a v1 config carrying `coachPollSeconds: 300` silently gets a five-minute
+pause cadence. The `learner` skill names those two as *changed*, not as obsolete.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -407,10 +437,15 @@ every other baseline copy.
   `learner_coach_active` passes and before entering the loop. Not in `--once` /
   `--print-material` / `--advance` mode.
 - New hook `hooks/coach-armed-check.sh`, wired on `UserPromptSubmit` beside `pilot-nudge.sh`
-  (and in `settings.snippet.json` for the non-plugin install). It exits 0 silently unless: the
-  coach regime is active, `.coach-armed` is absent, and a one-shot marker
-  `claude-learner-<sid>.coach-armwarn` is absent. In that case it writes the marker and emits one
-  line of `additionalContext`:
+  (and in `settings.snippet.json` for the non-plugin install). The **first** prompt of a session
+  is a silent grace window (ruling R10): the watcher cannot possibly be armed yet, since
+  `learner-onboard.sh` only asks Claude to arm it during turn 1, after this very
+  `UserPromptSubmit` has returned — so the hook records a third marker,
+  `claude-learner-<sid>.coach-armseen`, and says nothing. From the second prompt on, it exits 0
+  silently unless: the coach regime is active, `.coach-armed` is absent, the deliberate-stop
+  marker `claude-learner-<sid>.coach-stopped` is absent, and the one-shot marker
+  `claude-learner-<sid>.coach-armwarn` is absent. In that case it writes the one-shot marker and
+  emits one line of `additionalContext`:
 
   > 🧑‍🏫 Coach mode is on but the change watcher is not armed. Arm it with the `Monitor` tool:
   > `sh "<hooks-dir>/coach-watch.sh" "<sid>"` — or tell the dev, in one line, that coach mode is
@@ -419,14 +454,30 @@ every other baseline copy.
   The marker makes it fire at most once per session. The escape clause covers the sessions where
   `Monitor` does not exist at all (`claude -p`, subagents, cloud) — v1 limitation #2 stands, but
   it stops being silent.
-- `learner-cleanup.sh` removes both new files.
+- **The cut-off and the check must agree.** The idle cut-off removes `.coach-armed` on purpose;
+  left at that, the dev's next prompt is told coach mode is broken one turn after the cut-off
+  line asked them whether they want to continue. So the loop leaves
+  `claude-learner-<sid>.coach-stopped` behind in its place, the check reads it as "deliberately
+  stopped" and stays silent, `skills/status/SKILL.md` reports it as a stop rather than as an
+  unarmed watcher, and a newly armed watcher clears it.
+- `learner-cleanup.sh` removes all four new files (`.coach-armed`, `.coach-armwarn`,
+  `.coach-armseen`, `.coach-stopped`).
 
 ### 4.3 Idle is redefined
 
 v1 counted empty *cycles*, which the removal of the work block leaves meaningless, and which the
 new cadence inverts: an unchanged poll is now the *trigger condition*, not evidence of
-abandonment. Idle is now "zero material for `coachIdleMinutes`" (§1.2), which only a dev who has
-genuinely stopped touching the repo can reach.
+abandonment.
+
+Idle is "**no keystroke** for `coachIdleMinutes`" (§1.2) — measured on the fingerprint, not on
+the presence of material. "Zero material for `coachIdleMinutes`" was the first shape of this
+rule and it was wrong in both directions: material is a static diff against the baseline, so
+anything at all sitting sub-floor in the tree pinned the counter at 0 and made the cut-off
+**unreachable** (write four lines, close the laptop, and the watcher polls the tree in silence
+for the rest of the session), while a dev typing steadily below the floor would have been cut off
+by any fix that simply let the counter run whenever no review fired. The fingerprint separates
+the two cleanly: unchanged means nobody typed, whatever is in the tree; changed means the dev is
+at the keyboard, floor or no floor.
 
 ---
 

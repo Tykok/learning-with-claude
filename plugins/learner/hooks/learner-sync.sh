@@ -300,6 +300,21 @@ cmd_push() {
        && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
       rm -rf "$_work"; fail remote-ahead
     fi
+    # libs.md is append-only and has no base copy to three-way merge against
+    # (see advance_base), so nothing downstream can notice it shrinking. It
+    # shrinks for one reason: the model skipped `sync.md`'s step 4 union after a
+    # pull — a documented instruction with no code behind it — leaving this
+    # machine with fewer rows than the remote it just adopted. The PATCH below
+    # would then replace a populated remote ledger with an empty file, `ok:true`
+    # and unrecoverable. counts.libsRows in the base manifest is what the last
+    # pull or push agreed on; fewer rows than that is never a legitimate push.
+    # An older base manifest carries no count and skips the check, exactly like
+    # the pull's own count guards.
+    _base_libs=$(jq -r '.counts.libsRows // empty' "$BASE_DIR/manifest.json" 2>/dev/null)
+    case "$_base_libs" in ''|*[!0-9]*) _base_libs='' ;; esac
+    if [ -n "$_base_libs" ] && [ "$(libs_rows "$LIBS_FILE")" -lt "$_base_libs" ]; then
+      rm -rf "$_work"; fail needs-pull
+    fi
     # One PATCH with every file: a gist whose manifest announces a recap.md
     # that has not landed would make the next pull merge against a lie.
     jq -n \

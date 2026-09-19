@@ -102,7 +102,12 @@ writing them. A config still carrying a v1 key (`coachCadence`, `coachWorkMinute
 `coachWorkGrowthMinutes`, `coachWorkMaxMinutes`, `coachChallengeMinutes`, `coachIdleCycles`,
 `coachLines`, `coachFiles`, `coachEveryMinutes`) is not an error — name them once as ignored
 and do not rewrite the dev's file, since silently dropping a key the dev may still be reading
-elsewhere is worse than leaving it inert. `config` alone edits the global file; `config
+elsewhere is worse than leaving it inert. Two v1 keys were **kept with new meanings** and are
+the more dangerous case, because they are still read: `coachPollSeconds` (v1 default `45`) and
+`coachCooldownMinutes` (v1 default `5`) applied only to the removed threshold cadence and now
+drive the single pause cadence, at the defaults in the table above. Name them as *changed*, not
+as obsolete — a config still carrying `coachPollSeconds: 300` silently turns the pause into a
+five-minute one. `config` alone edits the global file; `config
 project …`, `off` and `on` edit `<repo>/.claude/learner.local.json` and add that path to the
 repo's `.gitignore` if it is missing. Those are the only writes into a repo.
 

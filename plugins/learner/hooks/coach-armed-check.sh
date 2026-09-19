@@ -26,6 +26,7 @@ TMPD="${TMPDIR:-/tmp}"
 ARMED="$TMPD/claude-learner-${SID}.coach-armed"
 WARNED="$TMPD/claude-learner-${SID}.coach-armwarn"
 SEEN="$TMPD/claude-learner-${SID}.coach-armseen"
+STOPPED="$TMPD/claude-learner-${SID}.coach-stopped"
 
 # Marker checks before learner_config/learner_repo_root, not after: once the
 # watcher is armed (the common case for the rest of the session) or once this
@@ -35,6 +36,12 @@ SEEN="$TMPD/claude-learner-${SID}.coach-armseen"
 # still costs exactly what it did before this reordering.
 [ -f "$ARMED" ] && exit 0
 [ -f "$WARNED" ] && exit 0
+# The idle cut-off removes $ARMED on purpose and leaves $STOPPED in its place.
+# Without this test the dev gets "coach mode is on but the watcher is not armed,
+# so no review will ever fire" one turn after the cut-off line already asked
+# them whether they want to continue — the product's own deliberate state
+# reported as a broken install, contradicting the question they are answering.
+[ -f "$STOPPED" ] && exit 0
 
 CFG=$(learner_config)
 ROOT=$(learner_repo_root)

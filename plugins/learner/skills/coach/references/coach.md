@@ -8,8 +8,21 @@ literally: the `SessionStart` context that tells you to arm the watcher spells o
 `sh ".../coach-watch.sh" "<sid>"` command to run, `<sid>` included. That context does not
 reappear later — `learner coach on` turned on mid-session gets no such nudge, and a `/compact`
 deliberately does not re-inject it — so when you need the id and it is not sitting in context,
-recover it from disk: `ls -t "$TMPDIR"/claude-learner-*.session 2>/dev/null | head -n 1` names
-the current session's file, and the id is the part between `claude-learner-` and `.session`.
+recover it from the watcher's own files:
+
+```bash
+ls -dt "$TMPDIR"/claude-learner-*.coach-armed "$TMPDIR"/claude-learner-*.coach-base 2>/dev/null \
+  | head -n 1 | sed 's#.*/claude-learner-##; s#\.coach-[a-z]*$##'
+```
+
+Both anchors are written by coach mode itself: `.coach-armed` exists for as long as the watcher
+is running, and `.coach-base/` survives it. Do **not** use `claude-learner-*.session` for this —
+it is written only by `learner-record-edit.sh`, on a `Write`/`Edit` **you** made inside the repo,
+which in coach mode you are forbidden to do. In an un-delegated coach session it never exists at
+all, which is exactly the session in which you need the id. One more source: if
+`coach-armed-check.sh` has already spoken this session, the `sh "…/coach-watch.sh" "<sid>"` line
+it put in your context carries the id literally.
+
 Never guess or invent one — `coach delegate` writing to the wrong id's scope file leaves the
 gate finding none and denying forever, with its own refusal message pointing at the very command
 that just silently failed.
@@ -24,14 +37,29 @@ name the glob — the dev runs `learner coach delegate '<glob>'`.
 ## On a trigger
 
 The trigger carries `level`, `cycle`, `files` and `lines`. `lines` is the delta **since the last
-review**, not the size of the branch diff. Then:
+review**, not the size of the branch diff. Its second line says, verbatim:
+
+> Invoke the `learner` skill and follow references/coach.md. Size the review from `files` and `lines`, then wait for the dev's answer.
+
+It names no question count on purpose: step 4's ladder is what decides that, and a count in the
+trigger would override this whole file — it is the more proximate instruction. Then:
 
 1. **Read `memory.md`** (path in `../learner/references/data.md`). Open weak spots decide where
    to look first — the same spaced-repetition pull the quiz has.
 2. **Read `libs.md`** (same file for the path). It says which libraries have already been
    covered, and from which angle.
-3. **Read the diff.** `git diff HEAD -- <the files named in the trigger>`, and read the files
-   themselves where the diff alone is not enough to judge.
+3. **Read the diff.** The trigger's files come from three sources and **no single command covers
+   them** — `git diff HEAD` returns empty for two of the three, and v2 makes both common, because
+   the review now fires on a pause and "just committed" and "just created a file and stopped to
+   think" are the two commonest pauses.
+   - **Tracked, uncommitted** — `git diff HEAD -- <the files named in the trigger>`.
+   - **Committed since the last review** — the baseline HEAD the watcher measured from is on disk
+     at `$TMPDIR/claude-learner-<session-id>.coach-base/.head`, so diff from it:
+     `git diff "$(cat "$TMPDIR"/claude-learner-<session-id>.coach-base/.head)" HEAD -- <files>`.
+   - **Untracked** — a brand-new file has no diff at all: read it.
+
+   A file `git diff HEAD` shows nothing for is one of the last two, not an empty review.
+   Read the files themselves wherever the diff alone is not enough to judge.
 4. **Size the review** from `files` and `lines`:
 
    | Size | `lines` | `files` | Questions | Findings |

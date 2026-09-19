@@ -16,7 +16,7 @@ already covered survive a machine switch exactly like a weak spot does.
 | `gh-unauthenticated` | `gh auth login`, then re-run. |
 | `empty-record` | There is nothing recorded yet — run `learner quiz` first. |
 | `remote-ahead` | The other machine pushed since the last sync: run `learner sync pull` first. Do not retry the push. |
-| `needs-pull` | This machine is pointed at a gist it has never pulled — run `learner sync pull` first, then retry the push. |
+| `needs-pull` | Either this machine is pointed at a gist it has never pulled, or its `libs.md` now holds fewer rows than the base manifest's `counts.libsRows` — step 4's union below was skipped on the last pull. Run `learner sync pull` and do the union before retrying. |
 | `needs-create-ok` | Ask for the gist, see below. |
 | `gh-create` / `gh-push` | GitHub refused. Report it; nothing was written locally. |
 
@@ -73,7 +73,10 @@ On success the script has already merged `memory.md` and `learner.json`, and tak
    machines. An empty `libs.remote` after a successful pull is trustworthy, not ambiguous: the
    script fails the pull outright (`gh-fetch`) if the manifest declared rows that did not arrive,
    so empty here means the remote gist genuinely has none — it predates this feature, or its
-   ledger really is empty.
+   ledger really is empty. This step is the one the next push checks: `libs.md` shorter than the
+   base manifest's `counts.libsRows` makes `push` refuse with `needs-pull`, because a skipped
+   union here would otherwise replace the remote's rows with nothing, `ok:true` and with no base
+   copy of `libs.md` left to notice it afterwards.
 5. Close the pull:
 
 ```bash
