@@ -3933,7 +3933,22 @@ rm -f "$(sess "$SID_WIN")"
 out=$(material "$SID_WIN")
 [ -n "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
   && ok "no .session means nothing is excluded" || ko "no .session means nothing is excluded"
-rm -f "$CREPO/src/Shared.kt"
+
+# A stale mark can outlive the file it indexes: learner-cleanup.sh always
+# removes .session and .coach-base together, but a tmp reaper on a long-lived
+# machine can delete .session on its own timer while .coach-base (and its
+# mark) survives. If .session then comes back shorter than the stored mark,
+# `tail -n +N` would start past its own EOF and match nothing for every path —
+# silently turning the exclusion off entirely. The mark must be clamped to 0
+# rather than trusted past .session's own length.
+echo "$CREPO/src/Shared.kt" > "$(sess "$SID_WIN")"      # .session: 1 line
+printf '4' > "$(basedir "$SID_WIN")/.sessionmark"       # a mark beyond that
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a mark beyond .session's current length is clamped, not trusted" \
+  || ko "a mark beyond .session's current length is clamped, not trusted"
+
+rm -f "$(sess "$SID_WIN")" "$CREPO/src/Shared.kt"
 
 # Regression (Finding 2): learner-record-edit.sh wrote the RAW file_path into
 # .session, but coach-watch.sh compares candidates (built from the always-

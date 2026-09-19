@@ -73,6 +73,20 @@ coach_candidates() {
   # review fired; only what Claude appended after it still belongs to Claude.
   _cbmark=$(cat "$BASEDIR/.sessionmark" 2>/dev/null)
   case "$_cbmark" in ''|*[!0-9]*) _cbmark=0 ;; esac
+  # learner-cleanup.sh always removes .session and .coach-base together, so
+  # the product's own code can never desync them — but a tmp reaper on a
+  # long-lived machine can delete .session on its own timer while .coach-base
+  # (and its mark) survives. If .session then comes back shorter than the
+  # stored mark, `tail -n +$((_cbmark + 1))` below would start past its own
+  # EOF and print nothing for every path, silently turning the exclusion off
+  # entirely — every file Claude ever wrote would be offered as the dev's own
+  # material, full delta included. A stale cursor can never be trusted past
+  # the length of the file it indexes.
+  if [ -f "$SESSION" ]; then
+    _cblines=$(grep -c '' "$SESSION" 2>/dev/null)
+    case "$_cblines" in ''|*[!0-9]*) _cblines=0 ;; esac
+    [ "$_cbmark" -gt "$_cblines" ] && _cbmark=0
+  fi
   {
     git -C "$ROOT" diff --name-only HEAD 2>/dev/null
     git -C "$ROOT" ls-files -o --exclude-standard 2>/dev/null
