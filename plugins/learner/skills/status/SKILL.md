@@ -28,8 +28,7 @@ allowed-tools: Read, Grep, Bash
    and name `coach-watch.sh` as the fix (arm it with the Monitor tool, as `learner-onboard.sh`
    asked at session start) — this is the one place a dev asks "is coach actually running?".
    One exception: when `$TMPDIR/claude-learner-<session-id>.coach-stopped` exists, the idle
-   cut-off stopped the watcher on purpose — report that, not a broken install —
-   then, if
+   cut-off stopped the watcher on purpose, so report that instead of a broken install. Then, if
    `pilotEnabled`, one line with Pilot's profile, weakest axis and live manoeuvre from
    `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/pilot.md` (not a second dashboard) — then a
    handful of bullets: broad competency themes grouped by domain, skipping anything already under

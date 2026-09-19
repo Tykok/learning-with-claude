@@ -5022,13 +5022,43 @@ grep -qi 'untracked' "$CMD" \
 # learner-record-edit.sh, on a Write/Edit Claude made inside the repo — which
 # coach mode forbids — so in an un-delegated coach session it never exists, and
 # the old recipe pointed at a file that is absent exactly when the id is needed.
-# The anchors must be ones coach mode creates itself.
-grep -qF 'claude-learner-*.coach-armed' "$CMD" \
+# The anchor must be one coach mode creates itself.
+grep -qF 'claude-learner-*.coach-*' "$CMD" \
   && ok "coach.md resolves the session id from an anchor a coach session actually creates" \
   || ko "coach.md resolves the session id from an anchor a coach session actually creates"
+
+# A single glob, not two required to both match: .coach-base/ is not created
+# until the first emission, so an armed session with no review fired yet has
+# .coach-armed on disk and nothing else coach-owned. Under zsh (this harness's
+# own Bash-tool shell on macOS), `nomatch` aborts a glob with no match, so a
+# recipe requiring two specific globs would abort — silently, behind its own
+# `2>/dev/null` — in exactly that window. A single glob needs only one
+# coach-owned file, of any kind, to exist.
+! grep -qF 'claude-learner-*.coach-armed' "$CMD" \
+  && ok "coach.md's session-id recipe no longer requires two globs to both match" \
+  || ko "coach.md's session-id recipe no longer requires two globs to both match"
 grep -qF 'ls -t "$TMPDIR"/claude-learner-*.session' "$CMD" \
   && ko "coach.md no longer resolves the session id through .session" \
   || ok "coach.md no longer resolves the session id through .session"
+
+# The recipe itself, run for real, under zsh specifically — the shell the Bash
+# tool actually uses on macOS. A two-glob version passed the text checks above
+# yet still printed nothing here, because zsh's `nomatch` aborts a glob with no
+# match and the recipe's own `2>/dev/null` hides why. The failing case is an
+# armed watcher with no review fired yet: `.coach-base/` is not created until
+# the first emission, so only `.coach-armed` exists on disk.
+RECIPE=$(sed -n '/^```bash$/,/^```$/p' "$CMD" | sed '1d;$d')
+if command -v zsh >/dev/null 2>&1; then
+  SIDDIR=$(mktemp -d)
+  : > "$SIDDIR/claude-learner-zshsid42.coach-armed"
+  out=$(TMPDIR="$SIDDIR" zsh -c "$RECIPE")
+  rm -rf "$SIDDIR"
+  [ "$out" = "zshsid42" ] \
+    && ok "coach.md's session-id recipe resolves the id under zsh when only .coach-armed exists" \
+    || ko "coach.md's session-id recipe resolves the id under zsh when only .coach-armed exists (got: $out)"
+else
+  echo "  (zsh not found on this machine — the zsh session-id recipe check was skipped, coverage not claimed)"
+fi
 
 # --- learner sync: skeleton -------------------------------------------------
 SYNC="$PLUG/hooks/learner-sync.sh"

@@ -101,7 +101,9 @@ One poll, in order:
 
 ```
 M  = coach_material()
-L  = sum of deltas        N = file count        FP = cksum of the candidates' content
+L  = sum of deltas        N = file count        FP = cksum of each candidate's path then its
+                                                      content (path first — load-bearing against
+                                                      a rename or a same-content cross-file move)
 now = epoch seconds
 
 # --- no material at all -------------------------------------------------

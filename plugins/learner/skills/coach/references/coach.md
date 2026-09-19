@@ -11,13 +11,20 @@ deliberately does not re-inject it — so when you need the id and it is not sit
 recover it from the watcher's own files:
 
 ```bash
-ls -dt "$TMPDIR"/claude-learner-*.coach-armed "$TMPDIR"/claude-learner-*.coach-base 2>/dev/null \
+ls -dt "$TMPDIR"/claude-learner-*.coach-* 2>/dev/null \
   | head -n 1 | sed 's#.*/claude-learner-##; s#\.coach-[a-z]*$##'
 ```
 
-Both anchors are written by coach mode itself: `.coach-armed` exists for as long as the watcher
-is running, and `.coach-base/` survives it. Do **not** use `claude-learner-*.session` for this —
-it is written only by `learner-record-edit.sh`, on a `Write`/`Edit` **you** made inside the repo,
+Every name that glob matches is written by coach mode itself, and taking the most recently
+touched one — never a fixed pair of names — is the point: `.coach-armed` exists for as long as
+the watcher is running, but `.coach-base/` is not created until the first emission, so an armed
+session with no review fired yet has `.coach-armed` on disk and nothing else coach-owned. A
+recipe that required two specific globs to both match would `nomatch`-abort under zsh the moment
+either one misses — silently, because of the trailing `2>/dev/null` — in precisely that window,
+which is the case this whole section exists to serve. The single glob above needs only one
+coach-owned file to exist, of any kind, and the `sed` strips whichever suffix it finds. Do
+**not** use `claude-learner-*.session` for this — it is written only by `learner-record-edit.sh`,
+on a `Write`/`Edit` **you** made inside the repo,
 which in coach mode you are forbidden to do. In an un-delegated coach session it never exists at
 all, which is exactly the session in which you need the id. One more source: if
 `coach-armed-check.sh` has already spoken this session, the `sh "…/coach-watch.sh" "<sid>"` line
@@ -163,6 +170,22 @@ quiz question, never both at once.
 already exited. Ask the dev, in one line, whether they want to continue the coaching session. If
 they do, arm it again with the `Monitor` tool exactly as the `SessionStart` context described. If
 they do not, say nothing further about it.
+
+## `learner coach on`
+
+Writing `coach: true` (per `../learner/SKILL.md`'s § Config edit procedure) is not the whole
+job: also remove `$TMPDIR/claude-learner-<session-id>.coach-stopped` if it exists, resolving
+`<session-id>` per § Resolving `<session-id>` above when it is not already sitting in context.
+The idle cut-off leaves that marker behind, and the only other place that clears it is a watcher
+armed fresh (`coach-watch.sh` does so at the top of its own loop) — a dev who declines to
+re-arm on the idle line, then later just keeps typing, or turns coach off and back on, gets no
+such clearing. Left in place, `coach-armed-check.sh` and the `status` skill both keep reading it
+as "deliberately stopped" for the rest of the session even though the `on` just typed asked for
+the opposite: coach mode silently inert, with the one backstop meant to say so reading a stale
+marker as current.
+
+`learner coach off` only writes the config; it touches no session file itself — a watcher already
+running notices on its next poll (`learner_coach_active` goes false) and exits on its own.
 
 ## `learner coach delegate <glob> …`
 
