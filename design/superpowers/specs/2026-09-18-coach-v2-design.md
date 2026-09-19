@@ -384,6 +384,16 @@ The file is append-only, so a line count is a valid cursor. A file Claude writes
 window is excluded again for that window — which is correct, and which the old behaviour got
 right only by accident of never expiring.
 
+**Releasing a file also requires giving it a baseline**, and missing this makes the cursor worse
+than useless. While a file is excluded, `coach_candidates` keeps it out of the very pipe that
+feeds `coach_advance`, so no content copy is taken for it. The window that stops excluding it
+would then hand the dev a file with no baseline — and `coach_delta`'s no-baseline branch counts
+the *whole file*, Claude's lines included, as the dev's delta. So `coach_advance`, before it
+overwrites the mark, snapshots the content of exactly the `.session` slice it is closing over
+(old mark → now): the next window's diff starts from what the dev actually inherited. Paths
+outside `ROOT` and paths that no longer exist are skipped; the copies are keyed the same way as
+every other baseline copy.
+
 ### 4.2 The watcher's arming is verified
 
 - `coach-watch.sh` creates `claude-learner-<sid>.coach-armed` once, immediately after
