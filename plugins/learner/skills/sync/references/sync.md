@@ -64,13 +64,16 @@ On success the script has already merged `memory.md` and `learner.json`, and tak
    header row and separator, then the contents of `recap.historyMerged` **pasted verbatim**.
    Never re-sort or re-word a history row: the script already merged them, and the `Theme`
    cells are what `learner export` counts.
-4. Read `libs.base`, the local `libs.local` and `libs.remote` — the same shape as the three
-   `recap` paths above, but for `libs.md` — then union the rows by `(Library, Angle covered)`:
-   keep a pair present on either side, and when both logged the same pair, keep the more recent
-   `Seen` date. Never drop a row silently: an angle the coach already covered would otherwise
-   look asked-for again, and the dev gets the same question on two machines. A gist pushed
-   before this feature existed has no `libs.md` at all — `libs.remote` then reads empty, which
-   is exactly "nothing to union", not an error.
+4. Read the local `libs.local` and `libs.remote`, then union the rows by `(Library, Angle
+   covered)`: keep a pair present on either side, and when both logged the same pair, keep the
+   more recent `Seen` date. There is no `libs.base`: a row is only ever added, never removed
+   (per `data.md`), so unlike the theme sections there is no "dropped here or added there"
+   question for a base to settle. Never drop a row silently anyway: an angle the coach already
+   covered would otherwise look asked-for again, and the dev gets the same question on two
+   machines. An empty `libs.remote` after a successful pull is trustworthy, not ambiguous: the
+   script fails the pull outright (`gh-fetch`) if the manifest declared rows that did not arrive,
+   so empty here means the remote gist genuinely has none — it predates this feature, or its
+   ledger really is empty.
 5. Close the pull:
 
 ```bash

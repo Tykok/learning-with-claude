@@ -166,6 +166,21 @@ history_rows() {  # FILE -> how many Session history rows it holds
   ' "$_hf"
 }
 
+libs_rows() {  # FILE -> how many libs.md rows it holds
+  _lf=$(readable_or_empty "$1")
+  awk '
+    /^[ \t]*\|/ {
+      norm = $0
+      gsub(/[ \t]+/, " ", norm); gsub(/ *\| */, "|", norm)
+      sub(/^ +/, "", norm); sub(/ +$/, "", norm)
+      if (norm ~ /^\|[-|]+\|$/) next        # separator row
+      if (norm ~ /^\|Library\|/) next       # header row
+      n++
+    }
+    END { print n + 0 }
+  ' "$_lf"
+}
+
 bullet_lines() {  # FILE -> how many "- " lines it holds
   if [ -f "$1" ]; then n=$(grep -c '^-[ \t]' "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
@@ -194,8 +209,9 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
     --argjson mem "$(bullet_lines "$MEM_FILE")" \
     --argjson theme "$(bullet_lines "$REC_FILE")" \
     --argjson hist "$(history_rows "$REC_FILE")" \
+    --argjson libs "$(libs_rows "$LIBS_FILE")" \
     '{schemaVersion:$schema, pushedAt:$at, pushedFrom:$from, learnerVersion:$ver,
-      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist}}' \
+      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist, libsRows:$libs}}' \
     > "$_sd/manifest.json" || fail manifest
 }
 
@@ -361,6 +377,16 @@ cmd_pull() {
   _want_hist=$(jq -r '.counts.historyRows // empty' "$_work/manifest.json" 2>/dev/null)
   [ -z "$_want_hist" ] || [ "$(history_rows "$_work/recap.md")" = "$_want_hist" ] \
     || { rm -rf "$_work"; fail gh-fetch; }
+  # libs.md was fetched leniently above (empty on any failure, indistinguishable
+  # from a gist that genuinely has none), so it gets the same manifest-declared
+  # count guard as memory.md and recap.md rather than the required loop: a
+  # pre-feature manifest has no counts.libsRows and skips the check, but a
+  # manifest that does declare a nonzero count catches the one failure mode
+  # leniency alone cannot — a transient fetch error silently emptying a
+  # populated remote ledger the next time this machine pushes.
+  _want_libs=$(jq -r '.counts.libsRows // empty' "$_work/manifest.json" 2>/dev/null)
+  [ -z "$_want_libs" ] || [ "$(libs_rows "$_work/libs.md")" = "$_want_libs" ] \
+    || { rm -rf "$_work"; fail gh-fetch; }
 
   # Past this line the local record changes, so the net goes up first.
   backup_local; _backup="$BACKUP_PATH"
@@ -391,14 +417,18 @@ cmd_pull() {
   # mistyped id never sticks.
   sync_json_set '.github.gistId' "$_id"
 
+  # libs.md has no base entry: nothing is ever removed from it (a row only ever
+  # gets added, per data.md), so there is no "deleted on one side" question for
+  # a base to answer — unlike recap.md's themes, where the base decides whether
+  # an absent entry was dropped or never pushed.
   jq -nc --arg id "$_id" --arg bk "$_backup" --arg w "$_work" \
      --arg rl "$REC_FILE" --arg rr "$_work/recap.md" --arg rb "$BASE_DIR/recap.md" \
      --arg rh "$_work/history.md" --argjson first "$_first" \
-     --arg ll "$LIBS_FILE" --arg lr "$_work/libs.md" --arg lb "$BASE_DIR/libs.md" \
+     --arg ll "$LIBS_FILE" --arg lr "$_work/libs.md" \
      '{ok:true, action:"pulled", gistId:$id, backup:$bk, work:$w, memory:"merged",
        firstSync:$first,
        recap:{local:$rl, remote:$rr, base:$rb, historyMerged:$rh},
-       libs:{local:$ll, remote:$lr, base:$lb}}'
+       libs:{local:$ll, remote:$lr}}'
 }
 
 cmd_pull_finish() {

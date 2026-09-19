@@ -1,8 +1,8 @@
 # Data files
 
 Shared by all three quiz modes (`references/hook-quiz.md`, the `quiz` skill,
-the `improve` skill). Read this once per mode invocation; do not restate these
-rules elsewhere.
+the `improve` skill) and by coach mode (`../../coach/references/coach.md`). Read
+this once per mode invocation; do not restate these rules elsewhere.
 
 ## Paths
 
@@ -15,7 +15,7 @@ mkdir -p "$CFG/learner"
 - `$CFG/learner/recap.md` — dashboard.
 - `$CFG/learner/libs.md` — the libraries the coach has already covered.
 
-Create either file if it does not exist yet.
+Create any of the three if it does not exist yet.
 
 Two values recur below:
 - Repo tag: `basename "$(git rev-parse --show-toplevel)"`.

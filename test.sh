@@ -4902,19 +4902,28 @@ cat > "$SDATA/recap.md" <<'EOF'
 |---|---|---|---|---|---|---|
 | 2026-09-14 | api | Code | code | ✅ ok | fine | Error and exception handling |
 EOF
+cat > "$SDATA/libs.md" <<'EOF'
+# Libraries covered
+
+| Library | Seen | Angle covered | Verdict |
+|---------|------|---------------|---------|
+| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |
+EOF
 echo '{"level":"S"}' > "$GCFG"
 out=$(snap)
 man="$WORK/snap/manifest.json"
 { [ "$(printf '%s' "$out" | jq -r .ok)" = "true" ] \
   && [ -f "$WORK/snap/memory.md" ] && [ -f "$WORK/snap/recap.md" ] \
+  && [ -f "$WORK/snap/libs.md" ] \
   && [ -f "$WORK/snap/learner.json" ] && [ -f "$man" ]; } \
-  && ok "the snapshot holds the four files" \
-  || ko "the snapshot holds the four files (out=$out)"
+  && ok "the snapshot holds the five files" \
+  || ko "the snapshot holds the five files (out=$out)"
 
 { [ "$(jq -r .schemaVersion "$man")" = "1" ] \
   && [ "$(jq -r .counts.memoryLines "$man")" = "1" ] \
   && [ "$(jq -r .counts.themeLines "$man")" = "1" ] \
   && [ "$(jq -r .counts.historyRows "$man")" = "1" ] \
+  && [ "$(jq -r .counts.libsRows "$man")" = "1" ] \
   && [ -n "$(jq -r .pushedAt "$man")" ]; } \
   && ok "the manifest counts lines, not meaning" \
   || ko "the manifest counts lines, not meaning ($(cat "$man"))"
@@ -4922,6 +4931,10 @@ man="$WORK/snap/manifest.json"
 diff -q "$SDATA/memory.md" "$WORK/snap/memory.md" >/dev/null \
   && ok "memory.md is snapshotted verbatim" \
   || ko "memory.md is snapshotted verbatim"
+
+diff -q "$SDATA/libs.md" "$WORK/snap/libs.md" >/dev/null \
+  && ok "libs.md is snapshotted verbatim" \
+  || ko "libs.md is snapshotted verbatim"
 
 printf 'This is a real file with content but no bullets\n' > "$SDATA/memory.md"
 printf '## To improve\n\nNo bullets here, only the table.\n' > "$SDATA/recap.md"
@@ -4974,6 +4987,7 @@ export GH_REMOTE="$WORK/remote"; export GH_GIST_ID="abc123"
 rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
 printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
 printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$SDATA/recap.md"
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |\n' > "$SDATA/libs.md"
 
 out=$(sh "$SYNC" push); rc=$?
 { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "needs-create-ok" ] \
@@ -4985,8 +4999,12 @@ out=$(sh "$SYNC" push --create-ok)
 { [ "$(printf '%s' "$out" | jq -r .action)" = "created" ] \
   && [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ] \
   && [ -f "$GH_REMOTE/memory.md" ] && [ -f "$GH_REMOTE/manifest.json" ]; } \
-  && ok "--create-ok creates the gist and uploads the four files" \
-  || ko "--create-ok creates the gist and uploads the four files (out=$out)"
+  && ok "--create-ok creates the gist and uploads the five files" \
+  || ko "--create-ok creates the gist and uploads the five files (out=$out)"
+
+grep -qF 'argon2' "$GH_REMOTE/libs.md" \
+  && ok "the created gist carries libs.md" \
+  || ko "the created gist carries libs.md ($(cat "$GH_REMOTE/libs.md" 2>/dev/null))"
 
 grep -q -- '--secret' "$GH_LOG" \
   && ok "the gist is created secret, never public" \
@@ -4999,11 +5017,16 @@ grep -q -- '--secret' "$GH_LOG" \
   || ko "a successful push records the gist and advances the base"
 
 printf -- '- [Tests][api] fixtures — seen: 2026-09-15\n' >> "$SDATA/memory.md"
+printf '| zod | 2026-09-19 | refine vs superRefine | ✅ ok |\n' >> "$SDATA/libs.md"
 out=$(sh "$SYNC" push)
 { [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ] \
   && [ "$(grep -c 'fixtures' "$GH_REMOTE/memory.md")" = 1 ]; } \
   && ok "a later push updates the same gist without asking again" \
   || ko "a later push updates the same gist without asking again (out=$out)"
+
+grep -qF 'zod' "$GH_REMOTE/libs.md" \
+  && ok "a later push updates libs.md on the same gist too" \
+  || ko "a later push updates libs.md on the same gist too ($(cat "$GH_REMOTE/libs.md"))"
 
 # A remote pushedAt exactly equal to the base (the normal case right after a
 # clean sync) must not trip the guard — only a remote strictly newer does.
@@ -5202,6 +5225,61 @@ out=$(sh "$SYNC" pull); rc=$?
   && diff -q "$WORK/mem-before" "$SDATA/memory.md" >/dev/null; } \
   && ok "a remote memory.md truncated relative to its own manifest counts fails the pull" \
   || ko "a remote memory.md truncated relative to its own manifest counts fails the pull (rc=$rc out=$out)"
+
+# --- learner sync: Critical 4 — a failed libs.md fetch must not silently empty a
+# populated remote ledger --------------------------------------------------------------
+# libs.md is fetched leniently (a gist from before this feature legitimately has none), so
+# on its own a missing/failed fetch reads as "nothing to union" rather than an error. The
+# manifest guard is what tells the two apart: setup_pull's remote here declares
+# counts.libsRows: 1, so a fetch that comes back empty against that promise must fail the
+# whole pull, exactly like Critical 1 does for memory.md.
+setup_pull
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+# $GH_REMOTE/libs.md is deliberately absent: the fake gh's "gist view" exits 1 when the
+# named file is missing, standing in for the network blip Critical 1 also models.
+printf '' > "$SDATA/libs.md"
+cp "$SDATA/libs.md" "$WORK/libs-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/libs-before" "$SDATA/libs.md" >/dev/null \
+  && [ ! -d "$SDATA/sync-base" ]; } \
+  && ok "a failed libs.md fetch on a populated remote fails the pull instead of emptying it" \
+  || ko "a failed libs.md fetch on a populated remote fails the pull instead of emptying it (rc=$rc out=$out)"
+
+# The same manifest-declared count also catches a truncated-but-present fetch (an
+# empty file where content was promised), the same failure mode Critical 1 covers for
+# memory.md with `: > "$GH_REMOTE/memory.md"`.
+setup_pull
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+: > "$GH_REMOTE/libs.md"
+printf '' > "$SDATA/libs.md"
+cp "$SDATA/libs.md" "$WORK/libs-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/libs-before" "$SDATA/libs.md" >/dev/null; } \
+  && ok "a remote libs.md truncated relative to its own manifest counts fails the pull" \
+  || ko "a remote libs.md truncated relative to its own manifest counts fails the pull (rc=$rc out=$out)"
+
+# The happy path: a gist that does carry a populated libs.md hands its content back for
+# the model to union, exactly like recap's `local`/`remote` paths.
+setup_pull
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |\n' > "$GH_REMOTE/libs.md"
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+out=$(sh "$SYNC" pull)
+lr=$(printf '%s' "$out" | jq -r .libs.remote)
+{ [ -n "$lr" ] && grep -qF 'argon2' "$lr"; } \
+  && ok "a pull hands back a non-empty libs.remote when the gist has one" \
+  || ko "a pull hands back a non-empty libs.remote when the gist has one (out=$out)"
+
+# A gist that predates this feature has no libs.md and no counts.libsRows at all: the
+# lenient fetch reads that as "nothing to union", not an error — this is the case the
+# manifest-declared-count guard above must not turn red.
+setup_pull
+out=$(sh "$SYNC" pull); rc=$?
+lr=$(printf '%s' "$out" | jq -r .libs.remote)
+{ [ "$rc" = 0 ] && [ -n "$lr" ] && [ ! -s "$lr" ]; } \
+  && ok "a gist with no libs.md at all still pulls cleanly" \
+  || ko "a gist with no libs.md at all still pulls cleanly (rc=$rc out=$out)"
 
 # --- learner sync: Critical 2 — push refuses to clobber when there is no base ----------
 # This is exactly the state `sync use` (and a fresh `pull <gist>`) creates: a gistId is
