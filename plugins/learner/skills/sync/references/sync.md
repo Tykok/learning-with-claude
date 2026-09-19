@@ -6,13 +6,17 @@
 sh "$HOOKS/learner-sync.sh" push
 ```
 
+A push snapshots `memory.md`, `recap.md`, `libs.md` and the global `learner.json` — the whole
+record, not just the parts a question can pick, so a defect the coach found and a library it
+already covered survive a machine switch exactly like a weak spot does.
+
 | `error` | What to say |
 |---------|-------------|
 | `jq-missing` / `gh-missing` | Name the missing tool and stop. |
 | `gh-unauthenticated` | `gh auth login`, then re-run. |
 | `empty-record` | There is nothing recorded yet — run `learner quiz` first. |
 | `remote-ahead` | The other machine pushed since the last sync: run `learner sync pull` first. Do not retry the push. |
-| `needs-pull` | This machine is pointed at a gist it has never pulled — run `learner sync pull` first, then retry the push. |
+| `needs-pull` | Either this machine is pointed at a gist it has never pulled, or its `libs.md` now holds fewer rows than the base manifest's `counts.libsRows` — step 4's union below was skipped on the last pull. Run `learner sync pull` and do the union before retrying. |
 | `needs-create-ok` | Ask for the gist, see below. |
 | `gh-create` / `gh-push` | GitHub refused. Report it; nothing was written locally. |
 
@@ -20,9 +24,9 @@ On `needs-create-ok`, ask the dev before anything is created, and include the wa
 the one thing they cannot undo once the link exists:
 
 > A secret gist is unlisted, not private: anyone who has the URL can read it without a GitHub
-> account. The snapshot carries your repo names, file names and the wording of your weak spots,
-> plus `pushedFrom` (this machine's hostname) and `learner.json`'s `disabledPaths` (absolute
-> local paths). Create it?
+> account. The snapshot carries your repo names, file names, the wording of your weak spots and
+> the libraries the coach has already covered, plus `pushedFrom` (this machine's hostname) and
+> `learner.json`'s `disabledPaths` (absolute local paths). Create it?
 
 Only on an explicit yes:
 
@@ -52,7 +56,7 @@ gist, and merging against it here would read the new remote's absent lines as de
 | *anything else* (`work-dir`, `backup-dir`, `merge`, `config-merge`, `write`, `base-dir`, `sync-json`) | These can fire **after** `memory.md` has already been rewritten in place. Say plainly that the local record may already be merged, point the dev at the most recent folder under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/` (named by UTC timestamp) to compare or restore from, and do **not** run `pull-finish` — that would lock the interrupted state in as agreed.|
 
 On success the script has already merged `memory.md` and `learner.json`, and taken a backup.
-`recap.md` is yours to write, from the four paths it hands back in `recap`:
+`recap.md` and `libs.md` are yours to write:
 
 1. Read `recap.base`, the local `recap.local` and `recap.remote`.
 2. Merge the `To improve` and `Mastered` sections, per §3.
@@ -60,7 +64,20 @@ On success the script has already merged `memory.md` and `learner.json`, and tak
    header row and separator, then the contents of `recap.historyMerged` **pasted verbatim**.
    Never re-sort or re-word a history row: the script already merged them, and the `Theme`
    cells are what `learner export` counts.
-4. Close the pull:
+4. Read the local `libs.local` and `libs.remote`, then union the rows by `(Library, Angle
+   covered)`: keep a pair present on either side, and when both logged the same pair, keep the
+   more recent `Seen` date. There is no `libs.base`: a row is only ever added, never removed
+   (per `data.md`), so unlike the theme sections there is no "dropped here or added there"
+   question for a base to settle. Never drop a row silently anyway: an angle the coach already
+   covered would otherwise look asked-for again, and the dev gets the same question on two
+   machines. An empty `libs.remote` after a successful pull is trustworthy, not ambiguous: the
+   script fails the pull outright (`gh-fetch`) if the manifest declared rows that did not arrive,
+   so empty here means the remote gist genuinely has none — it predates this feature, or its
+   ledger really is empty. This step is the one the next push checks: `libs.md` shorter than the
+   base manifest's `counts.libsRows` makes `push` refuse with `needs-pull`, because a skipped
+   union here would otherwise replace the remote's rows with nothing, `ok:true` and with no base
+   copy of `libs.md` left to notice it afterwards.
+5. Close the pull:
 
 ```bash
 sh "$HOOKS/learner-sync.sh" pull-finish <work>
@@ -99,11 +116,12 @@ sh "$HOOKS/learner-sync.sh" status
 ```
 
 Read-only. Report the gist URL, `lastPush` / `lastPull`, and what is not pushed
-(`unpushed.memoryLines`, `unpushed.historyRows`). `remoteAhead: true` → say a pull is due
-before the next push. `hasBase: false` → say the next pull will union both sides, **and** that a
-pull is required before the next push: `push` itself will refuse with `needs-pull` until then,
-since without a base there is nothing to check a push's safety against. `no-gist` → nothing is
-set up yet; `learner sync push` creates it.
+(`unpushed.memoryLines`, `unpushed.historyRows`) — `libs.md` has no count of its own here yet, so
+if the dev asks specifically about a library row, check `libs.md` by eye rather than inventing a
+figure. `remoteAhead: true` → say a pull is due before the next push. `hasBase: false` → say the
+next pull will union both sides, **and** that a pull is required before the next push: `push`
+itself will refuse with `needs-pull` until then, since without a base there is nothing to check a
+push's safety against. `no-gist` → nothing is set up yet; `learner sync push` creates it.
 
 ## 5. `sync use`
 

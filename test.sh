@@ -223,7 +223,7 @@ printf '/fake/one\n/fake/two\n' > "$PR_TD/claude-learner-S1.session"
 printf '999' > "$PR_TD/claude-learner-S1.count"
 printf '1' > "$PR_TD/claude-learner-S1.guard"
 printf 'bogus-scope' > "$PR_TD/claude-learner-S1.coach-scope"
-printf '1' > "$PR_TD/claude-learner-S1.coach-empty"
+printf '1' > "$PR_TD/claude-learner-S1.coach-idle"
 printf '2020-01-01T00:00:00.000Z' > "$PR_TD/claude-learner-S1.coach-last"
 mkdir -p "$PR_TD/claude-learner-S1.coach-base/bogus"
 printf 'bogus\n' > "$PR_TD/claude-learner-S1.coach-base/bogus/file"
@@ -282,8 +282,9 @@ printf '{"session_id":"S3","transcript_path":"/nonexistent.jsonl","cwd":"%s"}' "
   || ko "pilot-record no-ops on a missing transcript"
 
 # 11. The writing axis's coach-tally branch (ruling, Task 3 fix round 1): a
-#     coach tally alone is a lower bound, not an exact count — pomodoro only
-#     measures completed work blocks — so dev_lines is the LARGER of the
+#     coach tally alone is a lower bound, not an exact count — the watcher
+#     only records one when a review actually fires, so everything written
+#     since the last one is unmeasured — so dev_lines is the LARGER of the
 #     tally and the git working-tree estimate, and est=0 only when the
 #     estimate does not exceed the tally. This is the least-inspected code in
 #     the task and the code the whole axis reads, so each reachable branch
@@ -901,13 +902,28 @@ echo '{"level":"C"}' > "$GCFG"
 rm -f "$PCFG"
 out=$(cfgsh 'learner_config')
 { [ "$(echo "$out" | jq -r .coach)" = "false" ] \
-  && [ "$(echo "$out" | jq -r .coachCadence)" = "pomodoro" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "25" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkGrowthMinutes)" = "5" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMaxMinutes)" = "45" ] \
-  && [ "$(echo "$out" | jq -r .coachChallengeMinutes)" = "8" ] \
-  && [ "$(echo "$out" | jq -r .coachIdleCycles)" = "2" ]; } \
+  && [ "$(echo "$out" | jq -r .coachPollSeconds)" = "30" ] \
+  && [ "$(echo "$out" | jq -r .coachQuietPolls)" = "1" ] \
+  && [ "$(echo "$out" | jq -r .coachMinLines)" = "10" ] \
+  && [ "$(echo "$out" | jq -r .coachCooldownMinutes)" = "3" ] \
+  && [ "$(echo "$out" | jq -r .coachMaxWaitMinutes)" = "15" ] \
+  && [ "$(echo "$out" | jq -r .coachIdleMinutes)" = "45" ]; } \
   && ok "coach defaults are present" || ko "coach defaults are present"
+
+# The v1 keys are gone from the defaults. A config that still carries one must
+# not fail — it simply has no effect — but the default set must not resurrect it.
+{ [ "$(echo "$out" | jq -r '.coachCadence // "absent"')" = "absent" ] \
+  && [ "$(echo "$out" | jq -r '.coachWorkMinutes // "absent"')" = "absent" ] \
+  && [ "$(echo "$out" | jq -r '.coachIdleCycles // "absent"')" = "absent" ]; } \
+  && ok "the pomodoro keys are gone from the defaults" \
+  || ko "the pomodoro keys are gone from the defaults"
+
+echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":25}' > "$GCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(echo "$out" | jq -r .coach)" = "true" ] \
+  && [ "$(echo "$out" | jq -r .coachQuietPolls)" = "1" ]; } \
+  && ok "a config still carrying v1 keys still resolves" \
+  || ko "a config still carrying v1 keys still resolves"
 
 # `coach` is a boolean, so it must survive the `*` merge (which `//` would break).
 echo '{"level":"C","coach":true}' > "$GCFG"
@@ -917,10 +933,10 @@ out=$(cfgsh 'learner_config')
   && ok "project layer can turn coach off" || ko "project layer can turn coach off"
 
 echo '{"level":"C","coach":false}' > "$GCFG"
-echo '{"coach":true,"coachWorkMinutes":10}' > "$PCFG"
+echo '{"coach":true,"coachMinLines":25}' > "$PCFG"
 out=$(cfgsh 'learner_config')
 { [ "$(echo "$out" | jq -r .coach)" = "true" ] \
-  && [ "$(echo "$out" | jq -r .coachWorkMinutes)" = "10" ]; } \
+  && [ "$(echo "$out" | jq -r .coachMinLines)" = "25" ]; } \
   && ok "project layer can turn coach on and retune it" \
   || ko "project layer can turn coach on and retune it"
 
@@ -942,31 +958,27 @@ echo '{"level":"C","coach":true,"enabled":false}' > "$GCFG"
 cfgsh 'learner_coach_active "$(learner_config)" "$(learner_repo_root)"' \
   && ko "coach inactive when learner is disabled" || ok "coach inactive when learner is disabled"
 
-# --- learner_coach_work_minutes --------------------------------------------
-echo '{"level":"C","coach":true}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-wm() { cfgsh "learner_coach_work_minutes $1 '$WCFG'"; }
-[ "$(wm 1)" = "25" ] && ok "work block cycle 1 = 25" || ko "work block cycle 1 = 25"
-[ "$(wm 2)" = "30" ] && ok "work block cycle 2 = 30" || ko "work block cycle 2 = 30"
-[ "$(wm 5)" = "45" ] && ok "work block cycle 5 = 45 (capped)" || ko "work block cycle 5 = 45 (capped)"
-[ "$(wm 99)" = "45" ] && ok "work block stays at the cap" || ko "work block stays at the cap"
+# --- coach cadence clamps ---------------------------------------------------
+# learner_int's third argument is a floor: RAW below it is treated as invalid
+# and FALLBACK is returned instead (see learner_int's own header comment). A
+# zero or negative value in the config must never produce a loop that spins
+# or an emission on every poll — it must resolve to the safe default.
+echo '{"level":"C","coach":true,"coachQuietPolls":0,"coachMinLines":0,"coachPollSeconds":1}' > "$GCFG"
+rm -f "$PCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachQuietPolls)\" 1 1")" = "1" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachMinLines)\" 10 1")" = "10" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachPollSeconds)\" 30 5")" = "30" ]; } \
+  && ok "coachQuietPolls, coachMinLines and coachPollSeconds fall back below their floors" \
+  || ko "coachQuietPolls, coachMinLines and coachPollSeconds fall back below their floors"
 
-echo '{"level":"C","coach":true,"coachWorkGrowthMinutes":0}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 7)" = "25" ] && ok "growth 0 keeps a fixed work block" || ko "growth 0 keeps a fixed work block"
-
-# max below min is unambiguous in intent: clamp, do not reject.
-echo '{"level":"C","coach":true,"coachWorkMinutes":30,"coachWorkMaxMinutes":10}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "30" ] && ok "coachWorkMaxMinutes below min clamps to min" \
-  || ko "coachWorkMaxMinutes below min clamps to min"
-
-# A garbage value must fall back to the default rather than produce an empty
-# sleep interval, which would spin the watcher at 100% CPU.
-echo '{"level":"C","coach":true,"coachWorkMinutes":"soon"}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "25" ] && ok "non-numeric coachWorkMinutes falls back to 25" \
-  || ko "non-numeric coachWorkMinutes falls back to 25"
+# coachCooldownMinutes and coachMaxWaitMinutes legitimately accept 0 (no floor,
+# guard disabled) — their learner_int floor is 0, not 1.
+echo '{"level":"C","coach":true,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$GCFG"
+out=$(cfgsh 'learner_config')
+{ [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachCooldownMinutes)\" 3 0")" = "0" ] \
+  && [ "$(cfgsh "learner_int \"\$(printf '%s' '$out' | jq -r .coachMaxWaitMinutes)\" 15 0")" = "0" ]; } \
+  && ok "cooldown and max-wait accept 0" || ko "cooldown and max-wait accept 0"
 
 # --- learner_int leading-zero safety (regression) ---------------------------
 # /bin/sh's POSIX-mode arithmetic parses a leading-zero digit string as octal
@@ -985,14 +997,6 @@ li() { cfgsh "learner_int '$1' '$2' '$3'"; }
   || ko "learner_int normalises 00 to 0 at floor 0"
 [ "$(li 25 5 1)" = "25" ]  && ok "learner_int leaves a plain 25 unchanged" \
   || ko "learner_int leaves a plain 25 unchanged"
-
-# End-to-end: the exact crash reported against learner_coach_work_minutes — a
-# leading-zero coachWorkMinutes must not abort the caller's arithmetic (which
-# would print nothing and hand a cadence sleep an empty operand).
-echo '{"level":"C","coach":true,"coachWorkMinutes":"008"}' > "$GCFG"
-WCFG=$(cfgsh 'learner_config')
-[ "$(wm 1)" = "8" ] && ok "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)" \
-  || ko "leading-zero coachWorkMinutes does not crash sh arithmetic (008 -> 8)"
 
 # --- agent salvo: config resolution ------------------------------------------
 sactive() { cfgsh 'learner_salvo_active "$(learner_config)" "$(learner_repo_root)" && echo on || echo off'; }
@@ -1034,19 +1038,27 @@ echo '{"level":"S","agentSalvoQuestions":"many"}' > "$GCFG"
 
 echo '{"level":"S"}' > "$GCFG"
 
-# --- docs/config.html: threshold-only prose count matches its table --------
-# Counted dynamically rather than hard-coded, so a table row added or removed
-# later turns this red instead of leaving stale prose silently wrong again.
-tcount=$(grep -c -- '— <code>threshold</code>' "$ROOT/docs/config.html")
+# --- docs/config.html: coach* keys prose count matches its table -----------
+# Retargeted from the old pomodoro/threshold split (coach-v2 collapsed that
+# to one pause-driven cadence, leaving no per-clock prose to guard), but the
+# underlying guard is the same: the prose's key-count word must track the
+# table's actual row count, counted dynamically rather than hard-coded, so a
+# row added or removed later turns this red instead of leaving a stale count
+# silently wrong — the exact defect ("twelve" surviving a table that grew to
+# ten, then a table shrunk to seven still saying "six") this table has hit
+# twice now.
+tcount=$(awk '/<tbody class="group-coach">/,/<\/tbody>/' "$ROOT/docs/config.html" | grep -c '<tr>')
 case "$tcount" in
   4) tword=four ;;
   5) tword=five ;;
   6) tword=six ;;
+  7) tword=seven ;;
+  8) tword=eight ;;
   *) tword='__no-word-mapped__' ;;
 esac
-grep -qF "last $tword keys" "$ROOT/docs/config.html" \
-  && ok "config.html's threshold-only prose count matches its table ($tcount)" \
-  || ko "config.html's threshold-only prose count matches its table ($tcount)"
+grep -qF "The $tword <code>coach*</code> keys" "$ROOT/docs/config.html" \
+  && ok "config.html's coach* key-count prose matches its table ($tcount)" \
+  || ko "config.html's coach* key-count prose matches its table ($tcount)"
 
 # --- onboarding -------------------------------------------------------------
 rm -f "$GCFG" "$PCFG"
@@ -1407,6 +1419,31 @@ out=$(quiz "no-edits-sid")
 [ -z "$out" ] && ok "quiz silent when nothing was edited" \
              || ko "quiz silent when nothing was edited"
 
+# Item 1 sweep regression: the Stop hook's final `: > "$STATE"` consumes the
+# pending-edit file after building the trigger. `:` is a POSIX special
+# built-in, so a redirection failure on it aborts a non-interactive shell
+# outright under dash — on a Stop hook that abort's exit 2 IS the deliberate
+# block signal, so a read-only .edits file would hand the dev an inexplicable
+# block instead of the quiz simply skipping a turn. Capture the status, not
+# just stdout: an assertion on empty output alone would also pass against a
+# crashed script.
+SIDRO=quiz-ro
+rec "$SIDRO" "$WORK/proj/src/F.kt"
+chmod 444 "$(edits "$SIDRO")"
+out=$(quiz "$SIDRO" 2>/dev/null); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "quiz exits 0 with no output when its .edits file cannot be truncated" \
+  || ko "quiz exits 0 with no output when its .edits file cannot be truncated (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  out=$(printf '{"session_id":"%s","stop_hook_active":false}' "$SIDRO" | dash "$QUIZ" 2>/dev/null); rc=$?
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "quiz exits 0 with no output under dash when its .edits file cannot be truncated" \
+    || ko "quiz exits 0 with no output under dash when its .edits file cannot be truncated (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-.edits check was skipped, coverage not claimed)"
+fi
+chmod 644 "$(edits "$SIDRO")" 2>/dev/null
+rm -f "$(edits "$SIDRO")"
 # --- agent salvo: tracker ----------------------------------------------------
 TRACK="$PLUG/hooks/learner-agent-track.sh"
 agents()     { echo "$TMPDIR/claude-learner-$1.agents"; }
@@ -2028,7 +2065,7 @@ jq -e '.level == "S"' "$I8/learner.json" >/dev/null 2>&1 \
   && ok "re-install keeps an existing config" \
   || ko "re-install keeps an existing config"
 
-jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachCadence","coachWorkMinutes","coachWorkGrowthMinutes","coachWorkMaxMinutes","coachChallengeMinutes","coachIdleCycles","coachPollSeconds","coachLines","coachFiles","coachEveryMinutes","coachCooldownMinutes"] | length == 0' \
+jq -e 'keys - ["level","enabled","questionStyles","synthesisFrequency","blanksPerExercise","untrackGlobs","disabledPaths","coach","coachPollSeconds","coachQuietPolls","coachMinLines","coachCooldownMinutes","coachMaxWaitMinutes","coachIdleMinutes"] | length == 0' \
   "$ROOT/learner.json.example" >/dev/null 2>&1 \
   && ok "learner.json.example carries only supported keys" \
   || ko "learner.json.example carries only supported keys"
@@ -2729,6 +2766,32 @@ grep -qF 'CLAUDE_CONFIG_DIR' "$SYNCMD" \
   && grep -qF 'sync-base' "$SYNCMD" \
   && ok "sync.md resolves its state under CLAUDE_CONFIG_DIR" \
   || ko "sync.md resolves its state under CLAUDE_CONFIG_DIR"
+
+# --- the coach's record rules -----------------------------------------------
+DMD="$PLUG/skills/learner/references/data.md"
+SMD="$PLUG/skills/sync/references/sync.md"
+
+grep -qF 'libs.md' "$DMD" && ok "data.md documents libs.md" || ko "data.md documents libs.md"
+grep -q 'coach-lib' "$DMD" && ok "data.md documents the coach-lib style" \
+  || ko "data.md documents the coach-lib style"
+grep -q 'coach-ack' "$DMD" && ok "data.md documents the coach-ack style" \
+  || ko "data.md documents the coach-ack style"
+
+# The rule that keeps memory.md usable as the question picker: a finding the dev
+# was never questioned on must not become a weak spot there.
+grep -qi 'never writes to .memory.md.\|not write to .memory.md.' "$DMD" \
+  && ok "data.md keeps findings out of memory.md" \
+  || ko "data.md keeps findings out of memory.md"
+
+grep -qF 'libs.md' "$SMD" && ok "sync carries libs.md" || ko "sync carries libs.md"
+grep -qF 'libs.md' "$ROOT/docs/safety.html" \
+  && ok "safety.html's consent list names libs.md" \
+  || ko "safety.html's consent list names libs.md"
+
+# export is deliberately NOT touched: it builds Notion rows from recap.md's
+# themes, and a library ledger is not a theme.
+grep -qF 'libs.md' "$PLUG/skills/export/references/export.md" \
+  && ko "export must not carry libs.md" || ok "export deliberately does not carry libs.md"
 
 UPD="$PLUG/skills/update/SKILL.md"
 
@@ -3550,9 +3613,18 @@ grep -q 'coach delegate' "$RM" \
 # section itself does.
 grep -qF 'id="coach"' "$SITE_USAGE" && ok "usage.html covers coach mode" \
   || ko "usage.html covers coach mode"
-for k in coachCadence coachWorkMinutes coachIdleCycles; do
+for k in coachPollSeconds coachQuietPolls coachMinLines coachCooldownMinutes coachMaxWaitMinutes coachIdleMinutes; do
   grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
     || ko "config.html documents $k"
+done
+# The v1 keys must be gone from the config page, not merely joined by the new
+# ones: a dev reading a stale table would tune a key nothing reads.
+for k in coachCadence coachWorkMinutes coachChallengeMinutes coachIdleCycles; do
+  grep -q "$k" "$SITE_CONFIG" && ko "config.html no longer documents $k" \
+    || ok "config.html no longer documents $k"
+done
+for k in coachCadence coachWorkMinutes coachIdleCycles; do
+  grep -q "$k" "$RM" && ko "README no longer documents $k" || ok "README no longer documents $k"
 done
 # The interactive-session-only limitation must be stated where a dev will hit it,
 # not only in the design doc they will never read. Anchored to 'claude -p' rather
@@ -3568,8 +3640,8 @@ grep -qF 'claude -p' "$SITE_USAGE" \
 # --- pilot docs ---------------------------------------------------------------
 # The four keys already ship in config.html's table (checked earlier, further up,
 # against LEARNER_DEFAULTS itself for their values); this pins the config page to
-# actually mentioning all four by name, the same standard the coachCadence loop
-# above holds config.html to for the coach keys.
+# actually mentioning all four by name, the same standard the coach key-presence
+# loop above holds config.html to for the coach keys.
 for k in pilotEnabled pilotCadenceDays pilotJudgeIntervalHours pilotNudge; do
   grep -q "$k" "$SITE_CONFIG" && ok "config.html documents $k" \
     || ko "config.html documents $k"
@@ -3672,9 +3744,9 @@ grep -qiF 'salvo' "$RM" \
 # went stale to "eight" while README/index.html's own prose/safety.html/
 # install.html were fixed. Ground truth is read from the filesystem and from
 # hooks/settings.snippet.json, the same style as the LEARNER_DEFAULTS check
-# above (test.sh:1837-1854) and the threshold-only prose-count check further up
-# (search "docs/config.html: threshold-only prose count"), so a tenth hook (or
-# a wiring change) turns every stale copy red automatically instead of leaving
+# above (test.sh:1837-1854) and the coach-key prose-count check further up
+# (search "docs/config.html: coach* keys prose count"), so a new hook (or a
+# wiring change) turns every stale copy red automatically instead of leaving
 # a plausible-sounding number wrong forever.
 hook_files=$(find "$PLUG/hooks" -maxdepth 1 -name '*.sh' | sort)
 hook_n=$(printf '%s\n' "$hook_files" | grep -c .)
@@ -3687,6 +3759,8 @@ case "$hook_n" in
   11) hook_word=eleven ;;
   12) hook_word=twelve ;;
   13) hook_word=thirteen ;;
+  14) hook_word=fourteen ;;
+  15) hook_word=fifteen ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
@@ -4499,6 +4573,61 @@ out=$(material "$SID_W")
   || ko "a path Claude wrote this session is excluded"
 rm -f "$(sess "$SID_W")"
 
+# The exclusion is scoped to one review window, not to the whole session.
+# .session is append-only and never cleared (the quiz's synthesis question reads
+# all of it), so v1's "is this path anywhere in .session" test excluded a file
+# for good: ask Claude one question about the file you are working on and it
+# left your candidate set permanently, which — if it emptied the set — ran the
+# idle counter out and killed the watcher.
+SID_WIN=watchwin
+rm -rf "$(basedir "$SID_WIN")"; rm -f "$(sess "$SID_WIN")"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m winbase 2>/dev/null
+
+lines 12 > "$CREPO/src/Shared.kt"
+echo "$CREPO/src/Shared.kt" > "$(sess "$SID_WIN")"      # Claude wrote it
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a file Claude wrote is excluded inside the current window" \
+  || ko "a file Claude wrote is excluded inside the current window"
+
+# A review fires: the baseline advances and records how far .session had got.
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_WIN" --once --advance >/dev/null
+lines 9 | sed 's/^/dev /' >> "$CREPO/src/Shared.kt"     # now the DEV works on it
+out=$(material "$SID_WIN")
+[ "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" = "9" ] \
+  && ok "the dev's later work on that same file is coach material again" \
+  || ko "the dev's later work on that same file is coach material again (got: $out)"
+
+# Claude writing it again re-excludes it, for that window only.
+echo "$CREPO/src/Shared.kt" >> "$(sess "$SID_WIN")"
+lines 4 | sed 's/^/claude /' >> "$CREPO/src/Shared.kt"
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a fresh write by Claude re-excludes the file for the new window" \
+  || ko "a fresh write by Claude re-excludes the file for the new window"
+
+# No .session at all: the mark is 0 and nothing is excluded.
+rm -f "$(sess "$SID_WIN")"
+out=$(material "$SID_WIN")
+[ -n "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "no .session means nothing is excluded" || ko "no .session means nothing is excluded"
+
+# A stale mark can outlive the file it indexes: learner-cleanup.sh always
+# removes .session and .coach-base together, but a tmp reaper on a long-lived
+# machine can delete .session on its own timer while .coach-base (and its
+# mark) survives. If .session then comes back shorter than the stored mark,
+# `tail -n +N` would start past its own EOF and match nothing for every path —
+# silently turning the exclusion off entirely. The mark must be clamped to 0
+# rather than trusted past .session's own length.
+echo "$CREPO/src/Shared.kt" > "$(sess "$SID_WIN")"      # .session: 1 line
+printf '4' > "$(basedir "$SID_WIN")/.sessionmark"       # a mark beyond that
+out=$(material "$SID_WIN")
+[ -z "$(printf '%s' "$out" | awk -F'\t' '$2=="src/Shared.kt"{print $1}')" ] \
+  && ok "a mark beyond .session's current length is clamped, not trusted" \
+  || ko "a mark beyond .session's current length is clamped, not trusted"
+
+rm -f "$(sess "$SID_WIN")" "$CREPO/src/Shared.kt"
+
 # Regression (Finding 2): learner-record-edit.sh wrote the RAW file_path into
 # .session, but coach-watch.sh compares candidates (built from the always-
 # physical ROOT) against .session with a plain string match. On a repo
@@ -4627,7 +4756,8 @@ git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean 2>/de
 mkdir -p "$CREPO/src"
 lines 12 > "$CREPO/src/A.kt"
 lines 8  > "$CREPO/src/B.kt"
-out=$(cycle_out "$SID_C" 3)
+cycle_out "$SID_C" 3 >/dev/null                 # first sighting: only observes, per the pause cadence
+out=$(cycle_out "$SID_C" 3)                     # unchanged since: quiet -> fires
 
 printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: S, cycle: 3, files: 2, lines: 20)' \
   && ok "trigger line carries level, cycle, files and lines" \
@@ -4650,185 +4780,221 @@ out=$(cycle_out "$SID_C" 4)
 # from a clean tree instead of seeing this test's own leftovers as material.
 git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m clean2 2>/dev/null
 
-# Idle: coachIdleCycles empty cycles in a row, then one line and exit 0.
-echo '{"level":"S","coach":true,"coachIdleCycles":2}' > "$GCFG"
-SID_I=watch3
-rm -rf "$(basedir "$SID_I")"
-out1=$(cycle_out "$SID_I" 1)   # empty 1 of 2
-[ -z "$out1" ] && ok "first empty cycle says nothing" || ko "first empty cycle says nothing"
-out2=$(cycle_out "$SID_I" 1)   # empty 2 of 2 -> idle
+# --- coach cadence: the pause in the typing ---------------------------------
+# cycle_out already exists above: it runs one --once cycle and prints its stdout.
+# The clock is controlled by writing epochs into the state files rather than by
+# sleeping, so the whole cadence is testable in milliseconds.
+qf()    { echo "$TMPDIR/claude-learner-$1.coach-quiet"; }
+fpf()   { echo "$TMPDIR/claude-learner-$1.coach-fp"; }
+idlef() { echo "$TMPDIR/claude-learner-$1.coach-idle"; }
+pendf() { echo "$TMPDIR/claude-learner-$1.coach-pending"; }
+lastf() { echo "$TMPDIR/claude-learner-$1.coach-last"; }
+cstate() { rm -f "$(qf "$1")" "$(fpf "$1")" "$(idlef "$1")" "$(pendf "$1")" "$(lastf "$1")"; }
+
+# coachQuietPolls 2 so the first poll observes and the second fires.
+echo '{"level":"C","coach":true,"coachQuietPolls":2,"coachMinLines":5,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":30,"coachIdleMinutes":45}' > "$GCFG"
+rm -f "$PCFG"
+
+SID_P=pause1
+rm -rf "$(basedir "$SID_P")"; cstate "$SID_P"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m pausebase 2>/dev/null
+lines 12 > "$CREPO/src/Pause.kt"
+out=$(cycle_out "$SID_P" 1)                     # first sighting: fingerprint is new
+[ -z "$out" ] && ok "a first poll on new material only observes" \
+  || ko "a first poll on new material only observes"
+
+lines 6 | sed 's/^/more /' >> "$CREPO/src/Pause.kt"
+out=$(cycle_out "$SID_P" 1)                     # still typing: fingerprint changed
+[ -z "$out" ] && ok "a changed fingerprint resets the quiet counter" \
+  || ko "a changed fingerprint resets the quiet counter"
+
+out=$(cycle_out "$SID_P" 1)                     # quiet 1
+[ -z "$out" ] && ok "one quiet poll is not enough at coachQuietPolls 2" \
+  || ko "one quiet poll is not enough at coachQuietPolls 2"
+
+out=$(cycle_out "$SID_P" 1)                     # quiet 2 -> fire
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (level: C' \
+  && ok "the review fires on the pause" || ko "the review fires on the pause"
+printf '%s' "$out" | grep -q 'lines: 18' \
+  && ok "the trigger reports the delta since the last review" \
+  || ko "the trigger reports the delta since the last review (got: $out)"
+
+# The emission advanced the baseline, so the next poll has nothing.
+out=$(cycle_out "$SID_P" 2)
+[ -z "$out" ] && ok "an emission advances the baseline" || ko "an emission advances the baseline"
+
+# Material below coachMinLines never fires, and a dev still TYPING below it must
+# NOT count as idle. Cutting them off mid-work is the regression, and what rules
+# it out is the fingerprint changing every poll — so the file is edited between
+# the polls here, which is what "the dev is writing, just under the floor"
+# actually looks like. (The static case, the dev who stopped below the floor, is
+# the block right after this one and reaches the cut-off on purpose.)
+SID_F=pause2
+rm -rf "$(basedir "$SID_F")"; cstate "$SID_F"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":50,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 4 > "$CREPO/src/Small.kt"
+out=$(cycle_out "$SID_F" 1); rc1=$?
+echo 'still typing 1' >> "$CREPO/src/Small.kt"
+out2=$(cycle_out "$SID_F" 1); rc2=$?
+echo 'still typing 2' >> "$CREPO/src/Small.kt"
+out3=$(cycle_out "$SID_F" 1); rc3=$?
+{ [ -z "$out" ] && [ -z "$out2" ] && [ -z "$out3" ] \
+  && [ "$rc1" = 0 ] && [ "$rc2" = 0 ] && [ "$rc3" = 0 ]; } \
+  && ok "material under coachMinLines never fires" \
+  || ko "material under coachMinLines never fires (rc=$rc1/$rc2/$rc3)"
+printf '%s%s%s' "$out" "$out2" "$out3" | grep -q 'watcher has stopped' \
+  && ko "a dev typing under the floor must not trigger the idle cut-off" \
+  || ok "a dev typing under the floor must not trigger the idle cut-off"
+
+# ...and the other half: a dev who STOPS, leaving sub-floor material behind,
+# must eventually reach the cut-off. Material is a STATIC diff against the
+# baseline, not activity, so clearing .coach-idle on its mere presence pinned
+# the counter at 0 whenever anything at all was pending: four lines written
+# before the laptop closed bought no review (under the floor) AND no cut-off,
+# and the watcher polled a dead session for the rest of it. Small.kt is left
+# exactly as the block above left it and simply not touched again; at 1800s a
+# poll and a 45-minute limit the third unchanged poll crosses the line.
+SID_FS=pause2b
+rm -rf "$(basedir "$SID_FS")"; cstate "$SID_FS"
+out1=$(cycle_out "$SID_FS" 1)                  # first sighting: the fingerprint is new
+out2=$(cycle_out "$SID_FS" 1)                  # unchanged: 30 min of idle
+out3=$(cycle_out "$SID_FS" 1); rc=$?           # unchanged: 60 min >= 45
+{ [ -z "$out1" ] && [ -z "$out2" ] && [ "$rc" = 0 ] \
+  && printf '%s' "$out3" | grep -q 'watcher has stopped'; } \
+  && ok "sub-floor material the dev has stopped touching still reaches the idle cut-off" \
+  || ko "sub-floor material the dev has stopped touching still reaches the idle cut-off (rc=$rc out=$out3)"
+rm -f "$CREPO/src/Small.kt"
+
+# .coach-pending times the wait coachMaxWaitMinutes owes the material, so it may
+# only start once there IS a review to wait for. Stamped on the first poll with
+# ANY material, sub-floor included, it aged through a stretch in which no review
+# could fire: three lines before lunch, eight more an hour later, and the guard
+# fired on the dev's very first keystroke back, with .coach-quiet still at 0.
+SID_PL=pause2c
+rm -rf "$(basedir "$SID_PL")"; cstate "$SID_PL"
+# Settle every earlier block's leftovers into HEAD first: a fresh SID has no
+# baseline .head, so the committed-since-baseline term is skipped and Lunch.kt
+# below is the only material this block measures.
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m lunchbase 2>/dev/null
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":10,"coachCooldownMinutes":0,"coachMaxWaitMinutes":15,"coachPollSeconds":1800,"coachIdleMinutes":600}' > "$GCFG"
+lines 3 > "$CREPO/src/Lunch.kt"
+cycle_out "$SID_PL" 1 >/dev/null                # three lines: nothing a review can fire on
+[ ! -f "$(pendf "$SID_PL")" ] \
+  && ok "sub-floor material does not stamp .coach-pending" \
+  || ko "sub-floor material does not stamp .coach-pending"
+# Lunch. Ageing whatever stamp exists by an hour is exactly what the hour does.
+if [ -f "$(pendf "$SID_PL")" ]; then
+  printf '%s' "$(( $(date +%s) - 3600 ))" > "$(pendf "$SID_PL")"
+fi
+lines 8 | sed 's/^/back /' >> "$CREPO/src/Lunch.kt"   # first keystrokes back: 11 lines
+out=$(cycle_out "$SID_PL" 1); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "the max-wait guard does not fire on the first keystroke after a break" \
+  || ko "the max-wait guard does not fire on the first keystroke after a break (rc=$rc out=$out)"
+rm -f "$CREPO/src/Lunch.kt"
+
+# The file list is capped at 20 names while `files:` reports the true count, and
+# the ladder sizes the review off `files` — with the structure question defined
+# as "the split across the files in the trigger". Unannounced, the cap left
+# Claude reasoning about files it was never shown.
+SID_T=pause2d
+rm -rf "$(basedir "$SID_T")"; cstate "$SID_T"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m manybase 2>/dev/null
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":600}' > "$GCFG"
+mkdir -p "$CREPO/src/many"
+mi=1; while [ "$mi" -le 22 ]; do lines 1 > "$CREPO/src/many/F$mi.kt"; mi=$((mi + 1)); done
+cycle_out "$SID_T" 1 >/dev/null                 # first sighting
+out=$(cycle_out "$SID_T" 1); rc=$?
+{ [ "$rc" = 0 ] && printf '%s' "$out" | grep -q 'files: 22' \
+  && printf '%s' "$out" | grep -qF '(+2 more not listed)'; } \
+  && ok "the trigger names how many files its capped list leaves out" \
+  || ko "the trigger names how many files its capped list leaves out (rc=$rc out=$out)"
+rm -rf "$CREPO/src/many"
+
+# Equal line counts, different content: three lines removed and three added
+# leaves the total unchanged while the dev is very much still typing. Comparing
+# totals instead of a fingerprint would read this as a pause.
+SID_FP=pause3
+rm -rf "$(basedir "$SID_FP")"; cstate "$SID_FP"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 9 > "$CREPO/src/Churn.kt"
+cycle_out "$SID_FP" 1 >/dev/null                # observe, quiet 0
+sed -i.bak 's/^line 1$/CHANGED 1/' "$CREPO/src/Churn.kt"; rm -f "$CREPO/src/Churn.kt.bak"
+out=$(cycle_out "$SID_FP" 1)
+[ -z "$out" ] && ok "an edit with an unchanged line total still counts as activity" \
+  || ko "an edit with an unchanged line total still counts as activity"
+rm -f "$CREPO/src/Churn.kt"
+
+# The cooldown blocks a fire without resetting quiet: the next poll after it
+# expires must fire, instead of demanding a second pause from the dev.
+SID_CD=pause4
+rm -rf "$(basedir "$SID_CD")"; cstate "$SID_CD"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":10,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 7 > "$CREPO/src/Cool.kt"
+cycle_out "$SID_CD" 1 >/dev/null                 # observe
+printf '%s' "$(( $(date +%s) - 120 ))" > "$(lastf "$SID_CD")"   # a review 2 min ago
+out=$(cycle_out "$SID_CD" 1)
+[ -z "$out" ] && ok "the cooldown blocks a fire" || ko "the cooldown blocks a fire"
+printf '%s' "$(( $(date +%s) - 1200 ))" > "$(lastf "$SID_CD")"  # now 20 min ago
+out=$(cycle_out "$SID_CD" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "a fire blocked by the cooldown is served at the next poll" \
+  || ko "a fire blocked by the cooldown is served at the next poll"
+rm -f "$CREPO/src/Cool.kt"
+
+# The guard: a dev in continuous flow never pauses, so the pause alone would
+# never fire. coachMaxWaitMinutes emits anyway.
+SID_G=pause5
+rm -rf "$(basedir "$SID_G")"; cstate "$SID_G"
+echo '{"level":"C","coach":true,"coachQuietPolls":99,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":15,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+lines 8 > "$CREPO/src/Flow.kt"
+cycle_out "$SID_G" 1 >/dev/null                 # material is now pending
+printf '%s' "$(( $(date +%s) - 1200 ))" > "$(pendf "$SID_G")"  # pending for 20 min
+out=$(cycle_out "$SID_G" 1)
+printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
+  && ok "coachMaxWaitMinutes fires without a pause" || ko "coachMaxWaitMinutes fires without a pause"
+
+# ...and 0 disables it.
+SID_G0=pause6
+rm -rf "$(basedir "$SID_G0")"; cstate "$SID_G0"
+echo '{"level":"C","coach":true,"coachQuietPolls":99,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+cycle_out "$SID_G0" 1 >/dev/null
+printf '%s' "$(( $(date +%s) - 36000 ))" > "$(pendf "$SID_G0")"
+out=$(cycle_out "$SID_G0" 1)
+[ -z "$out" ] && ok "coachMaxWaitMinutes 0 disables the guard" \
+  || ko "coachMaxWaitMinutes 0 disables the guard"
+rm -f "$CREPO/src/Flow.kt"
+
+# Idle is now a duration: idle_polls * coachPollSeconds >= coachIdleMinutes * 60.
+# 1800s per poll and 45 min of idle means the second empty poll crosses it.
+SID_I=pause7
+rm -rf "$(basedir "$SID_I")"; cstate "$SID_I"
+echo '{"level":"C","coach":true,"coachQuietPolls":1,"coachMinLines":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0,"coachPollSeconds":1800,"coachIdleMinutes":45}' > "$GCFG"
+git -C "$CREPO" add -A >/dev/null 2>&1; git -C "$CREPO" commit -q -m idlebase 2>/dev/null
+out1=$(cycle_out "$SID_I" 1)
+[ -z "$out1" ] && ok "the first empty poll says nothing" || ko "the first empty poll says nothing"
+out2=$(cycle_out "$SID_I" 1)
 printf '%s' "$out2" | grep -q 'the watcher has stopped' \
-  && ok "idle line is emitted after coachIdleCycles empty cycles" \
-  || ko "idle line is emitted after coachIdleCycles empty cycles"
+  && ok "the idle line is emitted once coachIdleMinutes has elapsed" \
+  || ko "the idle line is emitted once coachIdleMinutes has elapsed"
+printf '%s' "$out2" | grep -q '45 minutes' \
+  && ok "the idle line names the duration, not a cycle count" \
+  || ko "the idle line names the duration, not a cycle count"
 printf '%s' "$out2" | grep -qi 'continue' \
-  && ok "idle line asks about continuing the session" || ko "idle line asks about continuing the session"
+  && ok "the idle line asks about continuing the session" \
+  || ko "the idle line asks about continuing the session"
 CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_I" --once --cycle 1 >/dev/null 2>&1
-[ "$?" = "0" ] && ok "watcher exits 0 on idle" || ko "watcher exits 0 on idle"
+[ "$?" = "0" ] && ok "the watcher exits 0 on idle" || ko "the watcher exits 0 on idle"
 
-# A cycle with material resets the empty counter: two empty blocks must be
-# *consecutive* to stop the watcher.
-SID_R=watch4
-rm -rf "$(basedir "$SID_R")"
-cycle_out "$SID_R" 1 >/dev/null                       # empty 1
-lines 5 > "$CREPO/src/C.kt"
-cycle_out "$SID_R" 1 >/dev/null                       # material -> reset
-out=$(cycle_out "$SID_R" 1)                           # empty 1 again, not 2
-[ -z "$out" ] && ok "material resets the empty-cycle counter" \
-  || ko "material resets the empty-cycle counter"
-rm -f "$CREPO/src/C.kt"
-
-# The threshold cadence fires on the OR of its three triggers.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
-SID_T=watch5
-rm -rf "$(basedir "$SID_T")"
-lines 25 > "$CREPO/src/D.kt"
-out=$(cycle_out "$SID_T" 1)
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold cadence fires on coachLines" || ko "threshold cadence fires on coachLines"
-[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
-  && ok "threshold cadence emits exactly once on coachLines" \
-  || ko "threshold cadence emits exactly once on coachLines"
-
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":1,"coachCooldownMinutes":0}' > "$GCFG"
-rm -rf "$(basedir "$SID_T")"
-out=$(cycle_out "$SID_T" 1)
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold cadence fires on coachFiles" || ko "threshold cadence fires on coachFiles"
-[ "$(printf '%s\n' "$out" | grep -c '🧑‍🏫')" = "1" ] \
-  && ok "threshold cadence emits exactly once on coachFiles" \
-  || ko "threshold cadence emits exactly once on coachFiles"
-
-# Under both thresholds and inside the cooldown: silence.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":99,"coachCooldownMinutes":0}' > "$GCFG"
-rm -rf "$(basedir "$SID_T")"
-out=$(cycle_out "$SID_T" 1)
-[ -z "$out" ] && ok "threshold cadence is silent below every trigger" \
-  || ko "threshold cadence is silent below every trigger"
-rm -f "$CREPO/src/D.kt"
-
-# Regression: coach_cycle must return a real three-way result (emitted / stop
-# / keep-going) rather than the caller inferring "emitted" from EMPTYF's
-# presence. Under the old inference, a threshold cycle that found material but
-# did not fire (sub-threshold, or cooldown-blocked) touched neither branch of
-# the presence check, so it neither reset nor advanced the empty counter —
-# leaving a *previous* empty cycle's count still standing. A dev writing
-# steady, sub-threshold edits would then get cut off as "idle" while actively
-# working, on a factually false message.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":9999,"coachFiles":9999,"coachCooldownMinutes":0,"coachIdleCycles":2}' > "$GCFG"
-SID_TR=watch6
-rm -rf "$(basedir "$SID_TR")"
-out=$(cycle_out "$SID_TR" 1)                          # poll 1: genuinely empty -> counter 1
-[ -z "$out" ] && ok "threshold: first empty poll is silent" \
-  || ko "threshold: first empty poll is silent"
-lines 5 > "$CREPO/src/E.kt"
-out=$(cycle_out "$SID_TR" 1)                          # poll 2: material, sub-threshold
-[ -z "$out" ] && ok "threshold: sub-threshold material is silent" \
-  || ko "threshold: sub-threshold material is silent"
-rm -f "$CREPO/src/E.kt"
-out=$(cycle_out "$SID_TR" 1)                          # poll 3: empty again — must be the FIRST
-                                                       # empty since poll 2's material reset the
-                                                       # counter, not the second -> no idle line
-[ -z "$out" ] && ok "threshold: sub-threshold material resets the empty-cycle counter" \
-  || ko "threshold: sub-threshold material resets the empty-cycle counter"
-
-# Same defect, cooldown-gated path: a cooldown-blocked poll with material must
-# reset the counter too — cooldown only paces notifications, it says nothing
-# about whether the dev is still working.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":1,"coachFiles":1,"coachCooldownMinutes":5,"coachIdleCycles":2}' > "$GCFG"
-SID_TC=watch7
-rm -rf "$(basedir "$SID_TC")"
-lines 10 > "$CREPO/src/F.kt"
-out=$(cycle_out "$SID_TC" 1)                          # first-ever cycle bypasses cooldown -> fires
-printf '%s' "$out" | grep -q '🧑‍🏫 Coach (' \
-  && ok "threshold: first material cycle bypasses cooldown and fires" \
-  || ko "threshold: first material cycle bypasses cooldown and fires"
-rm -f "$CREPO/src/F.kt"
-out=$(cycle_out "$SID_TC" 1)                          # genuinely empty -> counter 1
-[ -z "$out" ] && ok "threshold: empty poll after an emission is silent" \
-  || ko "threshold: empty poll after an emission is silent"
-lines 4 > "$CREPO/src/G.kt"
-out=$(cycle_out "$SID_TC" 1)                          # material, but inside the cooldown window
-[ -z "$out" ] && ok "threshold: cooldown-blocked poll with material is silent" \
-  || ko "threshold: cooldown-blocked poll with material is silent"
-rm -f "$CREPO/src/G.kt"
-out=$(cycle_out "$SID_TC" 1)                          # empty again — must be the FIRST empty since
-                                                       # the cooldown-blocked poll reset the counter,
-                                                       # not the second -> no idle line
-[ -z "$out" ] && ok "threshold: cooldown-blocked material resets the empty-cycle counter" \
-  || ko "threshold: cooldown-blocked material resets the empty-cycle counter"
-
-# `--cycle` injects the number a real loop would hold; two sub-threshold
-# `--cycle 1` polls before this one are only here to build up the material
-# that finally crosses coachLines. The real claim CYCLE-only-advances-on-
-# emission is a loop-arithmetic property this per-process, --cycle-injected
-# harness cannot exercise — that was verified live (cycle 1, then cycle 2 at
-# ~180s) — so this assertion checks a narrower, adjacent thing instead:
-# coach_cycle's own formatting does not add spurious inflation on top of
-# whatever CYCLE value it is handed.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachLines":10,"coachFiles":99,"coachCooldownMinutes":0,"coachIdleCycles":99}' > "$GCFG"
-SID_TI=watch9
-rm -rf "$(basedir "$SID_TI")"
-lines 3 > "$CREPO/src/J.kt"                           # 3 lines, 1 file: under both thresholds
-out=$(cycle_out "$SID_TI" 1)
-[ -z "$out" ] && ok "threshold: a sub-threshold poll does not emit" \
-  || ko "threshold: a sub-threshold poll does not emit"
-lines 4 >> "$CREPO/src/J.kt"                          # 7 lines total: still under coachLines:10
-out=$(cycle_out "$SID_TI" 1)
-[ -z "$out" ] && ok "threshold: a second sub-threshold poll still does not emit" \
-  || ko "threshold: a second sub-threshold poll still does not emit"
-lines 5 >> "$CREPO/src/J.kt"                          # 12 lines total: now over coachLines:10
-out=$(cycle_out "$SID_TI" 1)
-printf '%s' "$out" | grep -q '^🧑‍🏫 Coach (level: C, cycle: 1,' \
-  && ok "coach_cycle introduces no formatting-side inflation of the injected cycle number" \
-  || ko "coach_cycle introduces no formatting-side inflation of the injected cycle number"
-rm -f "$CREPO/src/J.kt"
-
-# Regression (Finding 1): coachIdleCycles is documented (spec §2.4) as idle
-# periods of one work-block-equivalent (coachWorkMinutes), in EITHER cadence.
-# The unfixed watcher compared the empty-poll counter against coachIdleCycles
-# directly in the threshold branch, so with defaults (coachWorkMinutes=25,
-# coachPollSeconds=45) a dev thinking for 90 seconds — two polls — ended the
-# session, 33x sooner than the pomodoro-equivalent cadence intends.
-# coachWorkMinutes=1 (60s) and coachPollSeconds=10 makes one period 6 polls,
-# so coachIdleCycles=2 must tolerate 12 empty polls, not 2, before stopping.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":10,"coachIdleCycles":2}' > "$GCFG"
-SID_TS=watch10
-rm -rf "$(basedir "$SID_TS")"
-out1=$(cycle_out "$SID_TS" 1)
-out2=$(cycle_out "$SID_TS" 1)
-{ [ -z "$out1" ] && [ -z "$out2" ]; } \
-  && ok "threshold cadence survives two empty polls (coachIdleCycles is not raw polls)" \
-  || ko "threshold cadence survives two empty polls (got '$out1' / '$out2')"
-
-i=3
-while [ "$i" -le 12 ]; do
-  out=$(cycle_out "$SID_TS" 1)
-  if [ "$i" -lt 12 ]; then
-    [ -z "$out" ] || { ko "threshold cadence stopped early, at poll $i instead of 12"; break; }
-  else
-    printf '%s' "$out" | grep -q 'the watcher has stopped' \
-      && ok "threshold cadence stops after a full work-block-equivalent period (12 polls = 2 x 6)" \
-      || ko "threshold cadence stops after a full work-block-equivalent period (got '$out' at poll 12)"
-  fi
-  i=$((i + 1))
-done
-
-# Guard: coachPollSeconds larger than the work block must clamp the
-# polls-per-period ratio to 1, never floor to 0 — an IDLE_LIMIT of 0 would
-# stop the watcher on the very first empty poll, ignoring coachIdleCycles
-# altogether, and is also the shape of bug that can leave a 0 in later
-# arithmetic if this guard is ever removed.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachWorkMinutes":1,"coachPollSeconds":120,"coachIdleCycles":2}' > "$GCFG"
-SID_TG=watch11
-rm -rf "$(basedir "$SID_TG")"
-out1=$(cycle_out "$SID_TG" 1)
-[ -z "$out1" ] && ok "polls-per-period guard: first empty poll is not an immediate cut-off" \
-  || ko "polls-per-period guard: first empty poll is not an immediate cut-off (got '$out1')"
-out2=$(cycle_out "$SID_TG" 1)
-printf '%s' "$out2" | grep -q 'the watcher has stopped' \
-  && ok "polls-per-period guard clamps to 1, so coachIdleCycles=2 still stops after 2 polls" \
-  || ko "polls-per-period guard clamps to 1 (got '$out2')"
-echo '{"level":"S","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+# Material resets the idle counter: the empty periods have to be consecutive.
+SID_R=pause8
+rm -rf "$(basedir "$SID_R")"; cstate "$SID_R"
+cycle_out "$SID_R" 1 >/dev/null                 # empty 1
+lines 3 > "$CREPO/src/Back.kt"
+cycle_out "$SID_R" 1 >/dev/null                 # material -> reset
+rm -f "$CREPO/src/Back.kt"
+out=$(cycle_out "$SID_R" 1)                     # empty 1 again, not 2
+[ -z "$out" ] && ok "material resets the idle counter" || ko "material resets the idle counter"
 
 # The writing axis is only exact if the watcher's own measurement outlives the
 # session. Its TMPDIR state does not: learner-cleanup.sh deletes it at the same
@@ -4839,10 +5005,12 @@ git -C "$CW_TMP/repo" init -q
 printf 'a\nb\nc\n' > "$CW_TMP/repo/f.txt"
 git -C "$CW_TMP/repo" add f.txt
 git -C "$CW_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
-printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW_TMP/cfg/learner.json"
+printf '{"level":"C","coach":true,"pilotEnabled":true,"coachMinLines":1,"coachQuietPolls":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$CW_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\n' > "$CW_TMP/repo/f.txt"
 (cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)   # first sighting: only observes
+(cd "$CW_TMP/repo" && CLAUDE_CONFIG_DIR="$CW_TMP/cfg" CLAUDE_PROJECT_DIR="$CW_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW1 --once >/dev/null 2>&1)   # unchanged since: quiet -> fires
 if [ -f "$CW_TMP/cfg/learner/pilot-devlines" ] \
    && grep -q '^CW1 5$' "$CW_TMP/cfg/learner/pilot-devlines"; then
   ok "coach-watch persists the dev's line count for the writing axis"
@@ -4867,13 +5035,17 @@ git -C "$CW2_TMP/repo" init -q
 printf 'a\nb\nc\nd\ne\n' > "$CW2_TMP/repo/f.txt"
 git -C "$CW2_TMP/repo" add f.txt
 git -C "$CW2_TMP/repo" -c user.email=t@t -c user.name=t commit -qm init
-printf '{"level":"C","coach":true,"pilotEnabled":true}' > "$CW2_TMP/cfg/learner.json"
+printf '{"level":"C","coach":true,"pilotEnabled":true,"coachMinLines":1,"coachQuietPolls":1,"coachCooldownMinutes":0,"coachMaxWaitMinutes":0}' > "$CW2_TMP/cfg/learner.json"
 printf 'a\nb\nc\nd\ne\nz\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # first sighting: only observes
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # unchanged: fires, establishing a baseline
 printf 'a\nb\nC\nd\ne\n' > "$CW2_TMP/repo/f.txt"
 (cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
-  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # first sighting of the edit: only observes
+(cd "$CW2_TMP/repo" && CLAUDE_CONFIG_DIR="$CW2_TMP/cfg" CLAUDE_PROJECT_DIR="$CW2_TMP/repo" \
+  sh "$PLUG/hooks/coach-watch.sh" CW2 --once >/dev/null 2>&1)   # unchanged since: quiet -> fires, against the baseline above
 CW2_LAST=$(grep '^CW2 ' "$CW2_TMP/cfg/learner/pilot-devlines" 2>/dev/null | tail -1)
 [ "$CW2_LAST" = "CW2 1" ] \
   && ok "coach-watch's writing tally counts only added lines, never the removed side of an edit or a pure deletion" \
@@ -4919,15 +5091,23 @@ SID_X="clean-coach"   # quoted: shellcheck reads clean-coach as arithmetic (SC21
 mkdir -p "$TMPDIR/claude-learner-${SID_X}.coach-base"
 touch "$TMPDIR/claude-learner-${SID_X}.coach-base/.head" \
       "$TMPDIR/claude-learner-${SID_X}.coach-scope" \
-      "$TMPDIR/claude-learner-${SID_X}.coach-empty" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-fp" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-quiet" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-idle" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-pending" \
       "$TMPDIR/claude-learner-${SID_X}.coach-last" \
+      "$TMPDIR/claude-learner-${SID_X}.coach-stopped" \
       "$TMPDIR/claude-learner-${SID_X}.edits" \
       "$TMPDIR/claude-learner-${SID_X}.pilot-nudged"
 printf '{"session_id":"%s"}' "$SID_X" | sh "$CLEAN"
 { [ ! -d "$TMPDIR/claude-learner-${SID_X}.coach-base" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-scope" ] \
-  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-empty" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-fp" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-quiet" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-idle" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-pending" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-last" ] \
+  && [ ! -f "$TMPDIR/claude-learner-${SID_X}.coach-stopped" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.edits" ] \
   && [ ! -f "$TMPDIR/claude-learner-${SID_X}.pilot-nudged" ]; } \
   && ok "cleanup removes the coach scratch files" || ko "cleanup removes the coach scratch files"
@@ -4946,6 +5126,172 @@ grep -q 'coach-watch' "$PLUG/hooks/hooks.json" \
 grep -q 'coach-watch' "$PLUG/hooks/settings.snippet.json" \
   && ko "coach-watch.sh is not wired in the snippet either" \
   || ok "coach-watch.sh is not wired in the snippet either"
+
+# Item 1 sweep regression: coach_advance's `: > "$_canew"` writes a brand-new
+# file inside $BASEDIR, so unlike a missing TMPDIR (already caught by the
+# `mkdir -p … || return 0` guard above it in the source), a $BASEDIR that
+# already EXISTS but is not writable reaches this line unguarded. `:` is a
+# POSIX special built-in, so an unguarded redirection failure on it aborts a
+# non-interactive shell outright under dash — here that kills only the forked
+# subshell running this function (the right side of `coach_candidates |
+# coach_advance`), so `--advance`'s own hardcoded `exit 0` still runs, but the
+# abort still leaks the raw dash diagnostic to the real stderr and leaves the
+# baseline stuck re-offering the same material. Exercised under both this
+# suite's own /bin/sh and, when available, dash itself.
+echo '{"level":"C","coach":true}' > "$GCFG"
+SID_W2=watch-ro
+rm -rf "$(basedir "$SID_W2")"
+mkdir -p "$(basedir "$SID_W2")"; chmod 555 "$(basedir "$SID_W2")"
+out=$(CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_W2" --advance 2>&1); rc=$?
+chmod 755 "$(basedir "$SID_W2")"
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "coach-watch --advance exits 0 with no output when its baseline dir is read-only" \
+  || ko "coach-watch --advance exits 0 with no output when its baseline dir is read-only (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  rm -rf "$(basedir "$SID_W2")"
+  mkdir -p "$(basedir "$SID_W2")"; chmod 555 "$(basedir "$SID_W2")"
+  out=$(CLAUDE_PROJECT_DIR="$CREPO" dash "$WATCH" "$SID_W2" --advance 2>&1); rc=$?
+  chmod 755 "$(basedir "$SID_W2")"
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "coach-watch --advance exits 0 with no output under dash when its baseline dir is read-only" \
+    || ko "coach-watch --advance exits 0 with no output under dash when its baseline dir is read-only (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-baseline check was skipped, coverage not claimed)"
+fi
+chmod 755 "$(basedir "$SID_W2")" 2>/dev/null
+rm -rf "$(basedir "$SID_W2")"
+
+# --- coach-armed-check.sh ---------------------------------------------------
+ARMCHK="$PLUG/hooks/coach-armed-check.sh"
+armed()   { echo "$TMPDIR/claude-learner-$1.coach-armed"; }
+armwarn() { echo "$TMPDIR/claude-learner-$1.coach-armwarn"; }
+armseen() { echo "$TMPDIR/claude-learner-$1.coach-armseen"; }
+stopped() { echo "$TMPDIR/claude-learner-$1.coach-stopped"; }
+armin()   { printf '{"session_id":"%s"}' "$1"; }
+
+SID_A=arm1
+rm -f "$(armed "$SID_A")" "$(armwarn "$SID_A")" "$(armseen "$SID_A")"
+
+# Coach off: the hook is a silent no-op, like every other learner hook — exit
+# 0 AND no output, not output alone. A crash also produces no stdout, which is
+# exactly how Critical 1 (an unguarded `:` redirection killing the hook with
+# exit 2 under dash) hid behind a green "silent" assertion the first time
+# around: capture and check the exit status in every assertion below that
+# claims silence.
+echo '{"level":"C","coach":false}' > "$GCFG"
+rm -f "$PCFG"
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check is silent with the coach off" \
+  || ko "armed-check is silent with the coach off (rc=$rc)"
+
+# Coach on, first prompt of the session: the watcher cannot possibly be armed
+# yet — learner-onboard.sh only ASKS Claude to arm it during turn 1, which
+# happens after this very UserPromptSubmit already fired and returned. This is
+# a grace window, not a report: stay silent, and remember a prompt was seen.
+echo '{"level":"C","coach":true}' > "$GCFG"
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "the first prompt of a coach session is a silent grace window" \
+  || ko "the first prompt of a coach session is a silent grace window (rc=$rc)"
+[ -f "$(armseen "$SID_A")" ] && ok "the first prompt records that a prompt was seen" \
+  || ko "the first prompt records that a prompt was seen"
+[ ! -f "$(armwarn "$SID_A")" ] && ok "the grace window does not also spend the once-per-session warning" \
+  || ko "the grace window does not also spend the once-per-session warning"
+
+# Second prompt, still not armed: now the absence of the marker is a real
+# report — one line of additionalContext, and it is valid JSON.
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ "$rc" = 0 ] \
+  && printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1; } \
+  && ok "armed-check emits a valid UserPromptSubmit payload" \
+  || ko "armed-check emits a valid UserPromptSubmit payload (rc=$rc)"
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q 'coach-watch.sh' \
+  && ok "the warning names the command that arms the watcher" \
+  || ko "the warning names the command that arms the watcher"
+printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' | grep -q "$SID_A" \
+  && ok "the warning carries the session id" || ko "the warning carries the session id"
+
+# Third prompt: once per session, not once per still-absent marker.
+out=$(armin "$SID_A" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check warns at most once per session" \
+  || ko "armed-check warns at most once per session (rc=$rc)"
+
+# Marker present: nothing to warn about, at any point — even on what would
+# otherwise be the "first prompt" grace window, since the marker check now
+# runs before that logic (see the reordering below).
+SID_A2=arm2
+rm -f "$(armwarn "$SID_A2")" "$(armseen "$SID_A2")"
+: > "$(armed "$SID_A2")"
+out=$(armin "$SID_A2" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } && ok "armed-check is silent once the watcher is armed" \
+  || ko "armed-check is silent once the watcher is armed (rc=$rc)"
+
+# The idle cut-off removes .coach-armed on purpose and leaves .coach-stopped in
+# its place. Without reading that second marker the dev is told "coach mode is
+# on but the watcher is not armed, so no review will ever fire" one turn after
+# the cut-off line itself asked them whether they want to continue — the
+# product's own deliberate state reported as a broken install. The grace window
+# is already spent here (armseen planted), so only the stop marker can explain
+# silence; the one-shot warning must also still be unspent afterwards.
+SID_A5=arm5
+rm -f "$(armed "$SID_A5")" "$(armwarn "$SID_A5")"
+: > "$(armseen "$SID_A5")"
+: > "$(stopped "$SID_A5")"
+out=$(armin "$SID_A5" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ] && [ ! -f "$(armwarn "$SID_A5")" ]; } \
+  && ok "armed-check stays silent once the idle cut-off has deliberately stopped the watcher" \
+  || ko "armed-check stays silent once the idle cut-off has deliberately stopped the watcher (rc=$rc out=$out)"
+# ...and the same session with the marker gone is warned, so the assertion above
+# is about the marker and not about some other reason for silence.
+rm -f "$(stopped "$SID_A5")"
+out=$(armin "$SID_A5" | CLAUDE_PROJECT_DIR="$CREPO" sh "$ARMCHK"); rc=$?
+{ [ "$rc" = 0 ] \
+  && printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1; } \
+  && ok "the same unarmed session without the stop marker is still warned" \
+  || ko "the same unarmed session without the stop marker is still warned (rc=$rc out=$out)"
+rm -f "$(armseen "$SID_A5")" "$(armwarn "$SID_A5")"
+
+# The watcher's own modes: --once and friends are test/off-cadence entry points
+# and must not claim the session is armed.
+SID_A3=arm3
+rm -f "$(armed "$SID_A3")"
+rm -rf "$(basedir "$SID_A3")"
+CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_A3" --once >/dev/null 2>&1
+[ ! -e "$(armed "$SID_A3")" ] \
+  && ok "--once does not write the armed marker" || ko "--once does not write the armed marker"
+
+# Critical 1 regression guard: a TMPDIR the hook cannot write into at all (here,
+# one that does not exist) must never surface as a nonzero exit. `:` is a
+# POSIX special built-in, so an unguarded redirection failure on it aborts a
+# non-interactive shell outright instead of just failing the command — under
+# dash that turned into exit 2 on UserPromptSubmit, which blocks and erases
+# the dev's prompt. Exercised under both this suite's own /bin/sh and, when
+# available, dash itself — the shell actually behind /bin/sh on Debian/Ubuntu,
+# the apt package's own target, and the one the bash-based macOS /bin/sh does
+# not reproduce the bug under at all.
+SID_A4=arm4
+NOTMP="/nonexistent-tmpdir-for-learner-tests-$$"
+out=$(armin "$SID_A4" | CLAUDE_PROJECT_DIR="$CREPO" TMPDIR="$NOTMP" sh "$ARMCHK"); rc=$?
+{ [ -z "$out" ] && [ "$rc" = 0 ]; } \
+  && ok "armed-check exits 0 with no output when TMPDIR does not exist" \
+  || ko "armed-check exits 0 with no output when TMPDIR does not exist (rc=$rc)"
+if command -v dash >/dev/null 2>&1; then
+  out=$(armin "$SID_A4" | CLAUDE_PROJECT_DIR="$CREPO" TMPDIR="$NOTMP" dash "$ARMCHK"); rc=$?
+  { [ -z "$out" ] && [ "$rc" = 0 ]; } \
+    && ok "armed-check exits 0 with no output under dash when TMPDIR does not exist" \
+    || ko "armed-check exits 0 with no output under dash when TMPDIR does not exist (rc=$rc)"
+else
+  echo "  (dash not found on this machine — the dash-specific TMPDIR-missing check was skipped, coverage not claimed)"
+fi
+
+# Wiring: the new hook runs on UserPromptSubmit in both install paths.
+jq -e '.hooks.UserPromptSubmit[0].hooks | map(.command) | any(contains("coach-armed-check.sh"))' \
+  "$PLUG/hooks/hooks.json" >/dev/null 2>&1 \
+  && ok "coach-armed-check.sh is wired on UserPromptSubmit" \
+  || ko "coach-armed-check.sh is wired on UserPromptSubmit"
+grep -q 'coach-armed-check' "$PLUG/hooks/settings.snippet.json" \
+  && ok "coach-armed-check.sh is wired in the snippet too" \
+  || ko "coach-armed-check.sh is wired in the snippet too"
 
 # --- pilot wiring -------------------------------------------------------------
 # Wiring drift is the failure mode that silently disables a whole feature, so
@@ -5020,9 +5366,17 @@ fi
 # backgrounded loop, not --once: --once is a fresh process per call and
 # already re-reads config at the top of the script regardless of this bug, so
 # it cannot exercise the loop's own (previously missing) re-check.
-echo '{"level":"C","coach":true,"coachCadence":"threshold","coachPollSeconds":5,"coachCooldownMinutes":0,"coachLines":999999,"coachFiles":999999}' > "$GCFG"
+# coachCadence/coachLines/coachFiles used to hold this config's floor; all three
+# are v2-removed keys and were inert here, so the test passed for a reason it did
+# not document. coachMinLines is the live key that does the same job: put the
+# floor out of reach so this loop only ever exercises the config re-check.
+echo '{"level":"C","coach":true,"coachPollSeconds":5,"coachMinLines":999999,"coachCooldownMinutes":0}' > "$GCFG"
 SID_LOOP=watch-loop-off
 rm -rf "$(basedir "$SID_LOOP")"
+# A watcher starting now supersedes any earlier one's deliberate stop: planted
+# here, the marker must be gone once this loop has started, or coach-armed-check
+# would stay silenced for the rest of the session behind a live watcher.
+: > "$(stopped "$SID_LOOP")"
 CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_LOOP" > "$WORK/loop-off.out" 2>&1 &
 LOOP_PID=$!
 sleep 1
@@ -5030,12 +5384,60 @@ echo '{"level":"C","coach":false}' > "$GCFG"
 sleep 7
 if kill -0 "$LOOP_PID" 2>/dev/null; then
   ko "learner coach off stops a running watcher within one poll"
+  skip "the armed marker does not outlive a watcher that never stopped"
   kill -9 "$LOOP_PID" 2>/dev/null
   wait "$LOOP_PID" 2>/dev/null
 else
   wait "$LOOP_PID" 2>/dev/null
   ok "learner coach off stops a running watcher within one poll"
+  [ ! -e "$(stopped "$SID_LOOP")" ] \
+    && ok "arming the watcher clears an earlier session's deliberate-stop marker" \
+    || ko "arming the watcher clears an earlier session's deliberate-stop marker"
+  # Item 4: the loop's own exit path used to leave the armed marker behind, so
+  # coach-armed-check.sh's `[ -f "$ARMED" ]` test — and skills/status/SKILL.md's
+  # status line — would go on reporting a watcher that had already quit.
+  [ ! -e "$(armed "$SID_LOOP")" ] \
+    && ok "the armed marker does not outlive a watcher stopped by coach off" \
+    || ko "the armed marker does not outlive a watcher stopped by coach off"
 fi
+echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
+
+# Minor 1 (R11 fix round): the idle cut-off is the loop's OTHER exit path, and
+# it shares the same stale-marker risk as the coach-off exit just above — but
+# had no test pinning its own `rm -f "$ARMED"`. A fake, no-op `sleep` drives
+# the real loop through `coachIdleMinutes` in wall-clock milliseconds instead
+# of minutes, without touching the cadence math itself: coachPollSeconds and
+# coachIdleMinutes stay at their real floors (5s, 1 minute), so the loop still
+# needs its true 12 empty cycles (12 * 5s >= 60s) to trip the cut-off — the
+# fake sleep just makes each of those cycles take microseconds instead of five
+# real seconds.
+git -C "$CREPO" add -A >/dev/null 2>&1
+git -C "$CREPO" commit -q -m "settle before idle-cutoff test" >/dev/null 2>&1
+FAKESLEEP="$WORK/fakesleep"; mkdir -p "$FAKESLEEP"
+printf '#!/bin/sh\nexit 0\n' > "$FAKESLEEP/sleep"
+chmod +x "$FAKESLEEP/sleep"
+echo '{"level":"C","coach":true,"coachPollSeconds":5,"coachIdleMinutes":1,"coachCooldownMinutes":0}' > "$GCFG"
+SID_IDLE=watch-idle-cutoff
+rm -rf "$(basedir "$SID_IDLE")"
+PATH="$FAKESLEEP:$PATH" CLAUDE_PROJECT_DIR="$CREPO" sh "$WATCH" "$SID_IDLE" > "$WORK/loop-idle.out" 2>&1 &
+IDLE_PID=$!
+i=0
+while kill -0 "$IDLE_PID" 2>/dev/null && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+kill -0 "$IDLE_PID" 2>/dev/null && kill -9 "$IDLE_PID" 2>/dev/null
+wait "$IDLE_PID" 2>/dev/null
+{ grep -q 'no tracked changes' "$WORK/loop-idle.out" \
+  && [ ! -e "$(armed "$SID_IDLE")" ]; } \
+  && ok "the idle cut-off both fires and removes the armed marker" \
+  || ko "the idle cut-off both fires and removes the armed marker ($(cat "$WORK/loop-idle.out"))"
+# ...and leaves the deliberate-stop marker behind in its place, which is the
+# whole reason coach-armed-check.sh does not then call this a broken install.
+[ -f "$(stopped "$SID_IDLE")" ] \
+  && ok "the idle cut-off leaves a deliberate-stop marker for coach-armed-check.sh" \
+  || ko "the idle cut-off leaves a deliberate-stop marker for coach-armed-check.sh"
+rm -f "$(stopped "$SID_IDLE")"
 echo '{"level":"C","coach":true,"untrackGlobs":["*.md"]}' > "$GCFG"
 
 # --- coach documentation ----------------------------------------------------
@@ -5045,11 +5447,31 @@ CO="$PLUG/skills/coach/references/coach.md"
 [ -f "$CO" ] && ok "the coach skill exists" || ko "the coach skill exists"
 
 # Every config key the code reads must be documented, or a dev cannot discover it.
-for k in coach coachCadence coachWorkMinutes coachWorkGrowthMinutes coachWorkMaxMinutes \
-         coachChallengeMinutes coachIdleCycles coachPollSeconds coachLines coachFiles \
-         coachEveryMinutes coachCooldownMinutes; do
+for k in coach coachPollSeconds coachQuietPolls coachMinLines coachCooldownMinutes \
+         coachMaxWaitMinutes coachIdleMinutes; do
   grep -q "\`$k\`" "$SK" "$PLUG/skills/learner/references/config.md" && ok "the config key $k is documented" || ko "the config key $k is documented"
 done
+
+# The nine removed v1 keys are already listed as obsolete above. The two v1 keys
+# RETAINED with new meanings are the more dangerous migration, because they are
+# still read: a config carrying v1's `coachPollSeconds: 300` silently gets a
+# five-minute pause cadence instead of an inert key. They must be named as
+# CHANGED, and they were named nowhere at all.
+# The migration note lives in references/config.md since main moved the config
+# rules out of SKILL.md; the assertion follows it there rather than pinning the
+# file it used to sit in.
+CFGMD="$PLUG/skills/learner/references/config.md"
+{ grep -qF 'kept with new meanings' "$CFGMD" \
+  && grep -qF '`coachPollSeconds` (v1 default `45`)' "$CFGMD" \
+  && grep -qF '`coachCooldownMinutes` (v1 default `5`)' "$CFGMD"; } \
+  && ok "config.md names the two coach keys retained with new meanings" \
+  || ko "config.md names the two coach keys retained with new meanings"
+
+# CYCLE lives only in the running watcher's shell variable and no file holds it,
+# so the status skill cannot report it however it is asked to.
+grep -qF 'current cycle if a coach session is running' "$PLUG/skills/status/SKILL.md" \
+  && ko "the status skill does not claim a cycle number no file holds" \
+  || ok "the status skill does not claim a cycle number no file holds"
 
 # The dispatch table must route every subcommand the skill claims to accept.
 # A leading backtick with no closing one: `coach delegate <glob> …` and
@@ -5069,13 +5491,187 @@ grep -qF 'the `coach` skill' "$SK" && ok "SKILL.md points at the coach skill" \
   || ko "SKILL.md points at the coach skill"
 
 # The protocol must state its own ceiling and its own prohibition, since those
-# are the two things that keep the dev in the driver's seat.
-grep -qi 'one challenge' "$CO" && ok "the coach skill states the one-challenge ceiling" \
-  || ko "the coach skill states the one-challenge ceiling"
+# are the two things that keep the dev in the driver's seat. Anchored to the
+# exact "Challenge** (1, always)" block heading rather than a bare "challenge"
+# grep, which the register table's own prose ("what the challenge attacks")
+# would satisfy before this ceiling existed.
+grep -qF 'Challenge** (1, always)' "$CO" && ok "the coach skill states the challenge is mandatory and singular" \
+  || ko "the coach skill states the challenge is mandatory and singular"
 grep -qi 'never write' "$CO" && ok "the coach skill forbids writing to source" \
   || ko "the coach skill forbids writing to source"
 grep -q 'references/data.md' "$CO" && ok "the coach skill defers to data.md for the data rules" \
   || ko "the coach skill defers to data.md for the data rules"
+
+# --- coach protocol ---------------------------------------------------------
+CMD="$PLUG/skills/coach/references/coach.md"
+
+# The ladder: a review's size follows the dev's diff, and the two criteria are
+# read independently. Without the "higher tier wins" rule, 300 lines in one file
+# would be classified as a small diff on the files criterion alone.
+grep -qi 'higher tier wins' "$CMD" \
+  && ok "coach.md states how the two ladder criteria combine" \
+  || ko "coach.md states how the two ladder criteria combine"
+
+# The tier boundaries and per-tier question/finding counts are the load-bearing
+# part of this task's behaviour. An unanchored `grep -q "$t"` for the tier name
+# alone would stay green if "< 40" silently became "< 400" — exactly the class
+# of non-discriminating grep this repo has been bitten by three times already.
+# Anchor on each row verbatim instead, so a changed boundary or count turns
+# the suite red.
+grep -qF '| Small | < 40 | 1 | 1 — the challenge | 0-2 |' "$CMD" \
+  && ok "coach.md's ladder pins the Small tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Small tier's boundary and counts"
+grep -qF '| Medium | 40-120 | 2-3 | up to 2 — challenge + library *if there is material* | 0-3 |' "$CMD" \
+  && ok "coach.md's ladder pins the Medium tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Medium tier's boundary and counts"
+grep -qF '| Large | > 120 | ≥ 4 | up to 3 — challenge + library + one on the split | 0-3 |' "$CMD" \
+  && ok "coach.md's ladder pins the Large tier's boundary and counts" \
+  || ko "coach.md's ladder pins the Large tier's boundary and counts"
+
+# The coach skill DESCRIPTION is the first thing Claude reads when routing into
+# the skill, and it flatly claimed the questions are "asked one at a time".
+# coach.md is explicit that one or two share a message and only three are
+# serialised; commit 6fd821f corrected that claim in README.md and
+# docs/usage.html and missed this third, most load-bearing copy.
+CSK="$PLUG/skills/coach/SKILL.md"
+grep -qF 'sized to the diff, asked one at a time' "$CSK" \
+  && ko "the coach skill description does not flatten the batching rule" \
+  || ok "the coach skill description does not flatten the batching rule"
+grep -qF 'three asked one at a time' "$CSK" \
+  && ok "the coach skill description states the real batching rule" \
+  || ko "the coach skill description states the real batching rule"
+
+# Three questions must be asked one at a time. This is the rule most likely to
+# be dropped in a rewrite, and the one that decides whether a large review is a
+# conversation or an interrogation.
+grep -qi 'one at a time' "$CMD" \
+  && ok "coach.md requires three questions to be asked one at a time" \
+  || ko "coach.md requires three questions to be asked one at a time"
+
+# The library question is conditional and has NO fallback: v1's instinct was to
+# always have something to ask.
+grep -qi 'no fallback' "$CMD" \
+  && ok "coach.md rules out a fallback library question" \
+  || ko "coach.md rules out a fallback library question"
+
+# The teaching phase and its ceiling. 'generic' alone tests vocabulary, not the
+# rule — it would still match inside a negation of the rule. The substantive
+# clause is the prohibition on the dev's own names, so assert that too.
+grep -qi 'generic' "$CMD" && ok "coach.md bounds the teaching snippet to a generic one" \
+  || ko "coach.md bounds the teaching snippet to a generic one"
+grep -qiF "never a snippet using the dev's own class, function or file names" "$CMD" \
+  && ok "coach.md forbids a teaching snippet that uses the dev's own names" \
+  || ko "coach.md forbids a teaching snippet that uses the dev's own names"
+grep -qF 'libs.md' "$CMD" && ok "coach.md reads libs.md before choosing a library" \
+  || ko "coach.md reads libs.md before choosing a library"
+
+# The confirmation must be allowed to be absent — an invented compliment is
+# worse than none, and a protocol that mandates one guarantees invention.
+# Anchored to the bolded "**say nothing**" rather than a bare 'say nothing':
+# § On the idle line already says "say nothing further about it" about a
+# different question entirely, and a loose grep would pass on that alone,
+# before the confirmation block existed at all.
+grep -qF '**say nothing**' "$CMD" \
+  && ok "coach.md allows the confirmation to be skipped" \
+  || ko "coach.md allows the confirmation to be skipped"
+
+# The idle-line quote in § On the idle line must track what coach-watch.sh
+# actually prints, not what it used to print: the watcher moved from a
+# work-block count to a minutes duration, and coach.md's quoted string went
+# stale silently because nothing tied the two together. Ground truth is read
+# from coach-watch.sh itself, the same style as the hook-count and
+# LEARNER_DEFAULTS derivations elsewhere in this file (search "hook count
+# drift guard"), rather than restated by hand here where it could go stale
+# again the same way. Full string equality is impractical — coach.md quotes
+# the line with a literal "N" where the watcher interpolates $IDLE_MINUTES —
+# so the two fixed fragments framing that variable are pulled out of the
+# watcher's own printf and both are required verbatim in coach.md; either one
+# missing means the two files disagree on what the dev will actually see.
+IDLE_LINE=$(grep -o 'no tracked changes for \$IDLE_MINUTES minutes; the watcher has stopped\.' \
+  "$PLUG/hooks/coach-watch.sh")
+IDLE_PRE=$(printf '%s' "$IDLE_LINE" | sed 's/\$IDLE_MINUTES.*//')
+IDLE_POST=$(printf '%s' "$IDLE_LINE" | sed 's/.*MINUTES //')
+{ [ -n "$IDLE_PRE" ] && [ -n "$IDLE_POST" ] \
+  && grep -qF "$IDLE_PRE" "$CMD" && grep -qF "$IDLE_POST" "$CMD"; } \
+  && ok "coach.md's idle-line quote matches what coach-watch.sh actually emits" \
+  || ko "coach.md's idle-line quote matches what coach-watch.sh actually emits"
+
+# The SAME derivation for the trigger line's instruction sentence, which had no
+# guard at all and duly went stale in the worst possible way: it kept ordering
+# "One challenge, then wait for the dev's answer" for the whole of v2. That is
+# not a parameter, it is an imperative, and it is the most proximate instruction
+# Claude gets — it beat coach.md's 1/2/3 ladder outright, so a Large review asked
+# one question and stopped and the branch shipped v1 behaviour under v2 docs.
+# Two assertions, because either alone is insufficient:
+#   1. coach.md quotes the watcher's sentence verbatim, pulled out of the hook's
+#      own printf (backtick escapes undone) so the doc cannot drift from it;
+#   2. the sentence itself prescribes no question count, which is the property
+#      that actually matters — a matching pair of wrong sentences would satisfy
+#      (1) alone.
+TRIG_SENT=$(grep '^Invoke the .*references/coach\.md\.' "$PLUG/hooks/coach-watch.sh" \
+  | head -n 1 | sed 's/"$//' | sed 's/\\`/`/g')
+{ [ -n "$TRIG_SENT" ] && grep -qF "$TRIG_SENT" "$CMD"; } \
+  && ok "coach.md quotes the trigger's instruction sentence as coach-watch.sh emits it" \
+  || ko "coach.md quotes the trigger's instruction sentence as coach-watch.sh emits it (got: $TRIG_SENT)"
+{ [ -n "$TRIG_SENT" ] \
+  && ! printf '%s' "$TRIG_SENT" | grep -qiE '(one|two|three|a single|1|2|3) +(challenge|question)'; } \
+  && ok "the trigger's instruction sentence prescribes no question count" \
+  || ko "the trigger's instruction sentence prescribes no question count (got: $TRIG_SENT)"
+
+# The diff command in step 3. coach_candidates serves three material sources and
+# `git diff HEAD` can only see one of them: it returns empty for an untracked file
+# and for anything committed since the last review — and on a pause cadence,
+# "just committed" and "just created a file and stopped to think" are the two
+# commonest triggers there are. The baseline HEAD is on disk; the protocol has to
+# name it, or the review reads an empty diff and invents something.
+grep -qF '.coach-base/.head' "$CMD" \
+  && ok "coach.md names the baseline HEAD for material committed since the last review" \
+  || ko "coach.md names the baseline HEAD for material committed since the last review"
+grep -qi 'untracked' "$CMD" \
+  && ok "coach.md says an untracked file is read, not diffed" \
+  || ko "coach.md says an untracked file is read, not diffed"
+
+# Resolving the session id off disk. `.session` is written only by
+# learner-record-edit.sh, on a Write/Edit Claude made inside the repo — which
+# coach mode forbids — so in an un-delegated coach session it never exists, and
+# the old recipe pointed at a file that is absent exactly when the id is needed.
+# The anchor must be one coach mode creates itself.
+grep -qF 'claude-learner-*.coach-*' "$CMD" \
+  && ok "coach.md resolves the session id from an anchor a coach session actually creates" \
+  || ko "coach.md resolves the session id from an anchor a coach session actually creates"
+
+# A single glob, not two required to both match: .coach-base/ is not created
+# until the first emission, so an armed session with no review fired yet has
+# .coach-armed on disk and nothing else coach-owned. Under zsh (this harness's
+# own Bash-tool shell on macOS), `nomatch` aborts a glob with no match, so a
+# recipe requiring two specific globs would abort — silently, behind its own
+# `2>/dev/null` — in exactly that window. A single glob needs only one
+# coach-owned file, of any kind, to exist.
+! grep -qF 'claude-learner-*.coach-armed' "$CMD" \
+  && ok "coach.md's session-id recipe no longer requires two globs to both match" \
+  || ko "coach.md's session-id recipe no longer requires two globs to both match"
+grep -qF 'ls -t "$TMPDIR"/claude-learner-*.session' "$CMD" \
+  && ko "coach.md no longer resolves the session id through .session" \
+  || ok "coach.md no longer resolves the session id through .session"
+
+# The recipe itself, run for real, under zsh specifically — the shell the Bash
+# tool actually uses on macOS. A two-glob version passed the text checks above
+# yet still printed nothing here, because zsh's `nomatch` aborts a glob with no
+# match and the recipe's own `2>/dev/null` hides why. The failing case is an
+# armed watcher with no review fired yet: `.coach-base/` is not created until
+# the first emission, so only `.coach-armed` exists on disk.
+RECIPE=$(sed -n '/^```bash$/,/^```$/p' "$CMD" | sed '1d;$d')
+if command -v zsh >/dev/null 2>&1; then
+  SIDDIR=$(mktemp -d)
+  : > "$SIDDIR/claude-learner-zshsid42.coach-armed"
+  out=$(TMPDIR="$SIDDIR" zsh -c "$RECIPE")
+  rm -rf "$SIDDIR"
+  [ "$out" = "zshsid42" ] \
+    && ok "coach.md's session-id recipe resolves the id under zsh when only .coach-armed exists" \
+    || ko "coach.md's session-id recipe resolves the id under zsh when only .coach-armed exists (got: $out)"
+else
+  echo "  (zsh not found on this machine — the zsh session-id recipe check was skipped, coverage not claimed)"
+fi
 
 # --- learner sync: skeleton -------------------------------------------------
 SYNC="$PLUG/hooks/learner-sync.sh"
@@ -5261,19 +5857,28 @@ cat > "$SDATA/recap.md" <<'EOF'
 |---|---|---|---|---|---|---|
 | 2026-09-14 | api | Code | code | ✅ ok | fine | Error and exception handling |
 EOF
+cat > "$SDATA/libs.md" <<'EOF'
+# Libraries covered
+
+| Library | Seen | Angle covered | Verdict |
+|---------|------|---------------|---------|
+| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |
+EOF
 echo '{"level":"S"}' > "$GCFG"
 out=$(snap)
 man="$WORK/snap/manifest.json"
 { [ "$(printf '%s' "$out" | jq -r .ok)" = "true" ] \
   && [ -f "$WORK/snap/memory.md" ] && [ -f "$WORK/snap/recap.md" ] \
+  && [ -f "$WORK/snap/libs.md" ] \
   && [ -f "$WORK/snap/learner.json" ] && [ -f "$man" ]; } \
-  && ok "the snapshot holds the four files" \
-  || ko "the snapshot holds the four files (out=$out)"
+  && ok "the snapshot holds the five files" \
+  || ko "the snapshot holds the five files (out=$out)"
 
 { [ "$(jq -r .schemaVersion "$man")" = "1" ] \
   && [ "$(jq -r .counts.memoryLines "$man")" = "1" ] \
   && [ "$(jq -r .counts.themeLines "$man")" = "1" ] \
   && [ "$(jq -r .counts.historyRows "$man")" = "1" ] \
+  && [ "$(jq -r .counts.libsRows "$man")" = "1" ] \
   && [ -n "$(jq -r .pushedAt "$man")" ]; } \
   && ok "the manifest counts lines, not meaning" \
   || ko "the manifest counts lines, not meaning ($(cat "$man"))"
@@ -5281,6 +5886,10 @@ man="$WORK/snap/manifest.json"
 diff -q "$SDATA/memory.md" "$WORK/snap/memory.md" >/dev/null \
   && ok "memory.md is snapshotted verbatim" \
   || ko "memory.md is snapshotted verbatim"
+
+diff -q "$SDATA/libs.md" "$WORK/snap/libs.md" >/dev/null \
+  && ok "libs.md is snapshotted verbatim" \
+  || ko "libs.md is snapshotted verbatim"
 
 printf 'This is a real file with content but no bullets\n' > "$SDATA/memory.md"
 printf '## To improve\n\nNo bullets here, only the table.\n' > "$SDATA/recap.md"
@@ -5291,6 +5900,38 @@ man="$WORK/snap/manifest.json"
   && [ "$(jq -r .counts.themeLines "$man")" = "0" ]; } \
   && ok "files with real content but zero bullets snapshot successfully" \
   || ko "files with real content but zero bullets snapshot successfully (out=$out man=$(cat "$man"))"
+
+# Item 1 sweep regression: three "else : > …" fallbacks in snapshot_into (one
+# per gist file) each hit the same special-built-in abort as coach-watch.sh's
+# above. `mkdir -p "$_sd"` only proves the destination exists, not that it is
+# writable, and it succeeds unconditionally on one that already exists
+# read-only. `:` is a POSIX special built-in, so a redirection failure on it
+# aborts a non-interactive shell outright under dash — before this script's
+# own fail() ever gets to print its one JSON object. memory.md and libs.md are
+# both absent here (their two guarded lines run directly); recap.md's own cp
+# (REC_FILE has content, satisfying has_content) fails ordinarily instead of
+# aborting, and the manifest write further down still catches the underlying
+# unwritable directory through fail() — proof the abort no longer escapes
+# unguarded.
+rm -f "$SDATA/memory.md" "$SDATA/libs.md"
+printf '## To improve\n\n### Code\n- Error handling\n' > "$SDATA/recap.md"
+SNAP_RO="$WORK/snap-ro"; rm -rf "$SNAP_RO"; mkdir -p "$SNAP_RO"; chmod 555 "$SNAP_RO"
+out=$(sh "$SYNC" snapshot "$SNAP_RO" 2>/dev/null); rc=$?
+chmod 755 "$SNAP_RO"
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "manifest" ]; } \
+  && ok "a snapshot into a read-only destination fails cleanly through fail(), not a shell abort" \
+  || ko "a snapshot into a read-only destination fails cleanly through fail(), not a shell abort (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  rm -rf "$SNAP_RO"; mkdir -p "$SNAP_RO"; chmod 555 "$SNAP_RO"
+  out=$(dash "$SYNC" snapshot "$SNAP_RO" 2>/dev/null); rc=$?
+  chmod 755 "$SNAP_RO"
+  { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "manifest" ]; } \
+    && ok "a snapshot into a read-only destination fails cleanly through fail() under dash" \
+    || ko "a snapshot into a read-only destination fails cleanly through fail() under dash (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-snapshot check was skipped, coverage not claimed)"
+fi
+rm -rf "$SNAP_RO"
 
 # --- learner sync: push -----------------------------------------------------
 # Replace Task 1's minimal fake gh with a fuller one that serves a "remote gist"
@@ -5333,6 +5974,7 @@ export GH_REMOTE="$WORK/remote"; export GH_GIST_ID="abc123"
 rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
 printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
 printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$SDATA/recap.md"
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |\n' > "$SDATA/libs.md"
 
 out=$(sh "$SYNC" push); rc=$?
 { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "needs-create-ok" ] \
@@ -5344,8 +5986,12 @@ out=$(sh "$SYNC" push --create-ok)
 { [ "$(printf '%s' "$out" | jq -r .action)" = "created" ] \
   && [ "$(printf '%s' "$out" | jq -r .gistId)" = "abc123" ] \
   && [ -f "$GH_REMOTE/memory.md" ] && [ -f "$GH_REMOTE/manifest.json" ]; } \
-  && ok "--create-ok creates the gist and uploads the four files" \
-  || ko "--create-ok creates the gist and uploads the four files (out=$out)"
+  && ok "--create-ok creates the gist and uploads the five files" \
+  || ko "--create-ok creates the gist and uploads the five files (out=$out)"
+
+grep -qF 'argon2' "$GH_REMOTE/libs.md" \
+  && ok "the created gist carries libs.md" \
+  || ko "the created gist carries libs.md ($(cat "$GH_REMOTE/libs.md" 2>/dev/null))"
 
 grep -q -- '--secret' "$GH_LOG" \
   && ok "the gist is created secret, never public" \
@@ -5358,11 +6004,16 @@ grep -q -- '--secret' "$GH_LOG" \
   || ko "a successful push records the gist and advances the base"
 
 printf -- '- [Tests][api] fixtures — seen: 2026-09-15\n' >> "$SDATA/memory.md"
+printf '| zod | 2026-09-19 | refine vs superRefine | ✅ ok |\n' >> "$SDATA/libs.md"
 out=$(sh "$SYNC" push)
 { [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ] \
   && [ "$(grep -c 'fixtures' "$GH_REMOTE/memory.md")" = 1 ]; } \
   && ok "a later push updates the same gist without asking again" \
   || ko "a later push updates the same gist without asking again (out=$out)"
+
+grep -qF 'zod' "$GH_REMOTE/libs.md" \
+  && ok "a later push updates libs.md on the same gist too" \
+  || ko "a later push updates libs.md on the same gist too ($(cat "$GH_REMOTE/libs.md"))"
 
 # A remote pushedAt exactly equal to the base (the normal case right after a
 # clean sync) must not trip the guard — only a remote strictly newer does.
@@ -5394,6 +6045,31 @@ out=$(GH_FAIL_API=1 sh "$SYNC" push); rc=$?
 { [ "$rc" = 1 ] && diff -q "$WORK/base-before" "$SDATA/sync-base/manifest.json" >/dev/null; } \
   && ok "a failed push leaves the base untouched" \
   || ko "a failed push leaves the base untouched (rc=$rc out=$out)"
+
+# A libs.md that has SHRUNK against the base must not be pushed. advance_base
+# keeps no base copy of libs.md and cmd_status counts no unpushed libs rows, so
+# nothing downstream can notice: machine A pushes five rows, machine B pulls,
+# the model writes recap.md but skips sync.md's step 4 libs union (a documented
+# model instruction with no code behind it), pull-finish adopts the work dir and
+# equalises the timestamps — so remote-ahead cannot fire either — and B's next
+# push replaces five rows with an empty file, ok:true, unrecoverably. The base
+# manifest's counts.libsRows is the one record of what the last sync agreed on.
+cp "$SDATA/libs.md" "$WORK/libs-local-before"
+cp "$GH_REMOTE/libs.md" "$WORK/libs-remote-before"
+: > "$SDATA/libs.md"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "needs-pull" ] \
+  && diff -q "$WORK/libs-remote-before" "$GH_REMOTE/libs.md" >/dev/null; } \
+  && ok "a push whose libs.md shrank against the base refuses instead of truncating the remote" \
+  || ko "a push whose libs.md shrank against the base refuses instead of truncating the remote (rc=$rc out=$out)"
+
+# The same push with the rows back must go through, so the guard is about the
+# shrink and not about libs.md in general.
+cp "$WORK/libs-local-before" "$SDATA/libs.md"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -r .action)" = "updated" ]; } \
+  && ok "a push with libs.md intact still goes through" \
+  || ko "a push with libs.md intact still goes through (rc=$rc out=$out)"
 
 # --- learner sync: pull -----------------------------------------------------
 setup_pull() {   # a remote that has moved, and a local that has moved differently
@@ -5429,6 +6105,19 @@ bk=$(printf '%s' "$out" | jq -r .backup)
 { [ -d "$bk" ] && grep -qF 'fixtures' "$bk/memory.md"; } \
   && ok "pull backs the local record up before writing" \
   || ko "pull backs the local record up before writing (bk=$bk)"
+
+# Item 2: backup_local's loop already reads
+# `for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE"`, but nothing
+# pinned $LIBS_FILE specifically — a mutation test found that dropping it from
+# that loop changed nothing in this suite. Distinct, greppable content in
+# libs.md before a pull, checked against the backup that same pull makes.
+setup_pull
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| item2-pin | 2026-09-19 | mutation guard | ✅ ok |\n' > "$SDATA/libs.md"
+out=$(sh "$SYNC" pull)
+bk2=$(printf '%s' "$out" | jq -r .backup)
+{ [ -d "$bk2" ] && grep -qF 'item2-pin' "$bk2/libs.md"; } \
+  && ok "pull's backup carries libs.md too, not just memory.md" \
+  || ko "pull's backup carries libs.md too, not just memory.md (bk=$bk2)"
 
 grep -qF 'Test design' "$SDATA/recap.md" \
   && ok "pull leaves recap.md to the model" \
@@ -5562,6 +6251,61 @@ out=$(sh "$SYNC" pull); rc=$?
   && ok "a remote memory.md truncated relative to its own manifest counts fails the pull" \
   || ko "a remote memory.md truncated relative to its own manifest counts fails the pull (rc=$rc out=$out)"
 
+# --- learner sync: Critical 4 — a failed libs.md fetch must not silently empty a
+# populated remote ledger --------------------------------------------------------------
+# libs.md is fetched leniently (a gist from before this feature legitimately has none), so
+# on its own a missing/failed fetch reads as "nothing to union" rather than an error. The
+# manifest guard is what tells the two apart: setup_pull's remote here declares
+# counts.libsRows: 1, so a fetch that comes back empty against that promise must fail the
+# whole pull, exactly like Critical 1 does for memory.md.
+setup_pull
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+# $GH_REMOTE/libs.md is deliberately absent: the fake gh's "gist view" exits 1 when the
+# named file is missing, standing in for the network blip Critical 1 also models.
+printf '' > "$SDATA/libs.md"
+cp "$SDATA/libs.md" "$WORK/libs-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/libs-before" "$SDATA/libs.md" >/dev/null \
+  && [ ! -d "$SDATA/sync-base" ]; } \
+  && ok "a failed libs.md fetch on a populated remote fails the pull instead of emptying it" \
+  || ko "a failed libs.md fetch on a populated remote fails the pull instead of emptying it (rc=$rc out=$out)"
+
+# The same manifest-declared count also catches a truncated-but-present fetch (an
+# empty file where content was promised), the same failure mode Critical 1 covers for
+# memory.md with `: > "$GH_REMOTE/memory.md"`.
+setup_pull
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+: > "$GH_REMOTE/libs.md"
+printf '' > "$SDATA/libs.md"
+cp "$SDATA/libs.md" "$WORK/libs-before"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ] \
+  && diff -q "$WORK/libs-before" "$SDATA/libs.md" >/dev/null; } \
+  && ok "a remote libs.md truncated relative to its own manifest counts fails the pull" \
+  || ko "a remote libs.md truncated relative to its own manifest counts fails the pull (rc=$rc out=$out)"
+
+# The happy path: a gist that does carry a populated libs.md hands its content back for
+# the model to union, exactly like recap's `local`/`remote` paths.
+setup_pull
+printf '| Library | Seen | Angle covered | Verdict |\n|---|---|---|---|\n| argon2 | 2026-09-18 | cost parameters (t, m) | ⚠️ revisit |\n' > "$GH_REMOTE/libs.md"
+jq '.counts.libsRows = 1' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+out=$(sh "$SYNC" pull)
+lr=$(printf '%s' "$out" | jq -r .libs.remote)
+{ [ -n "$lr" ] && grep -qF 'argon2' "$lr"; } \
+  && ok "a pull hands back a non-empty libs.remote when the gist has one" \
+  || ko "a pull hands back a non-empty libs.remote when the gist has one (out=$out)"
+
+# A gist that predates this feature has no libs.md and no counts.libsRows at all: the
+# lenient fetch reads that as "nothing to union", not an error — this is the case the
+# manifest-declared-count guard above must not turn red.
+setup_pull
+out=$(sh "$SYNC" pull); rc=$?
+lr=$(printf '%s' "$out" | jq -r .libs.remote)
+{ [ "$rc" = 0 ] && [ -n "$lr" ] && [ ! -s "$lr" ]; } \
+  && ok "a gist with no libs.md at all still pulls cleanly" \
+  || ko "a gist with no libs.md at all still pulls cleanly (rc=$rc out=$out)"
+
 # --- learner sync: Critical 2 — push refuses to clobber when there is no base ----------
 # This is exactly the state `sync use` (and a fresh `pull <gist>`) creates: a gistId is
 # recorded, sync-base/ is not.
@@ -5597,6 +6341,59 @@ lines=$(printf '%s\n' "$out" | grep -c .)
   && ok "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write" \
   || ko "a pull whose backup dir cannot be created fails cleanly with one JSON object, no write (rc=$rc out=$out)"
 rm -f "$SDATA/backups"
+
+# Item 1 sweep regression: cmd_pull's own lenient libs.md fallback (the guard
+# right above "libs.md is fetched leniently") ends in the same special-built-in
+# abort as the snapshot_into sites above. `:` is a POSIX special built-in, so a
+# redirection failure on it aborts a non-interactive shell outright under dash
+# — before this script's own fail() ever runs, and before the `||` on this
+# very line. $_work is mktemp's own fresh directory, so it is always writable
+# the instant cmd_pull gets it; reproducing "exists but cannot be written into"
+# means intercepting mktemp itself here, standing in for a TMPDIR remounted
+# read-only mid-session. The interceptor only touches `-d` calls, passing
+# everything else straight to the real mktemp, so readable_or_empty's own
+# single-file mktemp (a separate, pre-existing, explicitly out-of-scope leak)
+# is untouched.
+setup_pull
+REAL_MKTEMP=$(command -v mktemp)
+ROMKTEMP="$WORK/ro-mktemp-bin"; rm -rf "$ROMKTEMP"; mkdir -p "$ROMKTEMP"
+cat > "$ROMKTEMP/mktemp" <<MKFAKE
+#!/bin/sh
+case " \$* " in
+  *" -d "*)
+    d=\$("$REAL_MKTEMP" "\$@") || exit 1
+    # Same guard this whole batch exists to apply: \`:\` is a POSIX special
+    # built-in, so an unguarded redirection failure on it would abort this
+    # helper outright under dash. It cannot realistically fail here (\$d is a
+    # mktemp -d fresh directory), but this script is itself #!/bin/sh, and
+    # leaving the bare form in the test that exercises this exact defect
+    # would be the one inconsistency in a batch about eliminating it.
+    ( : > "\$d/libs.md" ) 2>/dev/null || :
+    chmod 444 "\$d/libs.md" 2>/dev/null
+    printf '%s\n' "\$d"
+    ;;
+  *)
+    exec "$REAL_MKTEMP" "\$@"
+    ;;
+esac
+MKFAKE
+chmod +x "$ROMKTEMP/mktemp"
+out=$(PATH="$ROMKTEMP:$PATH" sh "$SYNC" pull 2>/dev/null); rc=$?
+lines=$(printf '%s\n' "$out" | grep -c .)
+{ [ "$rc" = 0 ] && [ "$lines" = 1 ] && printf '%s' "$out" | jq -e .ok >/dev/null 2>&1; } \
+  && ok "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly" \
+  || ko "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly (rc=$rc out=$out)"
+if command -v dash >/dev/null 2>&1; then
+  setup_pull
+  out=$(PATH="$ROMKTEMP:$PATH" dash "$SYNC" pull 2>/dev/null); rc=$?
+  lines=$(printf '%s\n' "$out" | grep -c .)
+  { [ "$rc" = 0 ] && [ "$lines" = 1 ] && printf '%s' "$out" | jq -e .ok >/dev/null 2>&1; } \
+    && ok "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly under dash" \
+    || ko "a pull whose lenient libs.md placeholder cannot be truncated still completes cleanly under dash (rc=$rc out=$out)"
+else
+  echo "  (dash not found on this machine — the dash-specific read-only-libs.md-placeholder check was skipped, coverage not claimed)"
+fi
+rm -rf "$ROMKTEMP"
 
 # --- learner sync: Important 4 — pull <gist> drops a stale base from a different gist ---
 setup_pull

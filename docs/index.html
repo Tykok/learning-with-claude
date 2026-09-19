@@ -83,7 +83,7 @@ delete has committed?</code></pre>
   <section class="band band-tight band-alt">
     <ul class="stats">
       <li><b>1</b><span>skill, invoked by the hooks</span></li>
-      <li><b>13</b><span>POSIX <code>sh</code> hook files</span></li>
+      <li><b>14</b><span>POSIX <code>sh</code> hook files</span></li>
       <li><b>0</b><span>build steps</span></li>
       <li><b>jq</b><span>the only hard dependency</span></li>
     </ul>
@@ -161,11 +161,11 @@ tokens.ts rather than in session.ts?</code></pre>
           <span class="eyebrow">Coach mode <span class="tag">BETA</span></span>
           <h3>You write, Claude challenges</h3>
           <p>The other two invert: Claude writes and quizzes you afterwards. Coach mode has
-          <em>you</em> write, while Claude watches your working tree and comes back at
-          intervals with one socratic question, up to three findings anchored
-          <code>file:line</code>, and up to two leads — never a patch.</p>
+          <em>you</em> write, while Claude watches your working tree and comes back when you
+          pause with one to three socratic questions sized by the diff, up to three findings
+          anchored <code>file:line</code>, and up to two leads — never a patch.</p>
           <p>While it is on, Claude is denied write access to your source outside the globs you
-          hand it, and reviews arrive on a pomodoro by default. It needs an interactive
+          hand it, and reviews arrive when you pause typing by default. It needs an interactive
           session: the watcher is a <code>Monitor</code>, which does not exist in
           <code>claude -p</code>. <a href="usage.html#coach">Read the whole regime.</a></p>
           </div>
@@ -271,7 +271,7 @@ claude plugin install learner@learning-with-claude</code></pre>
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and thirteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

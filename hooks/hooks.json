@@ -95,6 +95,11 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/pilot-nudge.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/plugins/learner/hooks/coach-armed-check.sh\"",
+            "timeout": 10
           }
         ]
       }

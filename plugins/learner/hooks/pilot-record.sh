@@ -128,19 +128,20 @@ case "$CL_LINES" in ''|*[!0-9]*) CL_LINES=0 ;; esac
 # when there is a repo to diff; unavailable otherwise. Estimated and unavailable
 # are marked, never dressed up: `~` in the dashboard, `-` not assessable.
 #
-# A coach tally alone is a lower bound, not a true count: the default pomodoro
-# cadence measures only at the end of a completed work block, so a session that
-# ends mid-block never runs a cycle for that block and its lines are never
-# tallied. Trusting the tally as exact regardless would then label a session
-# `est=0` while silently missing its tail — understating what the dev wrote,
-# which is the one direction this score must not be wrong in. The git estimate
-# (uncommitted insertions minus Claude's own lines) sees exactly that untallied
-# tail, so taking the LARGER of the two is never worse than either alone: it
-# recovers most of what the mid-block ending loses. `est=0` only when the tree
-# holds nothing beyond the tally already counted (estimate <= tally) — that is
-# the case where nothing untallied is sitting in the working tree; otherwise
-# the estimate wins and the line is marked `est=1`, same as when there is no
-# tally at all.
+# A coach tally alone is a lower bound, not a true count: the cadence fires a
+# review only once the dev pauses long enough for coachQuietPolls to elapse
+# (or coachMaxWaitMinutes forces one), so a session that ends while the dev
+# is still mid-edit — no qualifying pause yet — never runs a cycle for that
+# stretch and its lines are never tallied. Trusting the tally as exact
+# regardless would then label a session `est=0` while silently missing its
+# tail — understating what the dev wrote, which is the one direction this
+# score must not be wrong in. The git estimate (uncommitted insertions minus
+# Claude's own lines) sees exactly that untallied tail, so taking the LARGER
+# of the two is never worse than either alone: it recovers most of what the
+# mid-block ending loses. `est=0` only when the tree holds nothing beyond the
+# tally already counted (estimate <= tally) — that is the case where nothing
+# untallied is sitting in the working tree; otherwise the estimate wins and
+# the line is marked `est=1`, same as when there is no tally at all.
 COACH=0
 [ -n "$ROOT" ] && learner_coach_active "$CFG" "$ROOT" && COACH=1
 DEVF="$QDIR/pilot-devlines"

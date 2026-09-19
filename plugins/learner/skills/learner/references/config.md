@@ -23,17 +23,12 @@ and is not restated there).
 | `untrackGlobs` | array of globs | `[]` | Extra paths excluded from quiz material |
 | `disabledPaths` | array of path prefixes | `[]` | Repos where learner stays silent |
 | `coach` | bool | `false` | Coach regime: the dev writes, Claude challenges |
-| `coachCadence` | `pomodoro`/`threshold` | `pomodoro` | Which clock drives reviews |
-| `coachWorkMinutes` | int ≥ 1 | `25` | First work block, in minutes |
-| `coachWorkGrowthMinutes` | int ≥ 0 | `5` | Added to the work block per completed cycle |
-| `coachWorkMaxMinutes` | int ≥ 1 | `45` | Work-block ceiling |
-| `coachChallengeMinutes` | int ≥ 0 | `8` | Challenge window, fixed |
-| `coachIdleCycles` | int ≥ 1 | `2` | Empty work blocks before the watcher stops |
-| `coachPollSeconds` | int ≥ 5 | `45` | Poll interval — `threshold` cadence only |
-| `coachLines` | int ≥ 1 | `40` | Lines since last review that trigger one — `threshold` only |
-| `coachFiles` | int ≥ 1 | `3` | Changed files that trigger one — `threshold` only |
-| `coachEveryMinutes` | int ≥ 0 | `0` | Elapsed-time trigger, `0` = off — `threshold` only |
-| `coachCooldownMinutes` | int ≥ 0 | `5` | Floor between two reviews — `threshold` only |
+| `coachPollSeconds` | int ≥ 5 | `30` | How often the watcher measures the dev's changes |
+| `coachQuietPolls` | int ≥ 1 | `1` | Consecutive unchanged polls — a pause — before a review fires |
+| `coachMinLines` | int ≥ 1 | `10` | Fewer changed lines than this never triggers a review |
+| `coachCooldownMinutes` | int ≥ 0 | `3` | Floor between two reviews |
+| `coachMaxWaitMinutes` | int ≥ 0 | `15` | Emit even without a pause once material has waited this long; `0` disables |
+| `coachIdleMinutes` | int ≥ 1 | `45` | Zero changes for this long → the watcher stops |
 | `pilotEnabled` | bool | `false` | Master switch for the `pilot` skill; global only, never per-repo |
 | `pilotCadenceDays` | int ≥ 1 | `7` | Days between weekly briefs |
 | `pilotJudgeIntervalHours` | int ≥ 1 | `24` | Hours between scoring-queue drains |
@@ -51,13 +46,24 @@ source file (see `references/hook-quiz.md`).
 To edit: read the target file, merge the new values over the existing ones, validate
 (`level` in the five letters; `enabled` boolean; `questionStyles` `"auto"` or a subset;
 `synthesisFrequency` one of the four words; ints ≥ 1; the two glob keys arrays of
-non-empty strings; `coach` boolean; `coachCadence` one of the two words; every `coach*`
-integer at or above the floor in the table above; `agentSalvo` and `agentSalvoFill`
+non-empty strings; `coach` boolean; every `coach*` integer at or above the floor in the
+table above; `agentSalvo` and `agentSalvoFill`
 booleans; `agentSalvoQuestions` an integer ≥ 0 — the floor is **0**, not 1 like every
 other integer key, because an exercise-only salvo is a legitimate setting), write it,
 then confirm with `jq -e . <file> >/dev/null && echo OK`. Reject invalid values and
-re-ask instead of writing them. `coachWorkMaxMinutes` below `coachWorkMinutes` clamps
-to `coachWorkMinutes` rather than being rejected — the intent of that pair is
-unambiguous. `config` alone edits the global file; `config project …`, `off` and `on`
+re-ask instead of writing them.
+
+A config still carrying a v1 coach key (`coachCadence`, `coachWorkMinutes`,
+`coachWorkGrowthMinutes`, `coachWorkMaxMinutes`, `coachChallengeMinutes`, `coachIdleCycles`,
+`coachLines`, `coachFiles`, `coachEveryMinutes`) is not an error — name them once as ignored
+and do not rewrite the dev's file, since silently dropping a key the dev may still be reading
+elsewhere is worse than leaving it inert. Two v1 keys were **kept with new meanings** and are
+the more dangerous case, because they are still read: `coachPollSeconds` (v1 default `45`) and
+`coachCooldownMinutes` (v1 default `5`) applied only to the removed threshold cadence and now
+drive the single pause cadence, at the defaults in the table above. Name them as *changed*, not
+as obsolete — a config still carrying `coachPollSeconds: 300` silently turns the pause into a
+five-minute one.
+
+`config` alone edits the global file; `config project …`, `off` and `on`
 edit `<repo>/.claude/learner.local.json` and add that path to the repo's `.gitignore`
 if it is missing. Those are the only writes into a repo.
