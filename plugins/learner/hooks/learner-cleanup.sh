@@ -2,13 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Part of the learner hooks (see learner-quiz.sh / learner-record-edit.sh).
 #
-# SessionEnd hook: remove this session's scratch files from TMPDIR so they don't
-# accumulate over time. Best-effort; a no-op if jq or the session id is missing.
+# SessionEnd hook: remove this session's scratch files from TMPDIR and close its
+# open questions in events.jsonl. Best-effort; a no-op if jq or the session id is missing.
 # Wired as a SessionEnd hook; see $CLAUDE_CONFIG_DIR/settings.json.
 
 DATA=$(cat)
 SID=$(printf '%s' "$DATA" | jq -r '.session_id // ""' 2>/dev/null)
 [ -n "$SID" ] || exit 0
+
+# A session that ends with a question still open would leave the IDE badge lit
+# forever. Best-effort, like the rest of this hook.
+sh "${0%/*}/learner-event.sh" abandoned --session "$SID" >/dev/null 2>&1 || true
 
 DIR="${TMPDIR:-/tmp}"
 rm -f "$DIR/claude-learner-${SID}.edits" \

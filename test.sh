@@ -6639,6 +6639,60 @@ else
   skip "schema check (set LEARNER_SCHEMA_CHECK=1 with npx available)"
 fi
 
+# --- events log: answered, skipped, abandoned --------------------------------
+rm -f "$EVLOG"
+q1=$(ev asked --style code --mode granular --level S --domain Code --files a --prompt p1)
+ev answered --id "$q1" --verdict revisit --domain Code --theme "Error and exception handling" --note "missed the retry" >/dev/null
+line=$(tail -n1 "$EVLOG")
+{ [ "$(printf '%s' "$line" | jq -c '[.type, .id, .verdict, .domain, .theme, .note, .v]')" \
+      = "[\"question.answered\",\"$q1\",\"revisit\",\"Code\",\"Error and exception handling\",\"missed the retry\",1]" ]; } \
+  && ok "answered records id, verdict, domain, theme and note" \
+  || ko "answered records id, verdict, domain, theme and note (line=$line)"
+
+ev answered --id "$q1" --verdict ok --domain Code --theme '' >/dev/null
+[ "$(tail -n1 "$EVLOG" | jq -c '[.theme, has("note")]')" = '[null,false]' ] \
+  && ok "an empty --theme is written as null, and no --note means no note key" \
+  || ko "an empty --theme is written as null, and no --note means no note key"
+
+n=$(evn)
+for args in "--verdict ok --domain Code --theme t" "--id $q1 --verdict meh --domain Code --theme t" "--id $q1 --verdict ok --theme t"; do
+  # shellcheck disable=SC2086
+  ev answered $args >/dev/null 2>&1; rc=$?
+  { [ "$rc" = 2 ] && [ "$(evn)" = "$n" ]; } \
+    && ok "answered rejects '$args' with exit 2" \
+    || ko "answered rejects '$args' with exit 2 (rc=$rc)"
+done
+
+q2=$(ev asked --style code --mode granular --level S --domain Code --files a --prompt p2)
+ev skipped --id "$q2" >/dev/null
+[ "$(tail -n1 "$EVLOG" | jq -c '[.type, .id]')" = "[\"question.skipped\",\"$q2\"]" ] \
+  && ok "skipped records the id" || ko "skipped records the id"
+
+# Session A: q1 answered, q2 skipped, q3 open. Session B: q4 open.
+q3=$(ev asked --style fill --mode granular --level S --domain Code --files a --prompt p3)
+# shellcheck disable=SC2034  # q4 only needs to exist, open, in session B; never read back
+q4=$(EV_SID=sess-B ev asked --style code --mode granular --level S --domain Code --files a --prompt p4)
+printf '{"v":1,"type":"question.asked","id":"q_torn' >> "$EVLOG"; printf '\n' >> "$EVLOG"
+ev abandoned --session sess-A >/dev/null; rc=$?
+ab=$(jq -Rr 'fromjson? | select(.type == "question.abandoned") | .id' "$EVLOG")
+{ [ "$rc" = 0 ] && [ "$ab" = "$q3" ] \
+  && [ "$(jq -Rr "fromjson? | select(.type == \"question.abandoned\") | .session" "$EVLOG")" = "sess-A" ]; } \
+  && ok "abandoned closes only the session's still-open questions, past a torn line" \
+  || ko "abandoned closes only the session's still-open questions, past a torn line (rc=$rc ab=$ab)"
+n=$(evn); ev abandoned --session sess-A >/dev/null
+[ "$(evn)" = "$n" ] && ok "abandoned is idempotent" || ko "abandoned is idempotent"
+ev abandoned >/dev/null 2>&1; rc=$?
+[ "$rc" = 2 ] && ok "abandoned without --session exits 2" || ko "abandoned without --session exits 2 (rc=$rc)"
+rm -f "$EVLOG"; ev abandoned --session sess-A >/dev/null; rc=$?
+{ [ "$rc" = 0 ] && [ ! -f "$EVLOG" ]; } \
+  && ok "abandoned with no log is a no-op" || ko "abandoned with no log is a no-op (rc=$rc)"
+
+q5=$(EV_SID=sess-C ev asked --style code --mode granular --level S --domain Code --files a --prompt p5)
+printf '{"session_id":"sess-C"}' | sh "$CLEAN"; rc=$?
+{ [ "$rc" = 0 ] && [ "$(tail -n1 "$EVLOG" | jq -c '[.type, .id]')" = "[\"question.abandoned\",\"$q5\"]" ]; } \
+  && ok "the SessionEnd cleanup hook abandons the session's open questions" \
+  || ko "the SessionEnd cleanup hook abandons the session's open questions (rc=$rc)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
