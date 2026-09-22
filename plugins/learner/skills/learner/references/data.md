@@ -14,6 +14,35 @@ mkdir -p "$CFG/learner"
 - `$CFG/learner/memory.md` — working memory.
 - `$CFG/learner/recap.md` — dashboard.
 - `$CFG/learner/libs.md` — the libraries the coach has already covered.
+- `$CFG/learner/events.jsonl` — the event log the Learner IDE extensions read. Never read it
+  to pick a question, and never write it by hand: only `learner-event.sh` does.
+
+## `events.jsonl` — what the IDE sees
+
+One line per question, so an IDE can show a badge for the open question, highlight a
+`fill` hole and list the history. Every write goes through the shipped script:
+
+```bash
+HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
+[ -f "$HOOKS/learner-event.sh" ] || HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
+```
+
+**When the question goes out** — in the same turn, right after putting it to the dev:
+
+```bash
+QID=$(sh "$HOOKS"/learner-event.sh asked --style fill --mode granular --level S \
+        --domain Code --files "src/foo.ts" --anchor src/foo.ts:42 --prompt "<the question as asked>")
+```
+
+- `--style`: `code`, `architecture` or `fill` — what this question actually is, never `auto`.
+- `--domain`: the domain you will file the answer under (`Code`, `Architecture`, `Tests`,
+  `CI/Build`, `Data & DB`, `Integrations`).
+- `--anchor FILE:LINE`: for `fill`, the first `LEARNER-TODO` line
+  (`grep -n 'LEARNER-TODO' FILE | head -1`); for another style, the line the question is
+  about when there is exactly one; omit it otherwise.
+- `--prompt`: the question text only — never the code or a diff.
+
+Remember `QID` until the answer. If the script prints nothing (no `jq`), carry on without it.
 
 Create any of the three if it does not exist yet.
 
@@ -109,11 +138,21 @@ possible at all — a single row per library would only ever say "already done".
 
 ## After every answer
 
-Update **both** files:
+Update **all three**:
 
 1. `memory.md` — add or remove the precise weak spot.
 2. `recap.md` — append a `Session history` row, naming the theme in its `Theme` cell, and
    attach the point to that broad theme under `To improve` or `Mastered` (create the
    theme only if it does not already exist).
+3. `events.jsonl` — close the question with the same verdict and theme as the recap row:
 
-Keep both updates concise.
+   ```bash
+   sh "$HOOKS"/learner-event.sh answered --id "$QID" --verdict ok --domain Code \
+     --theme "Error and exception handling" --note "<the recap row's Note>"
+   sh "$HOOKS"/learner-event.sh skipped --id "$QID"      # on `skip`
+   ```
+
+   `--verdict` is `ok` for `✅ ok` and `revisit` for `⚠️ revisit`. A question left open when
+   the session ends is closed by the `SessionEnd` hook; nothing to do for it.
+
+Keep all three updates concise.

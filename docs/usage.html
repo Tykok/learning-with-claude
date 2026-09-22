@@ -98,6 +98,11 @@
     <code>use &lt;gist&gt;</code></dt>
     <dd>Carries your learning record between machines through a private gist. See
     <a href="#sync">Sync</a> below.</dd>
+    <dt><code>learner events import</code></dt>
+    <dd>Backfills <code>events.jsonl</code>, the append-only log the Learner IDE extensions
+    read, from your <code>recap.md</code> Session history — a one-time catch-up for
+    history recorded before the log existed. Ordinary quiz and coach sessions write to it
+    on their own; safe to run more than once.</dd>
     <dt><code>learner update</code></dt>
     <dd>Checks the remote version and, if it is newer, re-runs the installer pinned to it.
     Safe to run any time — a no-op when you are already current.</dd>

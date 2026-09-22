@@ -45,7 +45,8 @@ When `styles` names a subset (not `auto`), use only those.
    `// LEARNER-TODO: <hint>` comments, keeping the signature and surrounding code
    intact. Cut only that function.
 4. Tell the dev the file and function, and ask them to write the missing code
-   **directly in the file**.
+   **directly in the file**. Then emit the event with the first hole as anchor
+   (`learner-event.sh asked … --anchor FILE:LINE`, see `references/data.md` § `events.jsonl`).
 5. Wait — never write it for them.
 6. When they finish, or say `skip`, compare their code with the correct
    implementation and give brief feedback.
@@ -76,7 +77,8 @@ invisible from here: the answer comes back correct.
 
 ## Running the question
 
-Ask ONE question, then wait for the answer. `skip` moves on without insisting. Give
+Ask ONE question, emit `learner-event.sh asked` for it (see `references/data.md` §
+`events.jsonl`), then wait for the answer. `skip` moves on without insisting. Give
 brief feedback (correct / to fix, plus the missing bit) before continuing.
 
 Prefer a plain chat question; use the multiple-choice tool only when the options

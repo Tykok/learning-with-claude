@@ -37,6 +37,8 @@ Repeat until the dev demonstrates understanding or says `stop`:
 2. A worked example pulled from the real codebase.
 3. An active-recall step — a targeted question, or a `fill` exercise honouring
    `questionStyles`/`blanksPerExercise` (protocol in `../learner/references/hook-quiz.md`).
+   Emit it and close it in `events.jsonl` like any other question
+   (`../learner/references/data.md`).
 4. Wait for the dev, then give brief feedback.
 
 ## On mastery

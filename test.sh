@@ -6734,6 +6734,28 @@ out=$(sh "$EV" import); rc=$?
   && ok "import with no recap.md reports zero and succeeds" \
   || ko "import with no recap.md reports zero and succeeds (out=$out)"
 
+# --- events log: the skills call it ------------------------------------------
+DATAMD="$PLUG/skills/learner/references/data.md"
+HQ="$PLUG/skills/learner/references/hook-quiz.md"
+grep -qF 'learner-event.sh asked' "$DATAMD" && grep -qF 'learner-event.sh answered' "$DATAMD" \
+  && grep -qF 'learner-event.sh skipped' "$DATAMD" \
+  && ok "data.md documents asked, answered and skipped" \
+  || ko "data.md documents asked, answered and skipped"
+grep -qF 'CLAUDE_PLUGIN_ROOT' "$DATAMD" \
+  && ok "data.md resolves the hooks dir for plugin and personal installs" \
+  || ko "data.md resolves the hooks dir for plugin and personal installs"
+grep -qF 'learner-event.sh asked' "$HQ" && grep -qF -- '--anchor' "$HQ" \
+  && ok "hook-quiz.md emits asked, with the fill anchor" \
+  || ko "hook-quiz.md emits asked, with the fill anchor"
+for s in quiz improve; do
+  grep -qF 'events.jsonl' "$PLUG/skills/$s/SKILL.md" \
+    && ok "the $s skill points at the events step" \
+    || ko "the $s skill points at the events step"
+done
+grep -qF 'events import' "$PLUG/skills/learner/SKILL.md" \
+  && ok "the hub dispatch table routes events import" \
+  || ko "the hub dispatch table routes events import"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
