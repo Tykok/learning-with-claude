@@ -16,7 +16,10 @@
     "style": { "type": "string", "minLength": 1 },
     "mode": { "enum": ["granular", "synthesis"] },
     "level": { "enum": ["D", "J", "C", "S", "E"] },
-    "domain": { "type": "string", "minLength": 1 },
+    "domain": {
+      "type": "string", "minLength": 1,
+      "description": "Free string on purpose: imported recap rows carry whatever domain they were written with. Live events use the recap.md domains: Code, Architecture, Tests, CI/Build, Data & DB, Integrations."
+    },
     "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "anchor": {
       "type": "object",

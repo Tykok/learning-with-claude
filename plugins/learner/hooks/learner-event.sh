@@ -45,10 +45,16 @@ new_id() {
     "$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 }
 
-# One printf, one >>: each event is a single write to an O_APPEND file.
+# One printf, one >>: each event is a single write to an O_APPEND file. A torn
+# last line (a crash mid-append, a hand edit) gets its newline first, or this
+# event would be glued onto it and lost to every reader with it.
 append() {
   mkdir -p "${LOG%/*}" || exit 1
-  printf '%s\n' "$1" >> "$LOG"
+  if [ -s "$LOG" ] && [ -n "$(tail -c 1 "$LOG")" ]; then
+    printf '\n%s\n' "$1" >> "$LOG"
+  else
+    printf '%s\n' "$1" >> "$LOG"
+  fi
 }
 
 # Every parseable event as one JSON array; torn or hand-edited lines are dropped.
