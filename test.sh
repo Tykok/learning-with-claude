@@ -6747,6 +6747,14 @@ grep -qF 'CLAUDE_PLUGIN_ROOT' "$DATAMD" \
 grep -qF 'learner-event.sh asked' "$HQ" && grep -qF -- '--anchor' "$HQ" \
   && ok "hook-quiz.md emits asked, with the fill anchor" \
   || ko "hook-quiz.md emits asked, with the fill anchor"
+# Scoped to the closing paragraph itself, not a whole-file or whole-section grep:
+# events.jsonl is mentioned earlier in the same "## Running the question" section too
+# (the emit-on-ask sentence), so either wider grep would stay green even if the
+# close-the-question sentence forgot events.jsonl entirely.
+close=$(awk '/^After the answer/{f=1} f' "$HQ")
+printf '%s' "$close" | grep -qF 'events.jsonl' \
+  && ok "hook-quiz.md's closing instruction names events.jsonl too" \
+  || ko "hook-quiz.md's closing instruction names events.jsonl too"
 for s in quiz improve; do
   grep -qF 'events.jsonl' "$PLUG/skills/$s/SKILL.md" \
     && ok "the $s skill points at the events step" \
