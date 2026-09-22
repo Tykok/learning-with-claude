@@ -6749,10 +6749,37 @@ out=$(sh "$EV" import); rc=$?
 # --- events log: the skills call it ------------------------------------------
 DATAMD="$PLUG/skills/learner/references/data.md"
 HQ="$PLUG/skills/learner/references/hook-quiz.md"
-grep -qF 'learner-event.sh asked' "$DATAMD" && grep -qF 'learner-event.sh answered' "$DATAMD" \
-  && grep -qF 'learner-event.sh skipped' "$DATAMD" \
+grep -qF 'learner-event.sh" asked' "$DATAMD" && grep -qF 'learner-event.sh" answered' "$DATAMD" \
+  && grep -qF 'learner-event.sh" skipped' "$DATAMD" \
   && ok "data.md documents asked, answered and skipped" \
   || ko "data.md documents asked, answered and skipped"
+# Final review C1: each Bash tool call is a fresh shell and the model only sees
+# what a command prints, so the id must be printed (never captured into a
+# variable) and copied literally into the later answered/skipped call.
+grep -F 'learner-event.sh' "$DATAMD" | grep -qF '$(' \
+  && ko "data.md never captures learner-event.sh's output into a variable" \
+  || ok "data.md never captures learner-event.sh's output into a variable"
+grep -qF '$QID' "$DATAMD" \
+  && ko "data.md carries no \$QID across Bash calls" \
+  || ok "data.md carries no \$QID across Bash calls"
+{ grep -qiF 'copy it literally' "$DATAMD" \
+  && grep -Eq -- '--id q_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}' "$DATAMD"; } \
+  && ok "data.md says to copy the printed id literally, with a literal example id" \
+  || ko "data.md says to copy the printed id literally, with a literal example id"
+bad=$(for f in "$PLUG"/skills/*/SKILL.md "$PLUG"/skills/*/references/*.md; do
+  awk -v F="$f" '/^[ \t]*```bash/ { inb = 1; b = ""; next }
+    inb && /^[ \t]*```/ { if (b ~ /learner-event\.sh/ && b !~ /HOOKS=/) print F; inb = 0; next }
+    inb { b = b "\n" $0 }' "$f"
+done)
+[ -z "$bad" ] \
+  && ok "every bash block that calls learner-event.sh resolves HOOKS itself" \
+  || ko "every bash block that calls learner-event.sh resolves HOOKS itself ($bad)"
+grep -rqF '"$HOOKS"/learner-event.sh' "$PLUG/skills" \
+  && ko "skills quote the whole learner-event.sh path" \
+  || ok "skills quote the whole learner-event.sh path"
+grep -qiF 'without the code block' "$DATAMD" \
+  && ok "data.md keeps quoted code out of --prompt" \
+  || ko "data.md keeps quoted code out of --prompt"
 grep -qF 'CLAUDE_PLUGIN_ROOT' "$DATAMD" \
   && ok "data.md resolves the hooks dir for plugin and personal installs" \
   || ko "data.md resolves the hooks dir for plugin and personal installs"
