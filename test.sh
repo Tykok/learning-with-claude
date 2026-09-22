@@ -5959,8 +5959,13 @@ esac
 if [ "$1" = "api" ]; then
   [ -n "${GH_FAIL_API:-}" ] && { cat >/dev/null; exit 1; }
   payload=$(cat)
+  printf '%s' "$payload" > "${GH_PAYLOAD:-/dev/null}"
   mkdir -p "$GH_REMOTE"
   printf '%s' "$payload" | jq -r '.files | keys[]' | while read -r k; do
+    # A null file entry deletes that file from the gist, as GitHub does.
+    if printf '%s' "$payload" | jq -e --arg k "$k" '.files[$k] == null' >/dev/null; then
+      rm -f "$GH_REMOTE/$k"; continue
+    fi
     # -j (not -r): a real gist stores file content byte for byte. -r would add
     # its own trailing newline on top of whatever the content already ends in.
     printf '%s' "$payload" | jq -j --arg k "$k" '.files[$k].content' > "$GH_REMOTE/$k"
@@ -6924,6 +6929,76 @@ out=$(sh "$SYNC" pull); rc=$?
   || ko "an eventLines:0 manifest is treated as empty, ignoring a stale remote events.jsonl (rc=$rc out=$out)"
 sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
 rm -f "$SEV"
+
+# --- learner sync: events.jsonl consent on an existing gist (final review I3) ---
+# A gist created before events.jsonl existed was consented to without it: the
+# first push that would carry the log asks again.
+printf '%s\n' "$e1" > "$SEV"
+rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
+sh "$SYNC" push --create-ok >/dev/null
+jq -e '.consent.events == true' "$SDATA/sync.json" >/dev/null \
+  && ok "push --create-ok records the events consent (the create warning names events.jsonl)" \
+  || ko "push --create-ok records the events consent (the create warning names events.jsonl)"
+# Model a gist created by an older learner: no consent recorded, no events there yet.
+jq 'del(.consent)' "$SDATA/sync.json" > "$WORK/s.tmp" && mv "$WORK/s.tmp" "$SDATA/sync.json"
+rm -f "$GH_REMOTE/events.jsonl"
+printf '%s\n' "$e2" >> "$SEV"
+: > "$GH_LOG"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 1 ] && [ "$out" = '{"ok":false,"error":"needs-events-ok"}' ] \
+  && ! grep -q '^api' "$GH_LOG" && [ ! -f "$GH_REMOTE/events.jsonl" ]; } \
+  && ok "push to an existing gist with a non-empty log and no consent refuses with needs-events-ok, nothing PATCHed" \
+  || ko "push to an existing gist with a non-empty log and no consent refuses with needs-events-ok, nothing PATCHed (rc=$rc out=$out)"
+out=$(sh "$SYNC" push --events-ok); rc=$?
+{ [ "$rc" = 0 ] && [ "$(grep -c . "$GH_REMOTE/events.jsonl")" = 2 ] \
+  && jq -e '.consent.events == true' "$SDATA/sync.json" >/dev/null; } \
+  && ok "push --events-ok uploads events.jsonl and records the consent" \
+  || ko "push --events-ok uploads events.jsonl and records the consent (rc=$rc out=$out)"
+jq 'del(.consent)' "$SDATA/sync.json" > "$WORK/s.tmp" && mv "$WORK/s.tmp" "$SDATA/sync.json"
+out=$(sh "$SYNC" push --create-ok); rc=$?
+{ [ "$(printf '%s' "$out" | jq -r .error)" = needs-events-ok ] \
+  && ! jq -e '.consent.events' "$SDATA/sync.json" >/dev/null 2>&1; } \
+  && ok "--create-ok on an existing gist is not taken as the events consent" \
+  || ko "--create-ok on an existing gist is not taken as the events consent (out=$out)"
+sh "$SYNC" push --events-ok >/dev/null
+printf '%s\n' "$e3" >> "$SEV"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ "$(grep -c . "$GH_REMOTE/events.jsonl")" = 3 ]; } \
+  && ok "once consented, a later push needs no flag" \
+  || ko "once consented, a later push needs no flag (rc=$rc out=$out)"
+jq 'del(.consent)' "$SDATA/sync.json" > "$WORK/s.tmp" && mv "$WORK/s.tmp" "$SDATA/sync.json"
+mv "$SEV" "$WORK/ev.keep"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -r .action)" = updated ]; } \
+  && ok "with no local log, push needs no events consent" \
+  || ko "with no local log, push needs no events consent (rc=$rc out=$out)"
+sh "$SYNC" push --create-ok >/dev/null
+jq -e '.consent.events' "$SDATA/sync.json" >/dev/null 2>&1 \
+  && ko "an update push with --create-ok records no events consent" \
+  || ok "an update push with --create-ok records no events consent"
+grep -qF 'needs-events-ok' "$SYNCMD" && grep -qF -- '--events-ok' "$SYNCMD" \
+  && awk '/needs-events-ok/{f=1} f' "$SYNCMD" | grep -qF 'every question you were asked' \
+  && ok "sync.md documents needs-events-ok with the events warning and push --events-ok" \
+  || ko "sync.md documents needs-events-ok with the events warning and push --events-ok"
+
+# --- learner sync: an emptied log deletes the gist copy (final review M9) ----
+# A dev who deletes events.jsonl for privacy expects the gist copy gone too.
+mv "$WORK/ev.keep" "$SEV"
+sh "$SYNC" push --events-ok >/dev/null
+[ -s "$GH_REMOTE/events.jsonl" ] || ko "M9 setup: the gist holds events.jsonl"
+rm -f "$SEV"
+export GH_PAYLOAD="$WORK/tmp/gh-payload.json"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && [ ! -f "$GH_REMOTE/events.jsonl" ] \
+  && jq -e '.files | has("events.jsonl") and .["events.jsonl"] == null' "$GH_PAYLOAD" >/dev/null \
+  && [ "$(jq -r .counts.eventLines "$GH_REMOTE/manifest.json")" = 0 ]; } \
+  && ok "push with an empty log after a non-empty base deletes the gist's events.jsonl" \
+  || ko "push with an empty log after a non-empty base deletes the gist's events.jsonl (rc=$rc out=$out)"
+out=$(sh "$SYNC" push); rc=$?
+{ [ "$rc" = 0 ] && jq -e '.files | has("events.jsonl") | not' "$GH_PAYLOAD" >/dev/null; } \
+  && ok "push with an empty log and an empty base sends no events.jsonl entry at all" \
+  || ko "push with an empty log and an empty base sends no events.jsonl entry at all (rc=$rc out=$out)"
+unset GH_PAYLOAD
 
 # --- summary ----------------------------------------------------------------
 echo

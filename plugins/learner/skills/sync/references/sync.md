@@ -18,6 +18,7 @@ already covered survive a machine switch exactly like a weak spot does.
 | `remote-ahead` | The other machine pushed since the last sync: run `learner sync pull` first. Do not retry the push. |
 | `needs-pull` | Either this machine is pointed at a gist it has never pulled, or its `libs.md` now holds fewer rows than the base manifest's `counts.libsRows` — step 4's union below was skipped on the last pull. Run `learner sync pull` and do the union before retrying. |
 | `needs-create-ok` | Ask for the gist, see below. |
+| `needs-events-ok` | The gist exists but has never been allowed to carry `events.jsonl`: ask, see below. |
 | `gh-create` / `gh-push` | GitHub refused. Report it; nothing was written locally. |
 
 On `needs-create-ok`, ask the dev before anything is created, and include the warning — it is
@@ -34,6 +35,22 @@ Only on an explicit yes:
 ```bash
 sh "$HOOKS/learner-sync.sh" push --create-ok
 ```
+
+On `needs-events-ok` — a gist created before the event log existed — nothing was pushed. Ask
+the dev before the log leaves the machine, with this warning:
+
+> The gist is unlisted, not private: anyone who has the URL can read it. From now on it would
+> also carry `events.jsonl` (the text of every question you were asked and each repo's absolute
+> path). Upload it?
+
+Only on an explicit yes:
+
+```bash
+sh "$HOOKS/learner-sync.sh" push --events-ok
+```
+
+The answer is recorded, so later pushes do not ask again. On a no, stop: the push does not go
+without the log. A dev who empties `events.jsonl` has the gist copy deleted on the next push.
 
 On success report the action (`created` / `updated`) and the URL.
 

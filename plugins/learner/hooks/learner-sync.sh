@@ -10,7 +10,7 @@
 # Prints exactly one compact JSON object on stdout. skills/learner/references/sync.md
 # turns it into a sentence in the dev's language; nothing here is user-facing prose.
 #
-#   sh learner-sync.sh push [--create-ok]
+#   sh learner-sync.sh push [--create-ok] [--events-ok]
 #   sh learner-sync.sh pull [<gist-id-or-url>]
 #   sh learner-sync.sh pull-finish <work-dir>
 #   sh learner-sync.sh status
@@ -275,6 +275,15 @@ sync_json_set() {  # KEY VALUE (string values only)
   mv "$SYNC_JSON.tmp" "$SYNC_JSON" || fail sync-json
 }
 
+sync_json_set_true() {  # KEY — a JSON boolean true, not the string "true"
+  mkdir -p "$DATA_DIR"
+  _cur='{}'
+  [ -f "$SYNC_JSON" ] && _cur=$(jq -c 'if type == "object" then . else {} end' "$SYNC_JSON" 2>/dev/null)
+  [ -n "$_cur" ] || _cur='{}'
+  printf '%s' "$_cur" | jq -c "$1 = true" > "$SYNC_JSON.tmp" || fail sync-json
+  mv "$SYNC_JSON.tmp" "$SYNC_JSON" || fail sync-json
+}
+
 gist_file() {  # ID NAME -> the file's content on stdout, exit 1 when absent
   gh gist view "$1" -f "$2" --raw 2>/dev/null
 }
@@ -295,8 +304,14 @@ advance_base() {  # DIR — adopt DIR as the new common ancestor
 }
 
 cmd_push() {
-  _create_ok=0
-  [ "${1:-}" = "--create-ok" ] && _create_ok=1
+  _create_ok=0; _events_ok=0
+  for _a in "$@"; do
+    case "$_a" in
+      --create-ok) _create_ok=1 ;;
+      --events-ok) _events_ok=1 ;;
+      *) usage ;;
+    esac
+  done
 
   _work=$(mktemp -d "${TMPDIR:-/tmp}/learner-sync-push.XXXXXX") || fail work-dir
   snapshot_into "$_work"     # calls fail empty-record when there is nothing to push
@@ -330,6 +345,18 @@ cmd_push() {
        && [ "$(LC_ALL=C printf '%s\n%s\n' "$_base_at" "$_remote_at" | LC_ALL=C sort | tail -n1)" = "$_remote_at" ]; then
       rm -rf "$_work"; fail remote-ahead
     fi
+    # The dev consented to this gist before it carried events.jsonl (question
+    # text, absolute repo paths): the first push that would upload the log
+    # asks again. The create path records this consent, its warning names it.
+    if [ -s "$_work/events.jsonl" ] && [ "$(sync_json_get '.consent.events')" != true ] \
+       && [ "$_events_ok" != 1 ]; then
+      rm -rf "$_work"; fail needs-events-ok
+    fi
+    # A log emptied since the last agreed push (a dev who deleted it for
+    # privacy) deletes the gist copy too. Only when the base shows the gist
+    # held one: nulling a file a gist never had is a 422.
+    _drop_ev=false
+    [ ! -s "$_work/events.jsonl" ] && [ -s "$BASE_DIR/events.jsonl" ] && _drop_ev=true
     # libs.md is append-only and has no base copy to three-way merge against
     # (see advance_base), so nothing downstream can notice it shrinking. It
     # shrinks for one reason: the model skipped `sync.md`'s step 4 union after a
@@ -354,10 +381,12 @@ cmd_push() {
       --rawfile cfg "$_work/learner.json" \
       --rawfile man "$_work/manifest.json" \
       --rawfile ev "$_work/events.jsonl" \
+      --argjson drop "$_drop_ev" \
       '{files:({"memory.md":{content:$mem},"recap.md":{content:$rec},
                 "libs.md":{content:$libs},
                 "learner.json":{content:$cfg},"manifest.json":{content:$man}}
-               + (if $ev == "" then {} else {"events.jsonl":{content:$ev}} end))}' \
+               + (if $ev != "" then {"events.jsonl":{content:$ev}}
+                  elif $drop then {"events.jsonl":null} else {} end))}' \
       | gh api --method PATCH "/gists/$_id" --input - >/dev/null 2>&1 \
       || { rm -rf "$_work"; fail gh-push; }
     _action=updated
@@ -365,6 +394,7 @@ cmd_push() {
 
   # Only now, with GitHub's yes in hand.
   advance_base "$_work"
+  { [ "$_action" = created ] || [ "$_events_ok" = 1 ]; } && sync_json_set_true '.consent.events'
   sync_json_set '.github.lastPush' "$(now_utc)"
   rm -rf "$_work"
   jq -nc --arg action "$_action" --arg id "$_id" \
@@ -469,8 +499,9 @@ cmd_pull() {
   [ -z "$_want_libs" ] || [ "$(libs_rows "$_work/libs.md")" = "$_want_libs" ] \
     || { rm -rf "$_work"; fail gh-fetch; }
   _want_ev=$(jq -r '.counts.eventLines // empty' "$_work/manifest.json" 2>/dev/null)
-  # A push with an empty local log leaves the gist's previous events.jsonl in place
-  # (an empty file cannot be PATCHed in); the manifest's 0 is the truth.
+  # An empty file cannot be PATCHed in, and push only deletes the gist copy when
+  # its base shows one, so a stale events.jsonl can outlive an emptied log; the
+  # manifest's 0 is the truth.
   [ "$_want_ev" = 0 ] && : > "$_work/events.jsonl"
   [ -z "$_want_ev" ] || [ "$(event_lines "$_work/events.jsonl")" = "$_want_ev" ] \
     || { rm -rf "$_work"; fail gh-fetch; }
