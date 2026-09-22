@@ -84,5 +84,5 @@ brief feedback (correct / to fix, plus the missing bit) before continuing.
 Prefer a plain chat question; use the multiple-choice tool only when the options
 genuinely help. Recognising the right answer in a list is not recalling it.
 
-After the answer, update `references/data.md`: record the outcome in `memory.md`
-and `recap.md`.
+After the answer, record the outcome in `memory.md`, `recap.md` and `events.jsonl` —
+all three per `references/data.md`.
