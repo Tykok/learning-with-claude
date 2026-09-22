@@ -17,6 +17,8 @@ jobs:
 
       - name: tests
         run: ./test.sh
+        env:
+          LEARNER_SCHEMA_CHECK: '1'
 
       # The community-marketplace review pipeline runs exactly this on every
       # submission, so a failure here is a rejection there. Two calls, not one:

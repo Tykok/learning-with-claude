@@ -166,6 +166,7 @@ rm -f "$CFG_DIR/hooks/learner-config.sh" \
       "$CFG_DIR/hooks/learner-cleanup.sh" \
       "$CFG_DIR/hooks/learner-update-check.sh" \
       "$CFG_DIR/hooks/learner-sync.sh" \
+      "$CFG_DIR/hooks/learner-event.sh" \
       "$CFG_DIR/hooks/coach-gate.sh" \
       "$CFG_DIR/hooks/coach-watch.sh" \
       "$CFG_DIR/hooks/coach-armed-check.sh" \
