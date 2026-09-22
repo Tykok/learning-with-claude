@@ -25,8 +25,9 @@ the one thing they cannot undo once the link exists:
 
 > A secret gist is unlisted, not private: anyone who has the URL can read it without a GitHub
 > account. The snapshot carries your repo names, file names, the wording of your weak spots and
-> the libraries the coach has already covered, plus `pushedFrom` (this machine's hostname) and
-> `learner.json`'s `disabledPaths` (absolute local paths). Create it?
+> the libraries the coach has already covered, plus `pushedFrom` (this machine's hostname),
+> `learner.json`'s `disabledPaths` (absolute local paths) and `events.jsonl` (the text of
+> every question you were asked and each repo's absolute path). Create it?
 
 Only on an explicit yes:
 

@@ -112,8 +112,9 @@ learner sync use <gist>      # repoint this machine at a different gist
 The first `push` asks before creating the gist, and creates it `--secret`. A secret gist is
 **unlisted, not access-controlled**: anyone who has the URL can read it, without a GitHub
 account. It carries your repo names, file names and the wording of your weak spots, plus
-`pushedFrom` (this machine's hostname) and `learner.json`'s `disabledPaths` (absolute local
-paths) — treat the link like a password.
+`pushedFrom` (this machine's hostname), `learner.json`'s `disabledPaths` (absolute local
+paths) and `events.jsonl` (the text of every question you were asked and each repo's absolute
+path) — treat the link like a password.
 
 A `pull` backs up the local record first, under
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/<timestamp>/`, then three-way merges

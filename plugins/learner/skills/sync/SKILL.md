@@ -1,13 +1,13 @@
 ---
-description: Carry the learning record — memory.md, recap.md and the global learner.json — between machines through one private gist. Covers "sync push", "sync pull", "sync status", "sync use <gist>". Use for "learner sync", "synchroniser ma progression", "sauvegarder ma progression", "récupérer ma progression", "back up my learning record".
+description: Carry the learning record — memory.md, recap.md, events.jsonl and the global learner.json — between machines through one private gist. Covers "sync push", "sync pull", "sync status", "sync use <gist>". Use for "learner sync", "synchroniser ma progression", "sauvegarder ma progression", "récupérer ma progression", "back up my learning record".
 allowed-tools: Read, Write, Edit, Grep, Bash
 ---
 
 # Sync mode
 
 `learner sync <push|pull|status|use>` — carry the learning record between machines through
-one private gist. The record is the raw state: `memory.md`, `recap.md` and the global
-`learner.json`. This mode never quizzes and never edits settings.
+one private gist. The record is the raw state: `memory.md`, `recap.md`, `events.jsonl` and
+the global `learner.json`. This mode never quizzes and never edits settings.
 
 Mirror the dev's language in everything you print, as everywhere else in this skill.
 

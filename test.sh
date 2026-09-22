@@ -6524,7 +6524,17 @@ for f in "$PLUG/skills/sync/references/sync.md" "$ROOT/README.md" "$ROOT/docs/sa
   grep -qF 'disabledPaths' "$f" \
     && ok "$(basename "$f")'s consent warning names disabledPaths" \
     || ko "$(basename "$f")'s consent warning names disabledPaths"
+  grep -qF 'events.jsonl' "$f" \
+    && ok "$(basename "$f")'s consent warning names events.jsonl" \
+    || ko "$(basename "$f")'s consent warning names events.jsonl"
 done
+
+grep -qF 'events.jsonl' "$ROOT/docs/install.html" \
+  && ok "docs/install.html's file table lists events.jsonl" \
+  || ko "docs/install.html's file table lists events.jsonl"
+grep -qF 'events.jsonl' "$PLUG/skills/sync/SKILL.md" \
+  && ok "the sync skill names events.jsonl in the record" \
+  || ko "the sync skill names events.jsonl in the record"
 
 # --- events log: asked --------------------------------------------------------
 EV="$PLUG/hooks/learner-event.sh"
