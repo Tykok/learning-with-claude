@@ -6693,6 +6693,47 @@ printf '{"session_id":"sess-C"}' | sh "$CLEAN"; rc=$?
   && ok "the SessionEnd cleanup hook abandons the session's open questions" \
   || ko "the SessionEnd cleanup hook abandons the session's open questions (rc=$rc)"
 
+# --- events log: import from recap.md ----------------------------------------
+rm -f "$EVLOG"
+mkdir -p "$WORK/cfg/learner"
+cat > "$WORK/cfg/learner/recap.md" <<'RECAP'
+## To improve
+
+### Code
+- Error and exception handling
+
+## Session history
+
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|------|------|--------|-------|---------|------|-------|
+| 2026-09-10 | api | Code | code | ✅ ok | retries fine | Error and exception handling |
+| 2026-09-11 | api | Tests | fill | ⏭️ skip |  | Test design |
+| 2026-09-12 | web | Architecture | architecture | ⚠️ revisit | layering unclear |
+| not-a-date | web | Code | code | ✅ ok | x | y |
+RECAP
+printf '{"torn\n' > "$EVLOG"
+out=$(sh "$EV" import); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.ok, .imported, .already, .invalid]')" = '[true,3,0,1]' ]; } \
+  && ok "import appends one event per valid history row and counts the invalid one" \
+  || ko "import appends one event per valid history row and counts the invalid one (rc=$rc out=$out)"
+got=$(jq -Rc 'fromjson? | [.type, .ts, .verdict, .domain, .theme, .repo, .style]' "$EVLOG" | tr '\n' ' ')
+want='["question.answered","2026-09-10T00:00:00Z","ok","Code","Error and exception handling","api","code"] ["question.skipped","2026-09-11T00:00:00Z",null,"Tests",null,"api","fill"] ["question.answered","2026-09-12T00:00:00Z","revisit","Architecture",null,"web","architecture"] '
+[ "$got" = "$want" ] \
+  && ok "imported rows keep date, verdict, domain, theme (null when untagged), repo and style" \
+  || ko "imported rows keep date, verdict, domain, theme (null when untagged), repo and style (got=$got)"
+jq -Rr 'fromjson? | .id' "$EVLOG" | grep -Evq '^q_imp_[0-9]+_[0-9]+$' \
+  && ko "imported ids use the q_imp_<cksum>_<bytes> form" \
+  || ok "imported ids use the q_imp_<cksum>_<bytes> form"
+n=$(evn); out=$(sh "$EV" import)
+{ [ "$(evn)" = "$n" ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already]')" = '[0,3]' ]; } \
+  && ok "a second import adds nothing" \
+  || ko "a second import adds nothing (out=$out)"
+rm -f "$WORK/cfg/learner/recap.md"
+out=$(sh "$EV" import); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .invalid]')" = '[0,0,0]' ]; } \
+  && ok "import with no recap.md reports zero and succeeds" \
+  || ko "import with no recap.md reports zero and succeeds (out=$out)"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"

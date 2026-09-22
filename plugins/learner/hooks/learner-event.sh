@@ -185,6 +185,63 @@ cmd_abandoned() {
   done
 }
 
+# Session history rows as unit-separator-joined fields: normalised row, then
+# Date, Repo, Domain, Style, Verdict, Note, Theme. \037 rather than a tab
+# because read collapses consecutive whitespace separators, and an empty Note
+# cell would shift every field after it.
+history_fields() {
+  awk -v US="$(printf '\037')" '
+    /^[ \t]*\|/ {
+      norm = $0
+      gsub(/[ \t]+/, " ", norm); gsub(/ *\| */, "|", norm)
+      sub(/^ +/, "", norm); sub(/ +$/, "", norm)
+      if (norm ~ /^\|[-|]+\|$/) next
+      if (norm ~ /^\|Date\|/) next
+      n = split(norm, c, "|")
+      printf "%s", norm
+      for (i = 2; i <= 8; i++) printf "%s%s", US, (i < n ? c[i] : "")
+      printf "\n"
+    }' "$1"
+}
+
+cmd_import() {
+  rec="$LEARNER_CFG_DIR/learner/recap.md"
+  imported=0; already=0; invalid=0
+  if [ -f "$rec" ]; then
+    known=$(read_log | jq -r '.[].id')
+    US=$(printf '\037')
+    # A here-doc, not a pipe: the counters must survive the loop.
+    while IFS="$US" read -r norm date repo domain style verdict note theme; do
+      [ -n "$norm" ] || continue          # a recap with no table yields one empty line
+      case "$date" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+        *) invalid=$((invalid + 1)); continue ;;
+      esac
+      [ -n "$domain" ] || { invalid=$((invalid + 1)); continue; }
+      sum=$(printf '%s' "$norm" | cksum | awk '{print $1 "_" $2}')
+      qid="q_imp_$sum"
+      if printf '%s\n' "$known" | grep -qxF "$qid"; then
+        already=$((already + 1)); continue
+      fi
+      ts="${date}T00:00:00Z"
+      case "$verdict" in
+        *skip*)    cmd_skipped --id "$qid" --domain "$domain" --repo "$repo" --style "$style" --ts "$ts" ;;
+        *revisit*) cmd_answered --id "$qid" --verdict revisit --domain "$domain" --theme "$theme" \
+                     --note "$note" --repo "$repo" --style "$style" --ts "$ts" ;;
+        *ok*)      cmd_answered --id "$qid" --verdict ok --domain "$domain" --theme "$theme" \
+                     --note "$note" --repo "$repo" --style "$style" --ts "$ts" ;;
+        *) invalid=$((invalid + 1)); continue ;;
+      esac
+      known=$(printf '%s\n%s' "$known" "$qid")
+      imported=$((imported + 1))
+    done <<EOF
+$(history_fields "$rec")
+EOF
+  fi
+  jq -nc --argjson i "$imported" --argjson a "$already" --argjson k "$invalid" \
+    '{ok: true, imported: $i, already: $a, invalid: $k}'
+}
+
 sub=${1:-}
 [ -n "$sub" ] || usage "missing subcommand"
 shift
@@ -193,5 +250,6 @@ case "$sub" in
   answered)  cmd_answered "$@" ;;
   skipped)   cmd_skipped "$@" ;;
   abandoned) cmd_abandoned "$@" ;;
+  import)    cmd_import ;;
   *) usage "unknown subcommand $sub" ;;
 esac
