@@ -6789,15 +6789,21 @@ printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$SDATA/r
 e1='{"v":1,"type":"question.asked","id":"q_a","ts":"2026-09-20T10:00:00Z"}'
 e2='{"v":1,"type":"question.answered","id":"q_a","ts":"2026-09-20T10:05:00Z"}'
 e3='{"v":1,"type":"question.asked","id":"q_b","ts":"2026-09-21T09:00:00Z"}'
+e4='{"v":1,"type":"question.asked","id":"q_c","ts":"2026-09-19T08:00:00Z"}'
+# Final review I2: the log stays append-only on pull. new-events prints only the
+# remote records whose (id, type) the local log lacks, in remote order, once each.
 printf '%s\n%s\n{"torn\n' "$e1" "$e3" > "$WORK/ev.local"
-printf '%s\n%s\n' "$e2" "$e1" > "$WORK/ev.remote"
-got=$(sh "$SYNC" merge-events "$WORK/ev.local" "$WORK/ev.remote" | jq -rc '[.id, .type] | join(":")' | tr '\n' ' ')
-[ "$got" = "q_a:question.asked q_a:question.answered q_b:question.asked " ] \
-  && ok "merge-events unions on (id, type), sorts by ts and drops torn lines" \
-  || ko "merge-events unions on (id, type), sorts by ts and drops torn lines (got=$got)"
-[ -z "$(sh "$SYNC" merge-events "$WORK/nope.a" "$WORK/nope.b")" ] \
-  && ok "merge-events of two missing files is empty" \
-  || ko "merge-events of two missing files is empty"
+printf '%s\n%s\n{"half\n%s\n%s\n' "$e2" "$e1" "$e4" "$e2" > "$WORK/ev.remote"
+got=$(sh "$SYNC" new-events "$WORK/ev.local" "$WORK/ev.remote" | jq -rc '[.id, .type] | join(":")' | tr '\n' ' ')
+[ "$got" = "q_a:question.answered q_c:question.asked " ] \
+  && ok "new-events prints only the remote (id, type) pairs local lacks, in remote order, past torn lines" \
+  || ko "new-events prints only the remote (id, type) pairs local lacks, in remote order, past torn lines (got=$got)"
+[ -z "$(sh "$SYNC" new-events "$WORK/nope.a" "$WORK/nope.b")" ] \
+  && ok "new-events of two missing files is empty" \
+  || ko "new-events of two missing files is empty"
+[ "$(sh "$SYNC" new-events "$WORK/nope.a" "$WORK/ev.remote" | grep -c .)" = 3 ] \
+  && ok "new-events against a missing local log prints every remote record once" \
+  || ko "new-events against a missing local log prints every remote record once"
 
 # Push carries the log and its line count.
 printf '%s\n%s\n' "$e1" "$e2" > "$SEV"
@@ -6821,6 +6827,45 @@ bk=$(printf '%s' "$out" | jq -r .backup)
 { [ "$rc" = 0 ] && [ "$(wc -l < "$SEV" | tr -d ' ')" = 3 ] && [ -f "$bk/events.jsonl" ]; } \
   && ok "pull merges the remote events into the local log after backing it up" \
   || ko "pull merges the remote events into the local log after backing it up (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+
+# I2: pull appends to the live file in place — same inode, prefix bytes intact,
+# only the new pairs added, in remote order (never re-sorted by ts).
+printf '%s\n%s\n%s\n' "$e2" "$e4" "$e1" > "$GH_REMOTE/events.jsonl"
+jq '.counts.eventLines = 3' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+printf '%s\n%s\n' "$e3" "$e1" > "$SEV"
+cp "$SEV" "$WORK/ev.before"; ino=$(ls -i "$SEV" | awk '{print $1}')
+out=$(sh "$SYNC" pull); rc=$?
+psize=$(wc -c < "$WORK/ev.before" | tr -d ' ')
+{ [ "$rc" = 0 ] && [ "$(ls -i "$SEV" | awk '{print $1}')" = "$ino" ] \
+  && head -c "$psize" "$SEV" | cmp -s - "$WORK/ev.before" \
+  && [ "$(tail -c +"$((psize + 1))" "$SEV")" = "$(printf '%s\n%s' "$e2" "$e4")" ]; } \
+  && ok "pull appends only the new remote events, in remote order, keeping the file's inode and prefix" \
+  || ko "pull appends only the new remote events, in remote order, keeping the file's inode and prefix (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+# Nothing new: the log is not opened for writing at all (a read-only log proves it).
+chmod 444 "$SEV"; cp "$SEV" "$WORK/ev.before"; ino=$(ls -i "$SEV" | awk '{print $1}')
+out=$(sh "$SYNC" pull 2>/dev/null); rc=$?
+chmod 644 "$SEV"
+{ [ "$rc" = 0 ] && cmp -s "$SEV" "$WORK/ev.before" && [ "$(ls -i "$SEV" | awk '{print $1}')" = "$ino" ]; } \
+  && ok "pull with no new remote event does not write the log" \
+  || ko "pull with no new remote event does not write the log (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null 2>&1
+# A torn local tail (no final newline) stays as it is; the appended record is its own line.
+printf '%s\n{"torn' "$e3" > "$SEV"; cp "$SEV" "$WORK/ev.before"
+psize=$(wc -c < "$WORK/ev.before" | tr -d ' ')
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 0 ] && head -c "$psize" "$SEV" | cmp -s - "$WORK/ev.before" \
+  && [ "$(jq -Rc 'fromjson? | .id' "$SEV" | tr '\n' ' ')" = '"q_b" "q_a" "q_c" "q_a" ' ]; } \
+  && ok "pull after a torn local tail appends whole, parseable lines" \
+  || ko "pull after a torn local tail appends whole, parseable lines (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+# No local log at all: pull creates it from the remote records.
+rm -f "$SEV"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 0 ] && [ "$(grep -c . "$SEV")" = 3 ]; } \
+  && ok "pull with no local log creates it from the remote records" \
+  || ko "pull with no local log creates it from the remote records (rc=$rc out=$out)"
 sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
 
 # A gist pushed by an older Learner has no events.jsonl and no eventLines count.

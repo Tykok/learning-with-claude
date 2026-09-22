@@ -17,7 +17,7 @@
 #   sh learner-sync.sh use <gist-id-or-url>
 #   sh learner-sync.sh merge-memory  <base> <local> <remote>
 #   sh learner-sync.sh merge-history <local> <remote>
-#   sh learner-sync.sh merge-events  <local> <remote>
+#   sh learner-sync.sh new-events    <local> <remote>
 
 # shellcheck source=hooks/learner-config.sh
 . "$(dirname "$0")/learner-config.sh"
@@ -59,14 +59,14 @@ cmd=${1:-}
 shift
 
 case "$cmd" in
-  push|pull|pull-finish|status|use|merge-memory|merge-history|merge-events|snapshot) ;;
+  push|pull|pull-finish|status|use|merge-memory|merge-history|new-events|snapshot) ;;
   *) usage ;;
 esac
 
 need_jq
 
 case "$cmd" in
-  merge-memory|merge-history|merge-events|snapshot) ;;   # pure text, no network
+  merge-memory|merge-history|new-events|snapshot) ;;   # pure text, no network
   *) need_gh ;;
 esac
 
@@ -194,11 +194,19 @@ event_lines() {  # FILE -> how many non-empty lines it holds (0 when missing)
   if [ -f "$1" ]; then n=$(grep -c . "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
 
-merge_events() {  # LOCAL REMOTE -> merged JSONL on stdout
+new_events() {  # LOCAL REMOTE -> the remote records local lacks, remote order, once each
   # Append-only on both sides, so the union is the whole truth: no base needed.
-  cat "$(readable_or_empty "$1")" "$(readable_or_empty "$2")" \
-    | jq -Rn '[inputs | fromjson? | select(type == "object" and has("id") and has("type"))]
-              | unique_by([.id, .type]) | sort_by(.ts) | .[]' -c
+  # Only the missing (id, type) pairs come out, byte for byte and in the order
+  # the remote holds them: pull appends them and never rewrites the log, since
+  # an IDE tails it by byte offset. Torn or non-object lines on either side
+  # are ignored.
+  jq -rRn --rawfile loc "$(readable_or_empty "$1")" '
+    def key: select(type == "object" and has("id") and has("type")) | [.id, .type] | tostring;
+    (reduce ($loc | split("\n")[] | fromjson? | key) as $k ({}; .[$k] = true)) as $have
+    | foreach (inputs | . as $raw | (fromjson? | key) as $k | [$k, $raw]) as $e
+        ({seen: $have, out: null};
+         if .seen[$e[0]] then .out = null else .seen[$e[0]] = true | .out = $e[1] end;
+         .out // empty)' "$(readable_or_empty "$2")"
 }
 
 read_version() {
@@ -478,9 +486,19 @@ cmd_pull() {
   write_atomic "$_work/memory.merged" "$MEM_FILE"
 
   # Read the live log at the last moment: a session may have appended during the fetch.
-  merge_events "$EV_FILE" "$_work/events.jsonl" > "$_work/events.merged" \
+  # The log is append-only for its readers too (an IDE tails it by byte offset),
+  # so pull only ever appends the records it lacks, with one >>, and writes
+  # nothing at all when there is nothing new. A torn last line gets a newline
+  # first, so the first appended record is not glued onto it.
+  new_events "$EV_FILE" "$_work/events.jsonl" > "$_work/events.new" \
     || { rm -rf "$_work"; fail merge; }
-  [ -s "$_work/events.merged" ] && write_atomic "$_work/events.merged" "$EV_FILE"
+  if [ -s "$_work/events.new" ]; then
+    mkdir -p "$DATA_DIR" || { rm -rf "$_work"; fail write; }
+    _torn=0
+    [ -s "$EV_FILE" ] && [ -n "$(tail -c 1 "$EV_FILE")" ] && _torn=1
+    { [ "$_torn" = 1 ] && printf '\n'; cat "$_work/events.new"; } >> "$EV_FILE" \
+      || { rm -rf "$_work"; fail write; }
+  fi
 
   merge_history "$REC_FILE" "$_work/recap.md" > "$_work/history.md" \
     || { rm -rf "$_work"; fail merge; }
@@ -592,9 +610,9 @@ case "$cmd" in
     merge_history "$1" "$2"
     exit 0
     ;;
-  merge-events)
+  new-events)
     [ $# -eq 2 ] || usage
-    merge_events "$1" "$2"
+    new_events "$1" "$2"
     exit 0
     ;;
   snapshot)
