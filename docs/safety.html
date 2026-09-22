@@ -178,15 +178,17 @@ Before anything else: restore the correct implementation, remove every // LEARNE
   <code>learner sync push</code> or <code>learner sync pull</code> yourself. No hook ever
   calls it; nothing leaves on its own, on any cadence, from any regime.</p>
 
-  <p>A push snapshots <code>memory.md</code>, <code>recap.md</code>, <code>libs.md</code> and your
-  global <code>learner.json</code> into one GitHub gist, created <code>--secret</code> the first
-  time, after asking. A <strong>secret gist is unlisted, not access-controlled</strong>: GitHub
-  does not check who is asking, only whether they have the URL. Anyone with that URL can read the
-  gist without a GitHub account of their own. Since the snapshot carries your repo names, file
-  names, the wording of your weak spots and the libraries you've been coached on — plus
-  <code>pushedFrom</code> (this machine's hostname) and <code>learner.json</code>'s
-  <code>disabledPaths</code> (absolute local paths) — treat the gist URL the way you would treat a
-  password, and expect anyone it reaches to be able to read everything in it.</p>
+  <p>A push snapshots <code>memory.md</code>, <code>recap.md</code>, <code>libs.md</code>,
+  <code>events.jsonl</code> and your global <code>learner.json</code> into one GitHub gist,
+  created <code>--secret</code> the first time, after asking. A <strong>secret gist is unlisted,
+  not access-controlled</strong>: GitHub does not check who is asking, only whether they have the
+  URL. Anyone with that URL can read the gist without a GitHub account of their own. Since the
+  snapshot carries your repo names, file names, the wording of your weak spots and the libraries
+  you've been coached on — plus <code>pushedFrom</code> (this machine's hostname),
+  <code>learner.json</code>'s <code>disabledPaths</code> (absolute local paths) and
+  <code>events.jsonl</code> (the text of every question you were asked and each repo's absolute
+  path) — treat the gist URL the way you would treat a password, and expect anyone it reaches to
+  be able to read everything in it.</p>
 
   <h2 id="uninstall">Uninstall</h2>
 

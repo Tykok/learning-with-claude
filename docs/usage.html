@@ -273,8 +273,10 @@
     creates it <code>--secret</code>. A secret gist is <strong>unlisted, not
     access-controlled</strong>: anyone who has the URL can read it, without a GitHub account —
     it carries your repo names, file names and the wording of your weak spots, plus
-    <code>pushedFrom</code> (this machine's hostname) and <code>learner.json</code>'s
-    <code>disabledPaths</code> (absolute local paths), so treat the link like a password.</dd>
+    <code>pushedFrom</code> (this machine's hostname), <code>learner.json</code>'s
+    <code>disabledPaths</code> (absolute local paths) and <code>events.jsonl</code> (the text of
+    every question you were asked and each repo's absolute path), so treat the link like a
+    password.</dd>
     <dt><code>learner sync pull [gist-url]</code></dt>
     <dd>Backs up the local record first, to
     <code>${CLAUDE_CONFIG_DIR:-$HOME/.claude}/learner/backups/&lt;timestamp&gt;/</code>, then
