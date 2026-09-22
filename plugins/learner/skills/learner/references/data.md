@@ -20,18 +20,20 @@ mkdir -p "$CFG/learner"
 ## `events.jsonl` — what the IDE sees
 
 One line per question, so an IDE can show a badge for the open question, highlight a
-`fill` hole and list the history. Every write goes through the shipped script:
+`fill` hole and list the history. It grows by roughly 300 bytes per question and never
+holds code. Every write goes through the shipped script.
 
-```bash
-HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
-[ -f "$HOOKS/learner-event.sh" ] || HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
-```
+Each Bash call starts a fresh shell: no variable survives into the next call, and you only
+see what a command prints. So every block below resolves `HOOKS` itself, and nothing is
+captured into a variable.
 
 **When the question goes out** — in the same turn, right after putting it to the dev:
 
 ```bash
-QID=$(sh "$HOOKS"/learner-event.sh asked --style fill --mode granular --level S \
-        --domain Code --files "src/foo.ts" --anchor src/foo.ts:42 --prompt "<the question as asked>")
+HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
+[ -f "$HOOKS/learner-event.sh" ] || HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
+sh "$HOOKS/learner-event.sh" asked --style fill --mode granular --level S \
+  --domain Code --files "src/foo.ts" --anchor src/foo.ts:42 --prompt "<the question as asked>"
 ```
 
 - `--style`: `code`, `architecture` or `fill` — what this question actually is, never `auto`.
@@ -40,9 +42,12 @@ QID=$(sh "$HOOKS"/learner-event.sh asked --style fill --mode granular --level S 
 - `--anchor FILE:LINE`: for `fill`, the first `LEARNER-TODO` line
   (`grep -n 'LEARNER-TODO' FILE | head -1`); for another style, the line the question is
   about when there is exactly one; omit it otherwise.
-- `--prompt`: the question text only — never the code or a diff.
+- `--prompt`: the question sentence only, without the code block you quote with it — never
+  code or a diff.
 
-Remember `QID` until the answer. If the script prints nothing (no `jq`), carry on without it.
+The script prints the id (`q_<UTC>_<hex>`): copy it literally into the later `answered` or
+`skipped` call — the answer arrives in a later turn, so it is the only way to find it again.
+If the script prints nothing (no `jq`), carry on and skip the closing call.
 
 Create any of the three if it does not exist yet.
 
@@ -144,12 +149,15 @@ Update **all three**:
 2. `recap.md` — append a `Session history` row, naming the theme in its `Theme` cell, and
    attach the point to that broad theme under `To improve` or `Mastered` (create the
    theme only if it does not already exist).
-3. `events.jsonl` — close the question with the same verdict and theme as the recap row:
+3. `events.jsonl` — close the question with the same verdict and theme as the recap row,
+   pasting the id `asked` printed (the one below is only an example):
 
    ```bash
-   sh "$HOOKS"/learner-event.sh answered --id "$QID" --verdict ok --domain Code \
-     --theme "Error and exception handling" --note "<the recap row's Note>"
-   sh "$HOOKS"/learner-event.sh skipped --id "$QID"      # on `skip`
+   HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
+   [ -f "$HOOKS/learner-event.sh" ] || HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
+   sh "$HOOKS/learner-event.sh" answered --id q_20260922T143210Z_a1b2c3d4 --verdict ok \
+     --domain Code --theme "Error and exception handling" --note "<the recap row's Note>"
+   sh "$HOOKS/learner-event.sh" skipped --id q_20260922T143210Z_a1b2c3d4    # on `skip`
    ```
 
    `--verdict` is `ok` for `✅ ok` and `revisit` for `⚠️ revisit`. A question left open when
