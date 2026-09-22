@@ -108,10 +108,90 @@ cmd_asked() {
   printf '%s\n' "$id"
 }
 
+cmd_answered() {
+  id=''; verdict=''; domain=''; theme=''; note=''; repo=''; style=''; ts=''
+  have_domain=0; have_theme=0; have_note=0
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || usage "missing value for $1"
+    case "$1" in
+      --id)      id=$2 ;;
+      --verdict) verdict=$2 ;;
+      --domain)  domain=$2; have_domain=1 ;;
+      --theme)   theme=$2; have_theme=1 ;;
+      --note)    note=$2; have_note=1 ;;
+      --repo)    repo=$2 ;;
+      --style)   style=$2 ;;
+      --ts)      ts=$2 ;;
+      *) usage "unknown option $1" ;;
+    esac
+    shift 2
+  done
+  [ -n "$id" ] || usage "--id is required"
+  case "$verdict" in ok|revisit) ;; *) usage "--verdict must be ok or revisit" ;; esac
+  [ "$have_domain" = 1 ] && [ -n "$domain" ] || usage "--domain is required"
+  [ "$have_theme" = 1 ] || usage "--theme is required (use '' for untagged)"
+  [ -n "$ts" ] || ts=$(now_utc)
+
+  line=$(jq -nc --arg id "$id" --arg ts "$ts" --arg verdict "$verdict" --arg domain "$domain" \
+    --arg theme "$theme" --arg note "$note" \
+    --argjson hn "$([ "$have_note" = 1 ] && [ -n "$note" ] && echo 1 || echo 0)" \
+    --arg repo "$repo" --arg style "$style" '
+    {v: 1, type: "question.answered", id: $id, ts: $ts, verdict: $verdict, domain: $domain,
+     theme: (if $theme == "" then null else $theme end)}
+    + (if $hn == 1 then {note: $note} else {} end)
+    + (if $repo == "" then {} else {repo: $repo} end)
+    + (if $style == "" then {} else {style: $style} end)') || exit 1
+  append "$line"
+}
+
+cmd_skipped() {
+  id=''; domain=''; repo=''; style=''; ts=''
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || usage "missing value for $1"
+    case "$1" in
+      --id) id=$2 ;; --domain) domain=$2 ;; --repo) repo=$2 ;; --style) style=$2 ;; --ts) ts=$2 ;;
+      *) usage "unknown option $1" ;;
+    esac
+    shift 2
+  done
+  [ -n "$id" ] || usage "--id is required"
+  [ -n "$ts" ] || ts=$(now_utc)
+  line=$(jq -nc --arg id "$id" --arg ts "$ts" --arg domain "$domain" --arg repo "$repo" --arg style "$style" '
+    {v: 1, type: "question.skipped", id: $id, ts: $ts}
+    + (if $domain == "" then {} else {domain: $domain} end)
+    + (if $repo == "" then {} else {repo: $repo} end)
+    + (if $style == "" then {} else {style: $style} end)') || exit 1
+  append "$line"
+}
+
+cmd_abandoned() {
+  session=''
+  while [ $# -gt 0 ]; do
+    [ $# -ge 2 ] || usage "missing value for $1"
+    case "$1" in --session) session=$2 ;; *) usage "unknown option $1" ;; esac
+    shift 2
+  done
+  [ -n "$session" ] || usage "--session is required"
+  [ -f "$LOG" ] || return 0
+  ts=$(now_utc)
+  read_log | jq -c --arg s "$session" --arg ts "$ts" '
+    (map(select(.type != "question.asked") | .id) | unique) as $closed
+    | .[]
+    | select(.type == "question.asked" and .session == $s)
+    | select(.id as $i | $closed | index($i) | not)
+    | {v: 1, type: "question.abandoned", id: .id, ts: $ts, session: $s}' |
+  while IFS= read -r line; do
+    append "$line"
+  done
+}
+
 sub=${1:-}
 [ -n "$sub" ] || usage "missing subcommand"
 shift
 case "$sub" in
-  asked) cmd_asked "$@" ;;
+  asked)     cmd_asked "$@" ;;
+  answered)  cmd_answered "$@" ;;
+  skipped)   cmd_skipped "$@" ;;
+  abandoned) cmd_abandoned "$@" ;;
   *) usage "unknown subcommand $sub" ;;
 esac
