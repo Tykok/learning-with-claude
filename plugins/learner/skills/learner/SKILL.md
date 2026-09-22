@@ -30,6 +30,7 @@ to the skill that holds the protocol.
 | `coach review [base-ref]` | Run one review now, off-cadence | the `coach` skill |
 | `export [notion-page-url]` | Push the recap into a Notion database | the `export` skill |
 | `sync push` / `sync pull [gist]` / `sync status` / `sync use <gist>` | Carry the learning record between machines through a private gist | the `sync` skill |
+| `events import` | Backfill the IDE event log from `recap.md`'s Session history, once | this file, § Events |
 | `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | the `update` skill |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | `references/config.md` |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | `references/config.md` |
@@ -63,3 +64,13 @@ The canonical value is the letter. Accept the full word and any case as an alias
 | `C` | Competent | why this split, edge cases, error handling | standard jargon assumed, basics not re-explained |
 | `S` | Senior | trade-offs, rejected alternatives, perf and coupling impact | dense, allusive, no unrequested explanation |
 | `E` | Expert | invariants, failure modes, what breaks at scale | context assumed, a discussion between equals |
+
+## Events
+
+`learner events import` — run the script below and report its counts in one sentence; safe to run twice, since rows already in the log are counted as `already`, not re-added.
+
+```bash
+HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
+[ -f "$HOOKS/learner-event.sh" ] || HOOKS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
+sh "$HOOKS/learner-event.sh" import
+```

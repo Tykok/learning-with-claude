@@ -57,8 +57,8 @@ spot when relevant (spaced repetition).
 - Stop early on repeated `skip` or on `stop`.
 - For a `fill`-style question, follow the protocol in `../learner/references/hook-quiz.md`.
 
-After each answer, update `../learner/references/data.md`: record the outcome in `memory.md`
-and `recap.md`.
+Emit each question to `events.jsonl` as it goes out, and after each answer record the outcome
+in `memory.md`, `recap.md` and `events.jsonl` — all three per `../learner/references/data.md`.
 
 ## Never hand the answer over
 
