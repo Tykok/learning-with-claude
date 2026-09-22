@@ -14,6 +14,13 @@
 #   sh learner-event.sh abandoned --session SID
 #   sh learner-event.sh import                                               -> prints a JSON summary
 #
+# import backfills recap.md's Session history as answered/skipped events with
+# q_imp_<cksum>_<bytes> ids, so byte-identical rows collapse to one imported
+# event. Once live events exist, only rows dated strictly before the earliest
+# live (non-q_imp_) event go in: from that day on the log already holds those
+# answers under their live ids. Summary: {"ok":true,"imported":N,"already":M,
+# "invalid":K,"live":L}, where live counts the rows left out for that reason.
+#
 # Exit 0 on success, 2 on a usage error (nothing written). A missing jq is not an
 # error: an event log must never break a quiz, so it warns once and exits 0.
 
@@ -206,9 +213,15 @@ history_fields() {
 
 cmd_import() {
   rec="$LEARNER_CFG_DIR/learner/recap.md"
-  imported=0; already=0; invalid=0
+  imported=0; already=0; invalid=0; live=0
   if [ -f "$rec" ]; then
-    known=$(read_log | jq -r '.[].id')
+    log=$(read_log)
+    known=$(printf '%s' "$log" | jq -r '.[].id')
+    # YYYYMMDD of the earliest live event, empty when every event is imported.
+    cutoff=$(printf '%s' "$log" | jq -r '
+      [.[] | select((.id | type) == "string" and (.id | startswith("q_imp_") | not))
+           | .ts | strings | .[0:10] | select(test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))]
+      | min // empty | gsub("-"; "")')
     US=$(printf '\037')
     # A here-doc, not a pipe: the counters must survive the loop.
     while IFS="$US" read -r norm date repo domain style verdict note theme; do
@@ -222,6 +235,9 @@ cmd_import() {
       qid="q_imp_$sum"
       if printf '%s\n' "$known" | grep -qxF "$qid"; then
         already=$((already + 1)); continue
+      fi
+      if [ -n "$cutoff" ] && [ "$(printf '%s' "$date" | tr -d -)" -ge "$cutoff" ]; then
+        live=$((live + 1)); continue
       fi
       ts="${date}T00:00:00Z"
       case "$verdict" in
@@ -238,8 +254,8 @@ cmd_import() {
 $(history_fields "$rec")
 EOF
   fi
-  jq -nc --argjson i "$imported" --argjson a "$already" --argjson k "$invalid" \
-    '{ok: true, imported: $i, already: $a, invalid: $k}'
+  jq -nc --argjson i "$imported" --argjson a "$already" --argjson k "$invalid" --argjson l "$live" \
+    '{ok: true, imported: $i, already: $a, invalid: $k, live: $l}'
 }
 
 sub=${1:-}

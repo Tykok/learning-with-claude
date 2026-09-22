@@ -67,7 +67,7 @@ The canonical value is the letter. Accept the full word and any case as an alias
 
 ## Events
 
-`learner events import` — run the script below and report its counts in one sentence; safe to run twice, since rows already in the log are counted as `already`, not re-added.
+`learner events import` — run the script below and report its counts in one sentence; safe to run twice, since rows already in the log are counted as `already`, not re-added; rows dated from the first live question on are counted as `live` and left out, since the log already holds them.
 
 ```bash
 HOOKS="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"

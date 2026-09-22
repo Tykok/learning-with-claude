@@ -6730,7 +6730,7 @@ cat > "$WORK/cfg/learner/recap.md" <<'RECAP'
 RECAP
 printf '{"torn\n' > "$EVLOG"
 out=$(sh "$EV" import); rc=$?
-{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.ok, .imported, .already, .invalid]')" = '[true,3,0,1]' ]; } \
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.ok, .imported, .already, .invalid, .live]')" = '[true,3,0,1,0]' ]; } \
   && ok "import appends one event per valid history row and counts the invalid one" \
   || ko "import appends one event per valid history row and counts the invalid one (rc=$rc out=$out)"
 got=$(jq -Rc 'fromjson? | [.type, .ts, .verdict, .domain, .theme, .repo, .style]' "$EVLOG" | tr '\n' ' ')
@@ -6745,9 +6745,23 @@ n=$(evn); out=$(sh "$EV" import)
 { [ "$(evn)" = "$n" ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already]')" = '[0,3]' ]; } \
   && ok "a second import adds nothing" \
   || ko "a second import adds nothing (out=$out)"
+# Final review I4: once live events exist, recap rows from that day on describe
+# answers the log already holds under their live id; importing them would count
+# each twice. Only rows strictly before the earliest live event's date go in.
+rm -f "$EVLOG"
+printf '%s\n' '{"v":1,"type":"question.asked","id":"q_20260911T100000Z_abcdef01","ts":"2026-09-11T10:00:00Z"}' > "$EVLOG"
+out=$(sh "$EV" import); rc=$?
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .invalid, .live]')" = '[1,0,1,2]' ] \
+  && [ "$(jq -Rc 'fromjson? | select(.id | startswith("q_imp_")) | .ts' "$EVLOG")" = '"2026-09-10T00:00:00Z"' ]; } \
+  && ok "import skips rows on or after the earliest live event's date and counts them as live" \
+  || ko "import skips rows on or after the earliest live event's date and counts them as live (rc=$rc out=$out)"
+out=$(sh "$EV" import)
+[ "$(printf '%s' "$out" | jq -c '[.imported, .already, .live]')" = '[0,1,2]' ] \
+  && ok "a second import after live events adds nothing and still reports the live rows" \
+  || ko "a second import after live events adds nothing and still reports the live rows (out=$out)"
 rm -f "$WORK/cfg/learner/recap.md"
 out=$(sh "$EV" import); rc=$?
-{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .invalid]')" = '[0,0,0]' ]; } \
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .invalid, .live]')" = '[0,0,0,0]' ]; } \
   && ok "import with no recap.md reports zero and succeeds" \
   || ko "import with no recap.md reports zero and succeeds (out=$out)"
 
