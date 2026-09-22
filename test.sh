@@ -6642,20 +6642,6 @@ out=$(PATH="$NOJQ_PATH" /bin/sh "$EV" asked --style code --mode granular --level
   && ok "without jq, learner-event.sh warns once, exits 0 and writes nothing" \
   || ko "without jq, learner-event.sh warns once, exits 0 and writes nothing (rc=$rc out=$out)"
 
-# Schema check: opt-in, because npx fetches ajv-cli from the network. CI sets it.
-if [ -n "${LEARNER_SCHEMA_CHECK:-}" ] && command -v npx >/dev/null 2>&1; then
-  mkdir -p "$WORK/tmp/evjson"; i=0; bad=0
-  while IFS= read -r l; do
-    i=$((i + 1)); printf '%s\n' "$l" > "$WORK/tmp/evjson/$i.json"
-    npx --yes ajv-cli@5 validate --spec=draft2020 --strict=false \
-      -s "$ROOT/contract/events.schema.json" -d "$WORK/tmp/evjson/$i.json" >/dev/null 2>&1 || bad=$((bad + 1))
-  done < "$EVLOG"
-  [ "$bad" = 0 ] && ok "every asked line validates against contract/events.schema.json" \
-    || ko "every asked line validates against contract/events.schema.json ($bad invalid)"
-else
-  skip "schema check (set LEARNER_SCHEMA_CHECK=1 with npx available)"
-fi
-
 # --- events log: answered, skipped, abandoned --------------------------------
 rm -f "$EVLOG"
 q1=$(ev asked --style code --mode granular --level S --domain Code --files a --prompt p1)
@@ -6765,6 +6751,59 @@ out=$(sh "$EV" import); rc=$?
   && ok "import with no recap.md reports zero and succeeds" \
   || ko "import with no recap.md reports zero and succeeds (out=$out)"
 
+# --- events log: a torn tail does not swallow the next event (final review M7) ---
+rm -f "$EVLOG"; mkdir -p "${EVLOG%/*}"
+printf '{"torn' > "$EVLOG"
+id=$(ev asked --style code --mode granular --level J --domain Code --files a --prompt p)
+{ [ "$(jq -Rr 'fromjson? | .id' "$EVLOG")" = "$id" ] && [ "$(head -n1 "$EVLOG")" = '{"torn' ]; } \
+  && ok "an event appended after a torn last line lands on its own parseable line" \
+  || ko "an event appended after a torn last line lands on its own parseable line ($(cat "$EVLOG"))"
+
+# --- events log: every event type against the schema (final review S1) ------
+# Opt-in, because npx fetches ajv-cli from the network. CI sets it.
+rm -f "$EVLOG"
+q1=$(ev asked --style fill --mode granular --level S --domain Code --anchor src/foo.ts:42 \
+       --files "src/foo.ts src/bar.ts" --prompt "$EVP")
+( cd "$WORK/tmp/nogit" && env -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$WORK/tmp/nogit" \
+    sh "$EV" asked --style architecture --mode synthesis --level C --domain Tests --files x --prompt p >/dev/null )
+q2=$(ev asked --style code --mode granular --level J --domain Code --files a --prompt p)
+q3=$(ev asked --style code --mode granular --level J --domain Code --files a --prompt p)
+ev asked --style code --mode granular --level J --domain Code --files a --prompt p >/dev/null
+ev answered --id "$q1" --verdict revisit --domain Code --theme "Error and exception handling" --note "n"
+ev answered --id "$q2" --verdict ok --domain Code --theme ''
+ev skipped --id "$q3"
+ev abandoned --session sess-A
+cat > "$WORK/cfg/learner/recap.md" <<'RECAP'
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|------|------|--------|-------|---------|------|-------|
+| 2020-01-01 | api | Code | code | ✅ ok | fine | Error and exception handling |
+| 2020-01-02 | api | Tests | fill | ⏭️ skip |  | Test design |
+| 2020-01-03 | web | Architecture | architecture | ⚠️ revisit | unclear |
+RECAP
+sh "$EV" import >/dev/null
+rm -f "$WORK/cfg/learner/recap.md"
+kinds=$(jq -Rr 'fromjson? | .type + (if (.id | startswith("q_imp_")) then ":imp" else "" end)
+                + (if .type == "question.answered" and .theme == null then ":null" else "" end)' "$EVLOG" \
+        | sort -u | tr '\n' ' ')
+[ "$kinds" = "question.abandoned question.answered question.answered:imp question.answered:imp:null question.answered:null question.asked question.skipped question.skipped:imp " ] \
+  && ok "the schema fixture holds every event type the script writes" \
+  || ko "the schema fixture holds every event type the script writes (kinds=$kinds)"
+if [ -n "${LEARNER_SCHEMA_CHECK:-}" ] && command -v npx >/dev/null 2>&1; then
+  rm -rf "$WORK/tmp/evjson"; mkdir -p "$WORK/tmp/evjson"; i=0
+  while IFS= read -r l; do
+    i=$((i + 1)); printf '%s\n' "$l" > "$WORK/tmp/evjson/$i.json"
+  done < "$EVLOG"
+  bad=0
+  for f in "$WORK"/tmp/evjson/*.json; do
+    npx --yes ajv-cli@5 validate --spec=draft2020 --strict=false \
+      -s "$ROOT/contract/events.schema.json" -d "$f" >/dev/null 2>&1 || bad=$((bad + 1))
+  done
+  [ "$bad" = 0 ] && ok "all $i events (every type) validate against contract/events.schema.json" \
+    || ko "all $i events (every type) validate against contract/events.schema.json ($bad invalid)"
+else
+  skip "schema check (set LEARNER_SCHEMA_CHECK=1 with npx available)"
+fi
+
 # --- events log: the skills call it ------------------------------------------
 DATAMD="$PLUG/skills/learner/references/data.md"
 HQ="$PLUG/skills/learner/references/hook-quiz.md"
@@ -6813,6 +6852,12 @@ close=$(awk '/^After the answer/{f=1} f' "$HQ")
 printf '%s' "$close" | grep -qF 'events.jsonl' \
   && ok "hook-quiz.md's closing instruction names events.jsonl too" \
   || ko "hook-quiz.md's closing instruction names events.jsonl too"
+awk '/^## Running the question/{f=1} f' "$HQ" | grep -qF 'step-4 emit' \
+  && ok "hook-quiz.md emits a fill question once, not in step 4 and again when running it" \
+  || ko "hook-quiz.md emits a fill question once, not in step 4 and again when running it"
+grep -qF '`code`, `architecture` or `fill`' "$PLUG/skills/improve/SKILL.md" \
+  && ok "the improve skill names the --style values asked accepts" \
+  || ko "the improve skill names the --style values asked accepts"
 for s in quiz improve; do
   grep -qF 'events.jsonl' "$PLUG/skills/$s/SKILL.md" \
     && ok "the $s skill points at the events step" \

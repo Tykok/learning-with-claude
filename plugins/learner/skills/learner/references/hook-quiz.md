@@ -77,8 +77,8 @@ invisible from here: the answer comes back correct.
 
 ## Running the question
 
-Ask ONE question, emit `learner-event.sh asked` for it (see `references/data.md` §
-`events.jsonl`), then wait for the answer. `skip` moves on without insisting. Give
+Ask ONE question, emit `learner-event.sh asked` for it once (see `references/data.md` §
+`events.jsonl`; for `fill` that is the step-4 emit, not a second one), then wait for the answer. `skip` moves on without insisting. Give
 brief feedback (correct / to fix, plus the missing bit) before continuing.
 
 Prefer a plain chat question; use the multiple-choice tool only when the options

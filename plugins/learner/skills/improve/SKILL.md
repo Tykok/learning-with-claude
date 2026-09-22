@@ -38,7 +38,8 @@ Repeat until the dev demonstrates understanding or says `stop`:
 3. An active-recall step — a targeted question, or a `fill` exercise honouring
    `questionStyles`/`blanksPerExercise` (protocol in `../learner/references/hook-quiz.md`).
    Emit it and close it in `events.jsonl` like any other question
-   (`../learner/references/data.md`).
+   (`../learner/references/data.md`), with `--style` `code`, `architecture` or `fill` —
+   never `improve`, which is only the recap row's style.
 4. Wait for the dev, then give brief feedback.
 
 ## On mastery
