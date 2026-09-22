@@ -187,8 +187,11 @@ bullet_lines() {  # FILE -> how many "- " lines it holds
   if [ -f "$1" ]; then n=$(grep -c '^-[ \t]' "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
 
-event_lines() {  # FILE -> how many lines it holds (0 when missing)
-  if [ -f "$1" ]; then n=$(wc -l < "$1" | tr -d ' '); printf '%s' "${n:-0}"; else printf '0'; fi
+event_lines() {  # FILE -> how many non-empty lines it holds (0 when missing)
+  # Non-empty lines, not `wc -l`'s newline count: a gist round-trip that drops
+  # or adds a lone trailing newline must not turn into an off-by-one that
+  # fails every later pull until the next push.
+  if [ -f "$1" ]; then n=$(grep -c . "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
 
 merge_events() {  # LOCAL REMOTE -> merged JSONL on stdout
@@ -231,6 +234,10 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else ( : > "$_sd/libs.md" ) 2>/dev/null || :; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
   if [ -f "$EV_FILE" ]; then cp "$EV_FILE" "$_sd/events.jsonl"; else ( : > "$_sd/events.jsonl" ) 2>/dev/null || :; fi
+  # eventLines counts the snapshot copy just made, not the live $EV_FILE: a
+  # session can append to the live log between the cp above and this count,
+  # and the manifest must describe exactly what is about to be uploaded, not
+  # what the log happens to hold a moment later.
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
     --arg at "$(now_utc)" \
@@ -240,7 +247,7 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
     --argjson theme "$(bullet_lines "$REC_FILE")" \
     --argjson hist "$(history_rows "$REC_FILE")" \
     --argjson libs "$(libs_rows "$LIBS_FILE")" \
-    --argjson ev "$(event_lines "$EV_FILE")" \
+    --argjson ev "$(event_lines "$_sd/events.jsonl")" \
     '{schemaVersion:$schema, pushedAt:$at, pushedFrom:$from, learnerVersion:$ver,
       counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist, libsRows:$libs, eventLines:$ev}}' \
     > "$_sd/manifest.json" || fail manifest
