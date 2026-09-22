@@ -5984,7 +5984,9 @@ if [ "$1" = "api" ]; then
   payload=$(cat)
   mkdir -p "$GH_REMOTE"
   printf '%s' "$payload" | jq -r '.files | keys[]' | while read -r k; do
-    printf '%s' "$payload" | jq -r --arg k "$k" '.files[$k].content' > "$GH_REMOTE/$k"
+    # -j (not -r): a real gist stores file content byte for byte. -r would add
+    # its own trailing newline on top of whatever the content already ends in.
+    printf '%s' "$payload" | jq -j --arg k "$k" '.files[$k].content' > "$GH_REMOTE/$k"
   done
   printf '{"id":"%s"}\n' "${GH_GIST_ID:-abc123}"
   exit 0
@@ -6763,6 +6765,68 @@ done
 grep -qF 'events import' "$PLUG/skills/learner/SKILL.md" \
   && ok "the hub dispatch table routes events import" \
   || ko "the hub dispatch table routes events import"
+
+# --- learner sync: events.jsonl ----------------------------------------------
+SEV="$SDATA/events.jsonl"
+# Earlier sections rewrite this directory; start from a known record.
+mkdir -p "$SDATA"
+printf -- '- [Code][api] retries — seen: 2026-09-14\n' > "$SDATA/memory.md"
+printf '## To improve\n\n### Code\n- Error and exception handling\n' > "$SDATA/recap.md"
+e1='{"v":1,"type":"question.asked","id":"q_a","ts":"2026-09-20T10:00:00Z"}'
+e2='{"v":1,"type":"question.answered","id":"q_a","ts":"2026-09-20T10:05:00Z"}'
+e3='{"v":1,"type":"question.asked","id":"q_b","ts":"2026-09-21T09:00:00Z"}'
+printf '%s\n%s\n{"torn\n' "$e1" "$e3" > "$WORK/ev.local"
+printf '%s\n%s\n' "$e2" "$e1" > "$WORK/ev.remote"
+got=$(sh "$SYNC" merge-events "$WORK/ev.local" "$WORK/ev.remote" | jq -rc '[.id, .type] | join(":")' | tr '\n' ' ')
+[ "$got" = "q_a:question.asked q_a:question.answered q_b:question.asked " ] \
+  && ok "merge-events unions on (id, type), sorts by ts and drops torn lines" \
+  || ko "merge-events unions on (id, type), sorts by ts and drops torn lines (got=$got)"
+[ -z "$(sh "$SYNC" merge-events "$WORK/nope.a" "$WORK/nope.b")" ] \
+  && ok "merge-events of two missing files is empty" \
+  || ko "merge-events of two missing files is empty"
+
+# Push carries the log and its line count.
+printf '%s\n%s\n' "$e1" "$e2" > "$SEV"
+rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
+sh "$SYNC" push --create-ok >/dev/null
+{ [ "$(wc -l < "$GH_REMOTE/events.jsonl" | tr -d ' ')" = 2 ] \
+  && [ "$(jq -r .counts.eventLines "$GH_REMOTE/manifest.json")" = 2 ] \
+  && [ -f "$SDATA/sync-base/events.jsonl" ]; } \
+  && ok "push uploads events.jsonl, counts it in the manifest and keeps it in the base" \
+  || ko "push uploads events.jsonl, counts it in the manifest and keeps it in the base"
+printf '%s\n' "$e3" >> "$SEV"
+sh "$SYNC" push >/dev/null
+[ "$(wc -l < "$GH_REMOTE/events.jsonl" | tr -d ' ')" = 3 ] \
+  && ok "a later push PATCHes events.jsonl too" \
+  || ko "a later push PATCHes events.jsonl too"
+
+# Pull merges the remote log into the local one and backs the local one up first.
+printf '%s\n' "$e1" > "$SEV"
+out=$(sh "$SYNC" pull); rc=$?
+bk=$(printf '%s' "$out" | jq -r .backup)
+{ [ "$rc" = 0 ] && [ "$(wc -l < "$SEV" | tr -d ' ')" = 3 ] && [ -f "$bk/events.jsonl" ]; } \
+  && ok "pull merges the remote events into the local log after backing it up" \
+  || ko "pull merges the remote events into the local log after backing it up (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+
+# A gist pushed by an older Learner has no events.jsonl and no eventLines count.
+rm -f "$GH_REMOTE/events.jsonl"
+jq 'del(.counts.eventLines)' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+printf '%s\n%s\n' "$e1" "$e3" > "$SEV"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 0 ] && [ "$(wc -l < "$SEV" | tr -d ' ')" = 2 ]; } \
+  && ok "pull from a gist with no events.jsonl succeeds and keeps the local log" \
+  || ko "pull from a gist with no events.jsonl succeeds and keeps the local log (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+
+# A truncated remote log (fewer lines than its manifest says) is refused.
+printf '%s\n' "$e1" > "$GH_REMOTE/events.jsonl"
+jq '.counts.eventLines = 5' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-fetch" ]; } \
+  && ok "pull refuses a remote events.jsonl shorter than its manifest count" \
+  || ko "pull refuses a remote events.jsonl shorter than its manifest count (rc=$rc out=$out)"
+rm -f "$SEV"
 
 # --- summary ----------------------------------------------------------------
 echo

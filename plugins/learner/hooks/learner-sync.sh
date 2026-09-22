@@ -17,6 +17,7 @@
 #   sh learner-sync.sh use <gist-id-or-url>
 #   sh learner-sync.sh merge-memory  <base> <local> <remote>
 #   sh learner-sync.sh merge-history <local> <remote>
+#   sh learner-sync.sh merge-events  <local> <remote>
 
 # shellcheck source=hooks/learner-config.sh
 . "$(dirname "$0")/learner-config.sh"
@@ -29,6 +30,7 @@ MEM_FILE="$DATA_DIR/memory.md"
 REC_FILE="$DATA_DIR/recap.md"
 LIBS_FILE="$DATA_DIR/libs.md"
 CFG_FILE="$LEARNER_CFG_DIR/learner.json"
+EV_FILE="$DATA_DIR/events.jsonl"
 SYNC_JSON="$DATA_DIR/sync.json"
 BASE_DIR="$DATA_DIR/sync-base"
 BACKUP_DIR="$DATA_DIR/backups"
@@ -57,14 +59,14 @@ cmd=${1:-}
 shift
 
 case "$cmd" in
-  push|pull|pull-finish|status|use|merge-memory|merge-history|snapshot) ;;
+  push|pull|pull-finish|status|use|merge-memory|merge-history|merge-events|snapshot) ;;
   *) usage ;;
 esac
 
 need_jq
 
 case "$cmd" in
-  merge-memory|merge-history|snapshot) ;;   # pure text, no network
+  merge-memory|merge-history|merge-events|snapshot) ;;   # pure text, no network
   *) need_gh ;;
 esac
 
@@ -185,6 +187,17 @@ bullet_lines() {  # FILE -> how many "- " lines it holds
   if [ -f "$1" ]; then n=$(grep -c '^-[ \t]' "$1" 2>/dev/null); printf '%s' "${n:-0}"; else printf '0'; fi
 }
 
+event_lines() {  # FILE -> how many lines it holds (0 when missing)
+  if [ -f "$1" ]; then n=$(wc -l < "$1" | tr -d ' '); printf '%s' "${n:-0}"; else printf '0'; fi
+}
+
+merge_events() {  # LOCAL REMOTE -> merged JSONL on stdout
+  # Append-only on both sides, so the union is the whole truth: no base needed.
+  cat "$(readable_or_empty "$1")" "$(readable_or_empty "$2")" \
+    | jq -Rn '[inputs | fromjson? | select(type == "object" and has("id") and has("type"))]
+              | unique_by([.id, .type]) | sort_by(.ts) | .[]' -c
+}
+
 read_version() {
   if [ -f "$LEARNER_CFG_DIR/skills/learner/VERSION" ]; then
     tr -d '[:space:]' < "$LEARNER_CFG_DIR/skills/learner/VERSION"
@@ -217,6 +230,7 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   if [ -f "$REC_FILE" ]; then cp "$REC_FILE" "$_sd/recap.md"; else ( : > "$_sd/recap.md" ) 2>/dev/null || :; fi
   if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else ( : > "$_sd/libs.md" ) 2>/dev/null || :; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
+  if [ -f "$EV_FILE" ]; then cp "$EV_FILE" "$_sd/events.jsonl"; else ( : > "$_sd/events.jsonl" ) 2>/dev/null || :; fi
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
     --arg at "$(now_utc)" \
@@ -226,8 +240,9 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
     --argjson theme "$(bullet_lines "$REC_FILE")" \
     --argjson hist "$(history_rows "$REC_FILE")" \
     --argjson libs "$(libs_rows "$LIBS_FILE")" \
+    --argjson ev "$(event_lines "$EV_FILE")" \
     '{schemaVersion:$schema, pushedAt:$at, pushedFrom:$from, learnerVersion:$ver,
-      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist, libsRows:$libs}}' \
+      counts:{memoryLines:$mem, themeLines:$theme, historyRows:$hist, libsRows:$libs, eventLines:$ev}}' \
     > "$_sd/manifest.json" || fail manifest
 }
 
@@ -257,7 +272,7 @@ advance_base() {  # DIR — adopt DIR as the new common ancestor
   # on one side" question for a base to answer, and nothing anywhere reads
   # $BASE_DIR/libs.md. Copying it here would be dead state kept only to look
   # symmetric with memory.md and recap.md.
-  for f in memory.md recap.md learner.json manifest.json; do
+  for f in memory.md recap.md learner.json manifest.json events.jsonl; do
     [ -f "$1/$f" ] && cp "$1/$f" "$BASE_DIR.tmp/$f"
   done
   rm -rf "$BASE_DIR"
@@ -275,10 +290,10 @@ cmd_push() {
 
   if [ -z "$_id" ]; then
     [ "$_create_ok" = 1 ] || { rm -rf "$_work"; fail needs-create-ok; }
-    _url=$(gh gist create --secret -d "$SYNC_DESC" \
-             "$_work/memory.md" "$_work/recap.md" "$_work/libs.md" "$_work/learner.json" \
-             "$_work/manifest.json" \
-             2>/dev/null | tail -1)
+    set -- "$_work/memory.md" "$_work/recap.md" "$_work/libs.md" "$_work/learner.json" \
+           "$_work/manifest.json"
+    [ -s "$_work/events.jsonl" ] && set -- "$@" "$_work/events.jsonl"
+    _url=$(gh gist create --secret -d "$SYNC_DESC" "$@" 2>/dev/null | tail -1)
     [ -n "$_url" ] || { rm -rf "$_work"; fail gh-create; }
     _id=${_url##*/}
     sync_json_set '.github.gistId' "$_id"
@@ -323,9 +338,11 @@ cmd_push() {
       --rawfile libs "$_work/libs.md" \
       --rawfile cfg "$_work/learner.json" \
       --rawfile man "$_work/manifest.json" \
-      '{files:{"memory.md":{content:$mem},"recap.md":{content:$rec},
-               "libs.md":{content:$libs},
-               "learner.json":{content:$cfg},"manifest.json":{content:$man}}}' \
+      --rawfile ev "$_work/events.jsonl" \
+      '{files:({"memory.md":{content:$mem},"recap.md":{content:$rec},
+                "libs.md":{content:$libs},
+                "learner.json":{content:$cfg},"manifest.json":{content:$man}}
+               + (if $ev == "" then {} else {"events.jsonl":{content:$ev}} end))}' \
       | gh api --method PATCH "/gists/$_id" --input - >/dev/null 2>&1 \
       || { rm -rf "$_work"; fail gh-push; }
     _action=updated
@@ -356,7 +373,7 @@ backup_local() {  # sets BACKUP_PATH to the directory it created
   # memory.md with no backup underneath it.
   BACKUP_PATH="$BACKUP_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
   mkdir -p "$BACKUP_PATH" || fail backup-dir
-  for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE"; do
+  for f in "$MEM_FILE" "$REC_FILE" "$LIBS_FILE" "$CFG_FILE" "$EV_FILE"; do
     [ -f "$f" ] && cp "$f" "$BACKUP_PATH/$(basename "$f")"
   done
 }
@@ -405,6 +422,8 @@ cmd_pull() {
   # guarded sites exist to prevent — with no `fail()` JSON to show for it, on
   # a script whose entire contract with its caller is one JSON object.
   ( [ -s "$_work/libs.md" ] || : > "$_work/libs.md" ) 2>/dev/null || :
+  # Optional: a gist pushed by an older learner has no events.jsonl.
+  gist_file "$_id" events.jsonl > "$_work/events.jsonl" 2>/dev/null || : > "$_work/events.jsonl"
 
   _schema=$(jq -r '.schemaVersion // 0' "$_work/manifest.json" 2>/dev/null)
   case "$_schema" in
@@ -434,6 +453,12 @@ cmd_pull() {
   _want_libs=$(jq -r '.counts.libsRows // empty' "$_work/manifest.json" 2>/dev/null)
   [ -z "$_want_libs" ] || [ "$(libs_rows "$_work/libs.md")" = "$_want_libs" ] \
     || { rm -rf "$_work"; fail gh-fetch; }
+  _want_ev=$(jq -r '.counts.eventLines // empty' "$_work/manifest.json" 2>/dev/null)
+  # A push with an empty local log leaves the gist's previous events.jsonl in place
+  # (an empty file cannot be PATCHed in); the manifest's 0 is the truth.
+  [ "$_want_ev" = 0 ] && : > "$_work/events.jsonl"
+  [ -z "$_want_ev" ] || [ "$(event_lines "$_work/events.jsonl")" = "$_want_ev" ] \
+    || { rm -rf "$_work"; fail gh-fetch; }
 
   # Past this line the local record changes, so the net goes up first.
   backup_local; _backup="$BACKUP_PATH"
@@ -444,6 +469,11 @@ cmd_pull() {
   merge_memory "$BASE_DIR/memory.md" "$MEM_FILE" "$_work/memory.md" > "$_work/memory.merged" \
     || { rm -rf "$_work"; fail merge; }
   write_atomic "$_work/memory.merged" "$MEM_FILE"
+
+  # Read the live log at the last moment: a session may have appended during the fetch.
+  merge_events "$EV_FILE" "$_work/events.jsonl" > "$_work/events.merged" \
+    || { rm -rf "$_work"; fail merge; }
+  [ -s "$_work/events.merged" ] && write_atomic "$_work/events.merged" "$EV_FILE"
 
   merge_history "$REC_FILE" "$_work/recap.md" > "$_work/history.md" \
     || { rm -rf "$_work"; fail merge; }
@@ -553,6 +583,11 @@ case "$cmd" in
   merge-history)
     [ $# -eq 2 ] || usage
     merge_history "$1" "$2"
+    exit 0
+    ;;
+  merge-events)
+    [ $# -eq 2 ] || usage
+    merge_events "$1" "$2"
     exit 0
     ;;
   snapshot)
