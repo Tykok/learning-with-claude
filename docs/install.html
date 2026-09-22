@@ -237,6 +237,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
       <tr><td><code>$CFG/hooks/learner-sync.sh</code></td><td>Utility — carries the learning record (<code>memory.md</code>, <code>recap.md</code>, <code>learner.json</code>) between machines through a private gist</td></tr>
       <tr><td><code>$CFG/hooks/learner-agent-track.sh</code></td><td>Counts the subagents in flight so the salvo knows when you are waiting</td></tr>
+      <tr><td><code>$CFG/hooks/learner-event.sh</code></td><td>Utility — the only writer of <code>learner/events.jsonl</code>, the append-only event log the Learner IDE extensions read</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
       <tr><td><code>$CFG/learner/</code></td><td>Empty directory, created by the installer: the skill writes <code>memory.md</code>, <code>recap.md</code> and <code>export.json</code> into it at runtime, and the update-check hook writes its throttle stamp (<code>.last-update-check</code>) there too</td></tr>
@@ -255,7 +256,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Fourteen hook files ship and twelve are wired, into <code>SessionStart</code>
+  <p>Fifteen hook files ship and twelve are wired, into <code>SessionStart</code>
   (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
   and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
   (<code>coach-gate.sh</code> on the <code>Write|Edit|NotebookEdit</code> matcher, plus
@@ -315,7 +316,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and fourteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fifteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

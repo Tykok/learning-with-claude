@@ -6524,6 +6524,98 @@ for f in "$PLUG/skills/sync/references/sync.md" "$ROOT/README.md" "$ROOT/docs/sa
     || ko "$(basename "$f")'s consent warning names disabledPaths"
 done
 
+# --- events log: asked --------------------------------------------------------
+EV="$PLUG/hooks/learner-event.sh"
+EVLOG="$WORK/cfg/learner/events.jsonl"
+# CLAUDE_CODE_SESSION_ID is pinned so the suite behaves the same inside and
+# outside a Claude Code session.
+ev() { CLAUDE_CODE_SESSION_ID="${EV_SID:-sess-A}" CLAUDE_PROJECT_DIR="$WORK/proj" sh "$EV" "$@"; }
+evn() { wc -l < "$EVLOG" | tr -d ' '; }
+rm -rf "$WORK/cfg/learner"
+
+EVP='Say "hi" — then \ leave 🎓
+second line'
+id=$(ev asked --style fill --mode granular --level senior --domain Code \
+       --anchor src/foo.ts:42 --files "src/foo.ts  src/bar.ts" --prompt "$EVP"); rc=$?
+line=$(tail -n1 "$EVLOG" 2>/dev/null)
+{ [ "$rc" = 0 ] && [ -f "$EVLOG" ] && [ "$(evn)" = 1 ]; } \
+  && ok "the first event creates learner/ and events.jsonl, one physical line" \
+  || ko "the first event creates learner/ and events.jsonl, one physical line (rc=$rc)"
+printf '%s' "$id" | grep -Eq '^q_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$' \
+  && [ "$(printf '%s' "$line" | jq -r .id)" = "$id" ] \
+  && ok "asked prints the id it wrote, in the q_<UTC>_<hex> format" \
+  || ko "asked prints the id it wrote, in the q_<UTC>_<hex> format (id=$id)"
+{ [ "$(printf '%s' "$line" | jq -r '.v')" = 1 ] \
+  && [ "$(printf '%s' "$line" | jq -r '.type')" = "question.asked" ] \
+  && [ "$(printf '%s' "$line" | jq -r '.level')" = "S" ] \
+  && [ "$(printf '%s' "$line" | jq -r '.session')" = "sess-A" ] \
+  && [ "$(printf '%s' "$line" | jq -r '.root')" = "$WORK/proj" ] \
+  && [ "$(printf '%s' "$line" | jq -r '.repo')" = "proj" ] \
+  && [ "$(printf '%s' "$line" | jq -c '.files')" = '["src/foo.ts","src/bar.ts"]' ] \
+  && [ "$(printf '%s' "$line" | jq -c '.anchor')" = '{"file":"src/foo.ts","line":42}' ] \
+  && printf '%s' "$line" | jq -r .ts | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; } \
+  && ok "asked records v, type, canonical level, session, root, repo, files, anchor, ts" \
+  || ko "asked records v, type, canonical level, session, root, repo, files, anchor, ts (line=$line)"
+[ "$(printf '%s' "$line" | jq -r .prompt)" = "$EVP" ] \
+  && ok "a prompt with quotes, backslash, newline and emoji round-trips" \
+  || ko "a prompt with quotes, backslash, newline and emoji round-trips"
+
+long=$(awk 'BEGIN { for (i = 0; i < 3000; i++) printf "a" }')
+ev asked --style code --mode granular --level J --domain Code --files a.ts --prompt "$long" >/dev/null
+[ "$(tail -n1 "$EVLOG" | jq '.prompt | length')" = 800 ] \
+  && ok "asked truncates the prompt to 800 characters" \
+  || ko "asked truncates the prompt to 800 characters"
+[ "$(tail -n1 "$EVLOG" | jq -c 'has("anchor")')" = false ] \
+  && ok "asked without --anchor writes no anchor key" \
+  || ko "asked without --anchor writes no anchor key"
+
+mkdir -p "$WORK/tmp/nogit"
+( cd "$WORK/tmp/nogit" && env -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$WORK/tmp/nogit" \
+    sh "$EV" asked --style code --mode synthesis --level C --domain Tests --files x --prompt p >/dev/null )
+line=$(tail -n1 "$EVLOG")
+{ [ "$(printf '%s' "$line" | jq -c '[.root, .repo, .session]')" = '[null,null,"unknown"]' ]; } \
+  && ok "outside git and with no session env: root/repo null, session unknown" \
+  || ko "outside git and with no session env: root/repo null, session unknown (line=$line)"
+
+EV_SID=sess-X ev asked --session sess-override --style code --mode granular --level J \
+  --domain Code --files a --prompt p >/dev/null
+[ "$(tail -n1 "$EVLOG" | jq -r .session)" = "sess-override" ] \
+  && ok "--session wins over CLAUDE_CODE_SESSION_ID" \
+  || ko "--session wins over CLAUDE_CODE_SESSION_ID"
+
+n=$(evn)
+for bad in "--style poem" "--mode fast" "--level Z" "--anchor src/foo.ts" "--anchor src/foo.ts:0" "--anchor src/foo.ts:x"; do
+  # shellcheck disable=SC2086
+  ev asked --style code --mode granular --level J --domain Code --files a --prompt p $bad >/dev/null 2>&1; rc=$?
+  { [ "$rc" = 2 ] && [ "$(evn)" = "$n" ]; } \
+    && ok "asked rejects $bad with exit 2 and writes nothing" \
+    || ko "asked rejects $bad with exit 2 and writes nothing (rc=$rc)"
+done
+ev asked --style code --mode granular --level J --files a --prompt p >/dev/null 2>&1; rc=$?
+{ [ "$rc" = 2 ] && [ "$(evn)" = "$n" ]; } \
+  && ok "asked without --domain exits 2 and writes nothing" \
+  || ko "asked without --domain exits 2 and writes nothing (rc=$rc)"
+
+out=$(PATH="$NOJQ_PATH" /bin/sh "$EV" asked --style code --mode granular --level J --domain Code \
+        --files a --prompt p 2>"$WORK/tmp/ev-nojq.err"); rc=$?
+{ [ "$rc" = 0 ] && [ -z "$out" ] && grep -q 'jq' "$WORK/tmp/ev-nojq.err" && [ "$(evn)" = "$n" ]; } \
+  && ok "without jq, learner-event.sh warns once, exits 0 and writes nothing" \
+  || ko "without jq, learner-event.sh warns once, exits 0 and writes nothing (rc=$rc out=$out)"
+
+# Schema check: opt-in, because npx fetches ajv-cli from the network. CI sets it.
+if [ -n "${LEARNER_SCHEMA_CHECK:-}" ] && command -v npx >/dev/null 2>&1; then
+  mkdir -p "$WORK/tmp/evjson"; i=0; bad=0
+  while IFS= read -r l; do
+    i=$((i + 1)); printf '%s\n' "$l" > "$WORK/tmp/evjson/$i.json"
+    npx --yes ajv-cli@5 validate --spec=draft2020 --strict=false \
+      -s "$ROOT/contract/events.schema.json" -d "$WORK/tmp/evjson/$i.json" >/dev/null 2>&1 || bad=$((bad + 1))
+  done < "$EVLOG"
+  [ "$bad" = 0 ] && ok "every asked line validates against contract/events.schema.json" \
+    || ko "every asked line validates against contract/events.schema.json ($bad invalid)"
+else
+  skip "schema check (set LEARNER_SCHEMA_CHECK=1 with npx available)"
+fi
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
