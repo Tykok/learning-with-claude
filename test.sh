@@ -6828,6 +6828,44 @@ out=$(sh "$SYNC" pull); rc=$?
   || ko "pull refuses a remote events.jsonl shorter than its manifest count (rc=$rc out=$out)"
 rm -f "$SEV"
 
+# --- learner sync: events.jsonl — eventLines counts records, not newlines ----
+# Review round 1 (Important): wc -l counts newline characters, not records. A
+# gist round-trip that drops or adds a lone trailing newline must not become
+# an off-by-one that fails every later pull until the next push.
+
+# 1. A remote events.jsonl missing its final newline still pulls, as long as
+# its record count — not its newline count — matches the manifest.
+printf '%s\n%s' "$e1" "$e3" > "$GH_REMOTE/events.jsonl"   # e1, e3 — no trailing newline
+jq '.counts.eventLines = 2' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+printf '%s\n' "$e2" > "$SEV"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 0 ] && [ "$(grep -c . "$SEV")" = 3 ]; } \
+  && ok "a remote events.jsonl missing its final newline still pulls when the record count matches" \
+  || ko "a remote events.jsonl missing its final newline still pulls when the record count matches (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+
+# 2. The manifest's eventLines is exactly the record count of what actually
+# got uploaded — not a count re-read from the live log a moment later.
+printf '%s\n%s\n%s\n' "$e1" "$e2" "$e3" > "$SEV"
+rm -rf "$GH_REMOTE" "$SDATA/sync.json" "$SDATA/sync-base"
+sh "$SYNC" push --create-ok >/dev/null
+[ "$(jq -r .counts.eventLines "$GH_REMOTE/manifest.json")" = "$(grep -c . "$GH_REMOTE/events.jsonl")" ] \
+  && ok "the manifest's eventLines matches the uploaded events.jsonl's record count" \
+  || ko "the manifest's eventLines matches the uploaded events.jsonl's record count"
+
+# 3. The zero rule: an eventLines:0 manifest means empty, whatever stale
+# events.jsonl the gist still holds from before an empty local log was pushed.
+printf '%s\n' "$e1" > "$GH_REMOTE/events.jsonl"
+jq '.counts.eventLines = 0' "$GH_REMOTE/manifest.json" > "$WORK/m.tmp" && mv "$WORK/m.tmp" "$GH_REMOTE/manifest.json"
+printf '%s\n' "$e3" > "$SEV"
+out=$(sh "$SYNC" pull); rc=$?
+{ [ "$rc" = 0 ] && [ "$(grep -c . "$SEV")" = 1 ] \
+  && grep -qF 'q_b' "$SEV" && ! grep -qF 'q_a' "$SEV"; } \
+  && ok "an eventLines:0 manifest is treated as empty, ignoring a stale remote events.jsonl" \
+  || ko "an eventLines:0 manifest is treated as empty, ignoring a stale remote events.jsonl (rc=$rc out=$out)"
+sh "$SYNC" pull-finish "$(printf '%s' "$out" | jq -r .work)" >/dev/null
+rm -f "$SEV"
+
 # --- summary ----------------------------------------------------------------
 echo
 echo "Passed: $PASS   Failed: $FAIL"
