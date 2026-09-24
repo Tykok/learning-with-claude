@@ -246,11 +246,13 @@ cmd_import() {
         live=$((live + 1)); continue
       fi
       ts="${date}T00:00:00Z"
+      # The leading emoji is the verdict; the word after it is free text
+      # (`✅ juste (partiel)`), so a cell without one is invalid.
       case "$verdict" in
-        *skip*)    cmd_skipped --id "$qid" --domain "$domain" --repo "$repo" --style "$style" --ts "$ts" ;;
-        *revisit*) cmd_answered --id "$qid" --verdict revisit --domain "$domain" --theme "$theme" \
+        ⏭*)        cmd_skipped --id "$qid" --domain "$domain" --repo "$repo" --style "$style" --ts "$ts" ;;
+        ⚠*)        cmd_answered --id "$qid" --verdict revisit --domain "$domain" --theme "$theme" \
                      --note "$note" --repo "$repo" --style "$style" --ts "$ts" ;;
-        *ok*)      cmd_answered --id "$qid" --verdict ok --domain "$domain" --theme "$theme" \
+        ✅*)       cmd_answered --id "$qid" --verdict ok --domain "$domain" --theme "$theme" \
                      --note "$note" --repo "$repo" --style "$style" --ts "$ts" ;;
         *) invalid=$((invalid + 1)); continue ;;
       esac
