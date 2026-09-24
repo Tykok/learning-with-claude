@@ -6745,6 +6745,24 @@ out=$(sh "$EV" import)
 [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .live]')" = '[0,1,2]' ] \
   && ok "a second import after live events adds nothing and still reports the live rows" \
   || ko "a second import after live events adds nothing and still reports the live rows (out=$out)"
+# The verdict is its leading emoji, not its word: hand-written rows such as
+# `✅ juste (partiel)` were rejected as invalid and lost to the log.
+rm -f "$EVLOG"
+cat > "$WORK/cfg/learner/recap.md" <<'RECAP'
+| Date | Repo | Domain | Style | Verdict | Note | Theme |
+|------|------|--------|-------|---------|------|-------|
+| 2026-09-10 | api | Code | code | ✅ juste (partiel) | half there | Error and exception handling |
+| 2026-09-11 | api | Tests | fill | ⚠️ à revoir | missed it | Test design |
+| 2026-09-12 | web | Code | code | ⏭️ passé |  | |
+| 2026-09-13 | web | Code | code | ok | no emoji | |
+| 2026-09-14 | web | Code | code | revisit ⚠️ | emoji not leading | |
+RECAP
+out=$(sh "$EV" import); rc=$?
+got=$(jq -Rc 'fromjson? | [.type, .verdict]' "$EVLOG" | tr '\n' ' ')
+{ [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .invalid]')" = '[3,2]' ] \
+  && [ "$got" = '["question.answered","ok"] ["question.answered","revisit"] ["question.skipped",null] ' ]; } \
+  && ok "import reads the verdict from its leading emoji and rejects a cell without one" \
+  || ko "import reads the verdict from its leading emoji and rejects a cell without one (rc=$rc out=$out got=$got)"
 rm -f "$WORK/cfg/learner/recap.md"
 out=$(sh "$EV" import); rc=$?
 { [ "$rc" = 0 ] && [ "$(printf '%s' "$out" | jq -c '[.imported, .already, .invalid, .live]')" = '[0,0,0,0]' ]; } \
