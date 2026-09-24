@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 # SPDX-License-Identifier: GPL-3.0-or-later
 class Learner < Formula
   desc "Turns Claude Code into a learning loop: quizzes you on your own diffs"
@@ -13,7 +14,8 @@ class Learner < Formula
     # "plugins/learner/skills" ships every skill under it without naming one here —
     # do not narrow this to a per-skill path: that is the exact hand-maintained list
     # install.sh's copy loop exists to avoid.
-    pkgshare.install "plugins/learner/hooks", "plugins/learner/skills", "install.sh", "uninstall.sh", "VERSION", "LICENSE"
+    pkgshare.install "plugins/learner/hooks", "plugins/learner/skills",
+                     "install.sh", "uninstall.sh", "VERSION", "LICENSE"
 
     (bin/"learner-install").write <<~SH
       #!/bin/sh
@@ -36,6 +38,6 @@ class Learner < Formula
   end
 
   test do
-    system "#{bin}/learner-install", "--help"
+    system bin/"learner-install", "--help"
   end
 end

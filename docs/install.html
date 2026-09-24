@@ -123,11 +123,10 @@ learner-install --level S --synthesis normal --blanks 2</code></pre>
 
   <h2 id="homebrew">Homebrew</h2>
 
-<pre><code>brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
-brew install learner
+<pre><code>brew install tykok/tap/learner
 learner-install --level S --synthesis normal --blanks 2</code></pre>
 
-  <p>A personal tap, not homebrew-core.</p>
+  <p>A personal tap (<a href="https://github.com/Tykok/homebrew-tap">Tykok/homebrew-tap</a>), not homebrew-core. Each tagged release updates it.</p>
 
   <p>Both apt and Homebrew only stage the files and drop <code>learner-install</code> /
   <code>learner-uninstall</code> on <code>PATH</code> — neither touches <code>~/.claude</code>
