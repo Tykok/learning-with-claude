@@ -39,10 +39,17 @@ refill while the agents keep working. A dev who wanted an endless quiz would hav
 2. **Read `memory.md`** (path in `references/data.md`). Open weak spots pull the choice of
    question, the same spaced repetition the quiz and the coach use.
 3. **Ask `questions` questions, one at a time.** Wait for each answer and give brief feedback
-   before the next. Never two at once, never a question with sub-questions.
+   before the next. Never two at once, never a question with sub-questions. Each question
+   emits `learner-event.sh asked` in the turn it goes out, per `references/data.md`
+   § `events.jsonl`, *When the question goes out*: its real `--style` (`code` or
+   `architecture`), `--mode granular`, and as `--files` the files it is about — the trigger's
+   `files:` for a question on the diff, the files the delegated task targets for one on the
+   task, the `memory.md` entry's file for a weak spot. A question about no file emits no event:
+   never invent a `--files` value.
 4. **Run the exercise** when the preparation agent reports.
-5. **Record** every answer in `memory.md` and `recap.md` per `references/data.md` § *After every
-   answer*, with `salvo` in the `Style` column.
+5. **Record** every answer in `memory.md`, `recap.md` and `events.jsonl` per
+   `references/data.md` § *After every answer*, with `salvo` in the recap's `Style` column,
+   closing each question with the id its `asked` printed.
 
 `references/hook-quiz.md` § *Never hand the answer over* applies in full. A question that
 quotes both sides of a hunk has already answered itself, and the failure is invisible from
@@ -95,7 +102,12 @@ agents currently in flight. Its mission:
 ### When it reports
 
 Tell the dev the file and the function, ask them to write the missing code **in the file**, and
-wait. Feedback, restoration and verification follow `hook-quiz.md` § *The `fill` protocol*,
+wait. As you hand it over, emit `learner-event.sh asked --style fill --anchor FILE:LINE`, the line
+being the first `LEARNER-TODO`, as `references/data.md` says. The holes are already cut, so the
+event reads `dirty: true` and the IDE opens the current file — the one with the holes, which
+is the one the dev works in.
+
+Feedback, restoration and verification follow `hook-quiz.md` § *The `fill` protocol*,
 steps 5–7 — including the rule that a turn never ends with a `// LEARNER-TODO` surviving. The
 Stop hook's guardrail enforces it either way.
 

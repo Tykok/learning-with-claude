@@ -1864,6 +1864,19 @@ grep -qiF 'salvo' "$PLUG/skills/coach/references/coach.md" \
   && ok "coach.md states which channel wins when both land" \
   || ko "coach.md states which channel wins when both land"
 
+{ grep -qF 'learner-event.sh asked' "$SALVO_REF" \
+  && grep -qF -- '--style fill --anchor' "$SALVO_REF" \
+  && grep -qF '§ `events.jsonl`' "$SALVO_REF" \
+  && grep -qF 'the id its `asked` printed' "$SALVO_REF"; } \
+  && ok "agent-salvo.md emits asked per question and for the exercise, and closes by id" \
+  || ko "agent-salvo.md emits asked per question and for the exercise, and closes by id"
+grep -qF 'emits no event' "$SALVO_REF" \
+  && ok "agent-salvo.md never invents --files for a question about no file" \
+  || ko "agent-salvo.md never invents --files for a question about no file"
+grep -qF 'HOOKS=' "$SALVO_REF" \
+  && ko "agent-salvo.md points to data.md instead of restating the HOOKS block" \
+  || ok "agent-salvo.md points to data.md instead of restating the HOOKS block"
+
 # --- installer --------------------------------------------------------------
 inst() { CLAUDE_CONFIG_DIR="$1" bash "$ROOT/install.sh" "${@:2}"; }
 hookcount() { jq '[.. | .command? // empty | select(contains("learner-"))] | length' "$1/settings.json"; }
