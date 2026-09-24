@@ -3154,9 +3154,13 @@ grep -qF '<h2 id="packages">' "$SITE_INSTALL" \
   && ok "the README links to the site" \
   || ko "the README links to the site"
 
-grep -qF 'brew install learner' "$RM" \
-  && ok "README documents the Homebrew install path" \
-  || ko "README documents the Homebrew install path"
+grep -qF 'brew install tykok/tap/learner' "$RM" \
+  && ok "README documents the Homebrew install path through the shared tap" \
+  || ko "README documents the Homebrew install path through the shared tap"
+
+grep -qF 'brew tap Tykok/learning-with-claude' "$RM" \
+  && ko "README no longer taps this repo directly" \
+  || ok "README no longer taps this repo directly"
 
 grep -qF 'sudo apt install ./learner_' "$RM" \
   && ok "README documents the apt/.deb install path" \
@@ -3918,9 +3922,13 @@ grep -qF 'do not exist yet' "$SITE_INSTALL" \
   && ko "install.html no longer claims Homebrew/apt packages don't exist" \
   || ok "install.html no longer claims Homebrew/apt packages don't exist"
 
-grep -qF 'brew install learner' "$SITE_INSTALL" \
-  && ok "install.html documents the Homebrew install path" \
-  || ko "install.html documents the Homebrew install path"
+grep -qF 'brew install tykok/tap/learner' "$SITE_INSTALL" \
+  && ok "install.html documents the Homebrew install path through the shared tap" \
+  || ko "install.html documents the Homebrew install path through the shared tap"
+
+grep -qF 'brew tap Tykok/learning-with-claude' "$SITE_INSTALL" \
+  && ko "install.html no longer taps this repo directly" \
+  || ok "install.html no longer taps this repo directly"
 
 grep -qF 'sudo apt install ./learner_' "$SITE_INSTALL" \
   && ok "install.html documents the apt/.deb install path" \
@@ -4056,6 +4064,21 @@ grep -qE 'sha256 "[0-9a-f]{64}"' "$FORMULA" \
 [ -x "$ROOT/scripts/bump-formula.sh" ] \
   && ok "scripts/bump-formula.sh is executable" \
   || ko "scripts/bump-formula.sh is executable"
+
+# A tagged release publishes the bumped formula to the shared tap, so
+# `brew install tykok/tap/learner` follows releases without a hand copy.
+CI_YML="$ROOT/.github/workflows/ci.yml"
+grep -qF 'repository: Tykok/homebrew-tap' "$CI_YML" \
+  && ok "the release pipeline checks out the shared tap" \
+  || ko "the release pipeline checks out the shared tap"
+
+grep -qF 'scripts/bump-formula.sh "$GITHUB_REF_NAME"' "$CI_YML" \
+  && ok "the release pipeline bumps the formula to the pushed tag" \
+  || ko "the release pipeline bumps the formula to the pushed tag"
+
+grep -qF 'secrets.HOMEBREW_TAP_TOKEN' "$CI_YML" \
+  && ok "the tap push authenticates with HOMEBREW_TAP_TOKEN" \
+  || ko "the tap push authenticates with HOMEBREW_TAP_TOKEN"
 
 # --- Debian package -----------------------------------------------------------
 DEBBUILD="$ROOT/packaging/deb/build.sh"

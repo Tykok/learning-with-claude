@@ -211,12 +211,11 @@ for the current version if you're reading this after a newer one has shipped.)
 ### Homebrew (macOS or Linux)
 
 ```bash
-brew tap Tykok/learning-with-claude https://github.com/Tykok/learning-with-claude
-brew install learner
+brew install tykok/tap/learner
 learner-install --level S --synthesis normal --blanks 2
 ```
 
-A personal tap, not homebrew-core.
+A personal tap ([Tykok/homebrew-tap](https://github.com/Tykok/homebrew-tap)), not homebrew-core. Each tagged release updates it.
 
 Both apt and Homebrew only stage the files and drop `learner-install`/`learner-uninstall` on
 `PATH` — neither touches `~/.claude` by itself; run `learner-install` afterward, same flags

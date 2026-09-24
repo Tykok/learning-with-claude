@@ -71,6 +71,38 @@ jobs:
         with:
           files: learner_*_all.deb
 
+  # Its own job so a tap failure never holds back the site deploy: the .deb
+  # is already out by then, and the tap can be re-run on its own.
+  publish-tap:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bump the formula to this tag
+        run: scripts/bump-formula.sh "$GITHUB_REF_NAME"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Tykok/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: push the formula to Tykok/homebrew-tap
+        run: |
+          mkdir -p tap/Formula
+          cp Formula/learner.rb tap/Formula/learner.rb
+          cd tap
+          git add Formula/learner.rb
+          if git diff --cached --quiet; then
+            echo "tap already has learner $GITHUB_REF_NAME"; exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "learner $GITHUB_REF_NAME"
+          git push
+
   deploy-pages:
     needs: [ci, release]
     if: always() && github.event_name != 'pull_request' && needs.ci.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')
