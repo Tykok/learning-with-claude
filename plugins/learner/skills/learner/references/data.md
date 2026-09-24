@@ -44,6 +44,7 @@ sh "$HOOKS/learner-event.sh" asked --style fill --mode granular --level S \
   about when there is exactly one; omit it otherwise.
 - `--prompt`: the question sentence only, without the code block you quote with it — never
   code or a diff.
+- `commit` and `dirty` are added by the script from the repo itself: never pass them.
 
 The script prints the id (`q_<UTC>_<hex>`): copy it literally into the later `answered` or
 `skipped` call — the answer arrives in a later turn, so it is the only way to find it again.

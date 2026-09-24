@@ -33,7 +33,15 @@
     "prompt": { "type": "string", "maxLength": 800 },
     "verdict": { "enum": ["ok", "revisit"] },
     "theme": { "type": ["string", "null"] },
-    "note": { "type": "string" }
+    "note": { "type": "string" },
+    "commit": {
+      "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+      "description": "question.asked only: the full hash HEAD pointed at when the question was asked. Absent outside git and on an unborn branch, and then dirty is absent too."
+    },
+    "dirty": {
+      "type": "boolean",
+      "description": "question.asked only: true when any of files differs from its blob at commit, is untracked, missing, a symlink, or could not be checked. Fail-closed: true hides the IDE's revision actions."
+    }
   },
   "allOf": [
     {
@@ -52,5 +60,6 @@
       "then": { "required": ["session"] }
     }
   ],
+  "dependentRequired": { "commit": ["dirty"], "dirty": ["commit"] },
   "additionalProperties": false
 }

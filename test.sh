@@ -6696,6 +6696,106 @@ printf '{"session_id":"sess-C"}' | sh "$CLEAN"; rc=$?
   && ok "the SessionEnd cleanup hook abandons the session's open questions" \
   || ko "the SessionEnd cleanup hook abandons the session's open questions (rc=$rc)"
 
+# --- events log: commit and dirty on asked -----------------------------------
+# The panel opens a file "as it was" only when commit is set and dirty is false,
+# so dirty errs to true: a false positive hides an action, a false negative lies.
+EVR="$WORK/tmp/evrev"
+evr() { CLAUDE_CODE_SESSION_ID=sess-R CLAUDE_PROJECT_DIR="$EVR" sh "$EV" "$@"; }
+evlast() { tail -n1 "$EVLOG" | jq -c "$1"; }
+dirty_for() {
+  evr asked --style code --mode granular --level J --domain Code --files "$1" --prompt p >/dev/null
+  evlast .dirty
+}
+rm -rf "$EVR" "$WORK/tmp/evnogit"; mkdir -p "$EVR" "$WORK/tmp/evnogit"
+( CLAUDE_CODE_SESSION_ID=sess-R CLAUDE_PROJECT_DIR="$WORK/tmp/evnogit" \
+    sh "$EV" asked --style code --mode granular --level J --domain Code --files a.txt --prompt p >/dev/null )
+[ "$(evlast '[has("commit"), has("dirty")]')" = '[false,false]' ] \
+  && ok "outside git asked writes neither commit nor dirty" \
+  || ko "outside git asked writes neither commit nor dirty ($(tail -n1 "$EVLOG"))"
+git -C "$EVR" init -q
+printf 'one\n' > "$EVR/a.txt"
+evr asked --style code --mode granular --level J --domain Code --files a.txt --prompt p >/dev/null
+[ "$(evlast '[has("commit"), has("dirty")]')" = '[false,false]' ] \
+  && ok "on an unborn branch asked writes neither commit nor dirty" \
+  || ko "on an unborn branch asked writes neither commit nor dirty ($(tail -n1 "$EVLOG"))"
+printf 'two\n' > "$EVR/b.txt"
+git -C "$EVR" add -A
+git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm init
+evhead=$(git -C "$EVR" rev-parse HEAD)
+evr asked --style code --mode granular --level J --domain Code --files "a.txt b.txt" --prompt p >/dev/null
+[ "$(evlast '[.commit, .dirty]')" = "[\"$evhead\",false]" ] \
+  && ok "clean tracked files: commit is HEAD and dirty is false" \
+  || ko "clean tracked files: commit is HEAD and dirty is false ($(tail -n1 "$EVLOG"))"
+printf 'changed\n' > "$EVR/a.txt"
+[ "$(dirty_for a.txt)" = true ] && ok "a modified file reads dirty" || ko "a modified file reads dirty"
+[ "$(dirty_for "a.txt b.txt")" = true ] \
+  && ok "one dirty file among several makes the question dirty" \
+  || ko "one dirty file among several makes the question dirty"
+git -C "$EVR" add a.txt
+[ "$(dirty_for a.txt)" = true ] \
+  && ok "a staged-but-uncommitted change reads dirty" \
+  || ko "a staged-but-uncommitted change reads dirty"
+git -C "$EVR" reset -q; git -C "$EVR" checkout -q -- a.txt
+printf 'new\n' > "$EVR/c.txt"
+[ "$(dirty_for c.txt)" = true ] && ok "an untracked file reads dirty" || ko "an untracked file reads dirty"
+rm -f "$EVR/c.txt" "$EVR/b.txt"
+[ "$(dirty_for b.txt)" = true ] && ok "a deleted file reads dirty" || ko "a deleted file reads dirty"
+git -C "$EVR" checkout -q -- b.txt
+{ [ "$(dirty_for ../a.txt)" = true ] && [ "$(dirty_for "$EVR/a.txt")" = true ]; } \
+  && ok "a path with .. or an absolute path reads dirty, never read outside root" \
+  || ko "a path with .. or an absolute path reads dirty, never read outside root"
+[ "$(dirty_for '*.txt')" = true ] \
+  && ok "a glob in --files is taken literally, not expanded" \
+  || ko "a glob in --files is taken literally, not expanded"
+ln -s a.txt "$EVR/link.txt"
+git -C "$EVR" add link.txt; git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm link
+[ "$(dirty_for link.txt)" = true ] && ok "a symlink reads dirty" || ko "a symlink reads dirty"
+[ "$(dirty_for a.txt)" = false ] \
+  && ok "back to a clean checkout, dirty is false again" \
+  || ko "back to a clean checkout, dirty is false again ($(tail -n1 "$EVLOG"))"
+
+# A repo can name programs git runs on read paths: core.fsmonitor on status, a
+# clean filter on a stat-dirty file. asked must run neither; the control proves
+# the trap is armed.
+EVT="$WORK/tmp/evtrap"; EVMARK="$WORK/tmp/evtrap.ran"
+rm -rf "$EVT" "$EVMARK"; mkdir -p "$EVT"; git -C "$EVT" init -q
+printf 'x\n' > "$EVT/f.txt"
+git -C "$EVT" add -A; git -C "$EVT" -c user.email=t@t -c user.name=t commit -qm init
+printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "$EVMARK" > "$WORK/tmp/evtrap.sh"; chmod +x "$WORK/tmp/evtrap.sh"
+git -C "$EVT" config core.fsmonitor "$WORK/tmp/evtrap.sh"
+git -C "$EVT" config filter.x.clean "$WORK/tmp/evtrap.sh"
+printf '* filter=x\n' > "$EVT/.gitattributes"
+touch -t 203001010000 "$EVT/f.txt"
+CLAUDE_CODE_SESSION_ID=sess-R CLAUDE_PROJECT_DIR="$EVT" \
+  sh "$EV" asked --style code --mode granular --level J --domain Code --files f.txt --prompt p >/dev/null
+[ ! -e "$EVMARK" ] \
+  && ok "asked runs neither the repo's fsmonitor nor its clean filter" \
+  || ko "asked runs neither the repo's fsmonitor nor its clean filter"
+git -C "$EVT" status --porcelain >/dev/null 2>&1
+[ -e "$EVMARK" ] \
+  && ok "(control) git status in that repo does run them" \
+  || ko "(control) git status in that repo does run them"
+
+# A git that fails mid-way leaves the question intact, just without commit.
+REALGIT=$(command -v git)
+mkdir -p "$WORK/tmp/gitstub"
+cat > "$WORK/tmp/gitstub/git" <<STUB
+#!/bin/sh
+for a; do [ "\$a" = --verify ] && exit 1; done
+exec "$REALGIT" "\$@"
+STUB
+chmod +x "$WORK/tmp/gitstub/git"
+n=$(evn)
+out=$(PATH="$WORK/tmp/gitstub:$PATH" evr asked --style code --mode granular --level J --domain Code \
+        --files a.txt --prompt p); rc=$?
+{ [ "$rc" = 0 ] && [ -n "$out" ] && [ "$(evn)" = $((n + 1)) ] \
+  && [ "$(evlast '[.id, has("commit"), has("dirty")]')" = "[\"$out\",false,false]" ]; } \
+  && ok "a failing git still writes the event and prints its id, without commit" \
+  || ko "a failing git still writes the event and prints its id, without commit (rc=$rc out=$out)"
+grep -qF '`commit` and `dirty`' "$PLUG/skills/learner/references/data.md" \
+  && ok "data.md says commit and dirty are the script's, not the model's" \
+  || ko "data.md says commit and dirty are the script's, not the model's"
+
 # --- events log: import from recap.md ----------------------------------------
 rm -f "$EVLOG"
 mkdir -p "$WORK/cfg/learner"
@@ -6773,6 +6873,7 @@ ev answered --id "$q1" --verdict revisit --domain Code --theme "Error and except
 ev answered --id "$q2" --verdict ok --domain Code --theme ''
 ev skipped --id "$q3"
 ev abandoned --session sess-A
+evr asked --style code --mode granular --level J --domain Code --files a.txt --prompt p >/dev/null
 cat > "$WORK/cfg/learner/recap.md" <<'RECAP'
 | Date | Repo | Domain | Style | Verdict | Note | Theme |
 |------|------|--------|-------|---------|------|-------|
@@ -6788,6 +6889,9 @@ kinds=$(jq -Rr 'fromjson? | .type + (if (.id | startswith("q_imp_")) then ":imp"
 [ "$kinds" = "question.abandoned question.answered question.answered:imp question.answered:imp:null question.answered:null question.asked question.skipped question.skipped:imp " ] \
   && ok "the schema fixture holds every event type the script writes" \
   || ko "the schema fixture holds every event type the script writes (kinds=$kinds)"
+jq -Re 'fromjson? | select(.type == "question.asked" and has("commit") and has("dirty"))' "$EVLOG" >/dev/null \
+  && ok "the schema fixture holds an asked event with commit and dirty" \
+  || ko "the schema fixture holds an asked event with commit and dirty"
 if [ -n "${LEARNER_SCHEMA_CHECK:-}" ] && command -v npx >/dev/null 2>&1; then
   rm -rf "$WORK/tmp/evjson"; mkdir -p "$WORK/tmp/evjson"; i=0
   while IFS= read -r l; do
