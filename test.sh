@@ -6754,6 +6754,33 @@ git -C "$EVR" add link.txt; git -C "$EVR" -c user.email=t@t -c user.name=t commi
   && ok "back to a clean checkout, dirty is false again" \
   || ko "back to a clean checkout, dirty is false again ($(tail -n1 "$EVLOG"))"
 
+# A tracked directory replaced by a symlink to an outside directory holding an
+# identical file must never read clean: the file itself is unchanged, but the
+# path now escapes root, and git status would show d gone and an untracked
+# symlink in its place.
+mkdir -p "$EVR/d" "$WORK/tmp/evoutside"
+printf 'out\n' > "$EVR/d/f"
+git -C "$EVR" add d/f; git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm dirdir
+printf 'out\n' > "$WORK/tmp/evoutside/f"
+rm -rf "$EVR/d"; ln -s "$WORK/tmp/evoutside" "$EVR/d"
+[ "$(dirty_for d/f)" = true ] \
+  && ok "a tracked directory replaced by a symlink outside root reads dirty" \
+  || ko "a tracked directory replaced by a symlink outside root reads dirty"
+rm -rf "$EVR/d"
+
+# Same shape, but the symlink's target is another directory inside root with
+# identical content at the same relative name. git status still calls this a
+# typechange (a directory replaced by a symlink), so it reads dirty too.
+mkdir -p "$EVR/sub2" "$EVR/dir2"
+printf 'out2\n' > "$EVR/sub2/g"
+printf 'out2\n' > "$EVR/dir2/g"
+git -C "$EVR" add sub2/g dir2/g; git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm dir2
+rm -rf "$EVR/dir2"; ln -s sub2 "$EVR/dir2"
+[ "$(dirty_for dir2/g)" = true ] \
+  && ok "a tracked directory replaced by a symlink inside root also reads dirty" \
+  || ko "a tracked directory replaced by a symlink inside root also reads dirty"
+rm -rf "$EVR/dir2" "$EVR/sub2"
+
 # A repo can name programs git runs on read paths: core.fsmonitor on status, a
 # clean filter on a stat-dirty file. asked must run neither; the control proves
 # the trap is armed.

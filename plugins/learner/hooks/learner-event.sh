@@ -94,6 +94,19 @@ files_dirty() {
       case "/$_f/" in //*|*/../*) echo true; exit 0 ;; esac
       _p="$root/$_f"
       { [ -f "$_p" ] && [ ! -L "$_p" ] && [ -r "$_p" ]; } || { echo true; exit 0; }
+      # $_f's own symlink-ness is checked above, but a symlinked ancestor directory
+      # (e.g. a tracked dir replaced by a symlink with the same relative name, its
+      # target holding a same-named file with identical content) resolves -f/-L on
+      # $_p just fine while reading a different file than the one git tracks. $root
+      # is already physical (learner_repo_root), so $_dir, built by string
+      # concatenation from it, is the lexical path with no symlink anywhere in it;
+      # resolving $_dir's parent with cd -P and requiring it come back identical
+      # rejects any symlink on the way, whether it points outside root (escapes
+      # entirely) or to another real directory inside root (same escape, just with
+      # a same-repo decoy) — both are a git-status typechange, so both read dirty.
+      _dir=${_p%/*}
+      _rp=$(cd -P "$_dir" 2>/dev/null && pwd -P) || { echo true; exit 0; }
+      [ "$_rp" = "$_dir" ] || { echo true; exit 0; }
       _want=$(safe_git rev-parse --verify -q --end-of-options "$1:$_f") || { echo true; exit 0; }
       _got=$(GIT_NO_LAZY_FETCH=1 GIT_ALLOW_PROTOCOL='' GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
         git -C "$root" -c protocol.allow=never hash-object --no-filters --stdin <"$_p" 2>/dev/null) \
