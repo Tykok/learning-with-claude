@@ -90,8 +90,9 @@ This is a documentation change only. `learner-event.sh` is untouched.
     `--mode granular`.
   - `--files` holds the files the question is about. For a question on the diff or on edited
     files, those come from the trigger's `files:`. For a question on the delegated task, they
-    are the files that task targets. For a question on a weak spot, they are the file of the
-    `memory.md` entry.
+    are the files that task targets. For a question on a weak spot, they are the file(s) in
+    this repo the question quotes or is grounded in — a `memory.md` entry names a concept,
+    never a file.
   - With no file at all, no event is emitted (decision 7).
 - **§ When it reports (the exercise).** The exercise emits
   `asked --style fill --anchor FILE:LINE` when it is handed to the dev. The line is the first

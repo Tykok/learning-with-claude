@@ -44,8 +44,8 @@ refill while the agents keep working. A dev who wanted an endless quiz would hav
    § `events.jsonl`, *When the question goes out*: its real `--style` (`code` or
    `architecture`), `--mode granular`, and as `--files` the files it is about — the trigger's
    `files:` for a question on the diff, the files the delegated task targets for one on the
-   task, the `memory.md` entry's file for a weak spot. A question about no file emits no event:
-   never invent a `--files` value.
+   task, for a weak spot the file(s) in this repo the question quotes or is grounded in. A
+   question about no file emits no event: never invent a `--files` value.
 4. **Run the exercise** when the preparation agent reports.
 5. **Record** every answer in `memory.md`, `recap.md` and `events.jsonl` per
    `references/data.md` § *After every answer*, with `salvo` in the recap's `Style` column,

@@ -1873,6 +1873,12 @@ grep -qiF 'salvo' "$PLUG/skills/coach/references/coach.md" \
 grep -qF 'emits no event' "$SALVO_REF" \
   && ok "agent-salvo.md never invents --files for a question about no file" \
   || ko "agent-salvo.md never invents --files for a question about no file"
+# FINAL REVIEW 1: a memory.md line is `- [Domain][repo] concept — seen: YYYY-MM-DD`
+# (references/data.md) — it never names a file, so a weak-spot question cannot
+# take "the memory.md entry's file" as --files.
+grep -qF 'memory.md` entry'\''s file' "$SALVO_REF" \
+  && ko "agent-salvo.md no longer sends a weak-spot question to a memory.md entry's nonexistent file" \
+  || ok "agent-salvo.md no longer sends a weak-spot question to a memory.md entry's nonexistent file"
 grep -qF 'HOOKS=' "$SALVO_REF" \
   && ko "agent-salvo.md points to data.md instead of restating the HOOKS block" \
   || ok "agent-salvo.md points to data.md instead of restating the HOOKS block"
