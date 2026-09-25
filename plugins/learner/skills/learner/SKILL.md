@@ -31,7 +31,7 @@ to the skill that holds the protocol.
 | `export [notion-page-url]` | Push the recap into a Notion database | the `export` skill |
 | `sync push` / `sync pull [gist]` / `sync status` / `sync use <gist>` | Carry the learning record between machines through a private gist | the `sync` skill |
 | `events import` | Backfill the IDE event log from `recap.md`'s Session history, once | this file, § Events |
-| `update` | Check the remote version; re-run `bootstrap.sh` pinned to it if newer | the `update` skill |
+| `update` | Check the remote version; re-install that release if newer | the `update` skill |
 | `config [key=value …]` | View/edit settings; `config project …` scopes to this repo | `references/config.md` |
 | `off` / `on` | Disable/enable the automatic quiz in this repo | `references/config.md` |
 | `pilot …` | Invoke the `pilot` skill and hand it the rest of the line | — |

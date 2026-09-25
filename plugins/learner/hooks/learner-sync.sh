@@ -242,6 +242,8 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   if [ -f "$LIBS_FILE" ]; then cp "$LIBS_FILE" "$_sd/libs.md"; else ( : > "$_sd/libs.md" ) 2>/dev/null || :; fi
   if [ -f "$CFG_FILE" ]; then cp "$CFG_FILE" "$_sd/learner.json"; else printf '{}\n' > "$_sd/learner.json"; fi
   if [ -f "$EV_FILE" ]; then cp "$EV_FILE" "$_sd/events.jsonl"; else ( : > "$_sd/events.jsonl" ) 2>/dev/null || :; fi
+  # pushedFrom is the machine_name plugin option (userConfig), never read off
+  # the machine itself: the dev chooses what label, if any, leaves with the gist.
   # eventLines counts the snapshot copy just made, not the live $EV_FILE: a
   # session can append to the live log between the cp above and this count,
   # and the manifest must describe exactly what is about to be uploaded, not
@@ -249,7 +251,7 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
     --arg at "$(now_utc)" \
-    --arg from "$(hostname 2>/dev/null || printf 'unknown')" \
+    --arg from "${CLAUDE_PLUGIN_OPTION_MACHINE_NAME:-unknown}" \
     --arg ver "$(read_version)" \
     --argjson mem "$(bullet_lines "$MEM_FILE")" \
     --argjson theme "$(bullet_lines "$REC_FILE")" \

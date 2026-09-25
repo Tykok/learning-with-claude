@@ -2823,6 +2823,32 @@ grep -qF '/plugin update learner' "$UPD" \
   && ok "update.md points a plugin install at /plugin update" \
   || ko "update.md points a plugin install at /plugin update"
 
+# Step 4 runs the shipped, readable learner-self-update.sh, never a script fetched
+# off the network and executed.
+grep -qF 'learner-self-update.sh' "$UPD" \
+  && ! grep -qE 'curl[^`]*bootstrap\.sh' "$UPD" \
+  && ok "update.md re-installs through the shipped learner-self-update.sh" \
+  || ko "update.md re-installs through the shipped learner-self-update.sh"
+
+SELFUP="$PLUG/hooks/learner-self-update.sh"
+SU="$WORK/selfupdate"; mkdir -p "$SU"
+printf '{"level":"S"}\n' > "$SU/learner.json"
+tar -czf "$WORK/su-payload.tgz" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
+CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file://$WORK/su-payload.tgz" sh "$SELFUP" 9.9.9 >/dev/null 2>&1 </dev/null
+{ [ -f "$SU/hooks/learner-self-update.sh" ] && [ -f "$SU/skills/learner/SKILL.md" ]; } \
+  && ok "learner-self-update.sh re-installs from the release tarball" \
+  || ko "learner-self-update.sh re-installs from the release tarball"
+
+CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file:///nonexistent" sh "$SELFUP" '1.2.3/../x' >/dev/null 2>&1 \
+  && ko "learner-self-update.sh rejects a malformed version" \
+  || ok "learner-self-update.sh rejects a malformed version"
+
+out=$(CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file://$WORK/no-such.tgz" sh "$SELFUP" 9.9.9 2>&1) \
+  && ko "learner-self-update.sh fails when the tag has no tarball" \
+  || { printf '%s' "$out" | grep -qF 'no released tag v9.9.9' \
+    && ok "learner-self-update.sh fails when the tag has no tarball" \
+    || ko "learner-self-update.sh fails when the tag has no tarball (got: $out)"; }
+
 # Every skill's SKILL.md, not just learner's — derived from skills/*/SKILL.md
 # rather than a second hardcoded path, so a third skill inherits this budget
 # without anyone remembering to add a check for it.
@@ -3769,6 +3795,8 @@ case "$hook_n" in
   13) hook_word=thirteen ;;
   14) hook_word=fourteen ;;
   15) hook_word=fifteen ;;
+  16) hook_word=sixteen ;;
+  17) hook_word=seventeen ;;
   *) hook_word='__no-word-mapped__' ;;
 esac
 
@@ -4297,11 +4325,26 @@ n_seg=$(jq '[.. | .command? // empty] | map(select(test("/plugins/learner/hooks/
 # Wholesale, not field by field. Checking only name and version left description,
 # keywords, displayName, author, homepage, repository, license and $schema unguarded —
 # and the root manifest is the one a root-pinned catalogue entry renders and searches,
-# so a stale description there is a stale listing in front of real users. `skills` is
-# the single field that is meant to differ: the payload has none, the root delegates.
-{ [ "$(jq -S 'del(.skills)' "$ROOT_PLUGIN_JSON")" = "$(jq -S 'del(.skills)' "$PLUGIN_JSON")" ]; } \
-  && ok "the root fallback manifest is the payload's, but for the skills delegation" \
-  || ko "the root fallback manifest is the payload's, but for the skills delegation"
+# so a stale description there is a stale listing in front of real users. `skills` and
+# `icon` are the fields meant to differ: the payload has no `skills`, the root delegates,
+# and `icon` is a path relative to each manifest's own plugin root.
+{ [ "$(jq -S 'del(.skills, .icon)' "$ROOT_PLUGIN_JSON")" = "$(jq -S 'del(.skills, .icon)' "$PLUGIN_JSON")" ]; } \
+  && ok "the root fallback manifest is the payload's, but for the skills delegation and icon path" \
+  || ko "the root fallback manifest is the payload's, but for the skills delegation and icon path"
+
+# Both icon paths must land on the one shipped file, or one listing shows no icon.
+root_icon="$ROOT/$(jq -r '.icon // empty' "$ROOT_PLUGIN_JSON")"
+plug_icon="$PLUG/$(jq -r '.icon // empty' "$PLUGIN_JSON")"
+{ [ -f "$plug_icon" ] && [ -f "$root_icon" ] && cmp -s "$plug_icon" "$root_icon" \
+  && grep -q '<svg' "$plug_icon"; } \
+  && ok "both manifests' icon paths resolve to the shipped SVG" \
+  || ko "both manifests' icon paths resolve to the shipped SVG"
+
+# pushedFrom is a label the dev chooses, never read off the machine: the option
+# must exist and be marked sensitive.
+jq -e '.userConfig.machine_name | .type == "string" and .sensitive == true' "$PLUGIN_JSON" >/dev/null \
+  && ok "plugin.json declares machine_name as a sensitive userConfig option" \
+  || ko "plugin.json declares machine_name as a sensitive userConfig option"
 
 [ "$(jq -r '.skills' "$ROOT_PLUGIN_JSON")" = "./plugins/learner/skills" ] \
   && ok "the root fallback manifest delegates its skills to the payload" \
@@ -6029,6 +6072,14 @@ out=$(sh "$SYNC" push --create-ok)
   && [ -f "$GH_REMOTE/memory.md" ] && [ -f "$GH_REMOTE/manifest.json" ]; } \
   && ok "--create-ok creates the gist and uploads the five files" \
   || ko "--create-ok creates the gist and uploads the five files (out=$out)"
+
+[ "$(jq -r .pushedFrom "$GH_REMOTE/manifest.json")" = "unknown" ] \
+  && ok "pushedFrom is 'unknown' when no machine_name option is set, never the hostname" \
+  || ko "pushedFrom is 'unknown' when no machine_name option is set ($(jq -r .pushedFrom "$GH_REMOTE/manifest.json"))"
+
+grep -qE '\$\(hostname|`hostname' "$SYNC" \
+  && ko "learner-sync.sh never reads the hostname" \
+  || ok "learner-sync.sh never reads the hostname"
 
 grep -qF 'argon2' "$GH_REMOTE/libs.md" \
   && ok "the created gist carries libs.md" \
