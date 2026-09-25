@@ -11,6 +11,7 @@
   "homepage": "https://tykok.github.io/learning-with-claude/",
   "repository": "https://github.com/Tykok/learning-with-claude",
   "license": "GPL-3.0-or-later",
+  "icon": "./plugins/learner/assets/icon.svg",
   "keywords": [
     "learning",
     "quiz",
@@ -19,5 +20,14 @@
     "education",
     "onboarding"
   ],
-  "skills": "./plugins/learner/skills"
+  "skills": "./plugins/learner/skills",
+  "userConfig": {
+    "machine_name": {
+      "type": "string",
+      "title": "Machine name for sync",
+      "description": "Label recorded as pushedFrom when learner sync pushes your learning record to its gist, so you can tell machines apart. Leave empty to record \"unknown\". Learner never reads your hostname.",
+      "sensitive": true,
+      "required": false
+    }
+  }
 }

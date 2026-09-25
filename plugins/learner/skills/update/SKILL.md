@@ -84,29 +84,23 @@ same way two implementations of the installer itself would.
 ## 4. Re-run the installer, pinned (origin: curl only)
 
 ```bash
-if ! curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/v$REMOTE/bootstrap.sh" -o /tmp/learner-bootstrap.sh 2>/dev/null; then
-  echo "no released tag v$REMOTE yet (VERSION on main is ahead of the tags) — try again later"
-  exit 1
-fi
-LEARNER_REF="v$REMOTE" sh /tmp/learner-bootstrap.sh
-rm -f /tmp/learner-bootstrap.sh
+sh "$CFG/hooks/learner-self-update.sh" "$REMOTE"
 ```
 
-Fetched to a file and run as two separate steps, not a streamed `curl | sh` pipe: in a pipe, a
-failed fetch leaves the right-hand side reading empty stdin, and `sh` on empty stdin exits 0 —
-a silent no-op with no error, not a failure Claude can see and report. That gap is real here
-specifically, not theoretical: `VERSION` on `main` and the release tag `vX.Y.Z` are two
-separate git pushes, so the file can say a version is out before the matching tag exists to
-back it up. CI's tag-vs-VERSION guard only runs on the tag push, so it structurally cannot
-catch that window from the other side. Report the named reason above instead of "nothing
-happened." Carry `LEARNER_REF="v$REMOTE"` over onto the direct `sh` call above — it is no
-longer free the way it was as a prefix on the one `sh` in the old pipe. Drop it here and the
-fetched `bootstrap.sh` would default its payload fetch back to `main` while the script itself
-stayed pinned to `v$REMOTE`: two different refs, silently.
+`learner-self-update.sh` ships with the install, beside the other hooks: this step runs a
+local, readable file rather than fetching a script from the network and executing it. It
+downloads the release tarball for tag `v$REMOTE` — never `main` — and runs that tarball's
+`install.sh`. It fetches to a file before extracting, not a streamed pipe: without
+`pipefail`, a failed fetch would read as an empty archive and surface as the wrong error.
 
-No other flags are needed: `learner.json` already exists — this is always a re-install, never
-a first one — so `install.sh`'s onboarding prompts stay gated off regardless, and
-`bootstrap.sh`'s no-tty guard only fires when `learner.json` is absent.
+If it exits non-zero, relay its `error:` line in one sentence. The likeliest one is
+`no released tag vX.Y.Z yet`, and that gap is real, not theoretical: `VERSION` on `main` and
+the release tag are two separate git pushes, so the file can say a version is out before the
+matching tag exists. CI's tag-vs-VERSION guard only runs on the tag push, so it cannot catch
+that window from the other side. Report the named reason instead of "nothing happened."
+
+No flags are needed: `learner.json` already exists — this is always a re-install, never a
+first one — so `install.sh`'s onboarding prompts stay gated off and no terminal is needed.
 
 ## 5. Confirm (origin: curl only)
 

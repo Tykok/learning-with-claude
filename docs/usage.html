@@ -273,7 +273,7 @@
     creates it <code>--secret</code>. A secret gist is <strong>unlisted, not
     access-controlled</strong>: anyone who has the URL can read it, without a GitHub account —
     it carries your repo names, file names and the wording of your weak spots, plus
-    <code>pushedFrom</code> (this machine's hostname), <code>learner.json</code>'s
+    <code>pushedFrom</code> (the <code>machine_name</code> plugin option, if set), <code>learner.json</code>'s
     <code>disabledPaths</code> (absolute local paths) and <code>events.jsonl</code> (the text of
     every question you were asked and each repo's absolute path), so treat the link like a
     password.</dd>
@@ -346,7 +346,7 @@
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and fifteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and sixteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>
