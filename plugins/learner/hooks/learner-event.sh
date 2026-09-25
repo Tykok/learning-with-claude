@@ -9,6 +9,8 @@
 #   sh learner-event.sh asked     --style code|architecture|fill --mode granular|synthesis
 #                                 --level D|J|C|S|E --domain D --files "a b" --prompt P
 #                                 [--anchor FILE:LINE] [--session SID]      -> prints the id
+#   asked adds commit (HEAD's full hash) and dirty (any of --files differs from
+#   that commit) when the project is a git repo with a commit; neither otherwise.
 #   sh learner-event.sh answered  --id ID --verdict ok|revisit --domain D --theme T [--note N]
 #   sh learner-event.sh skipped   --id ID
 #   sh learner-event.sh abandoned --session SID
@@ -66,6 +68,71 @@ read_log() {
   fi
 }
 
+# git with every lever a repo could pull to run a program turned off: no lazy
+# fetch from a promisor remote, no transport, no prompt, no optional index write.
+# Only read commands go through it; nothing writes the index or the object store.
+safe_git() {
+  GIT_NO_LAZY_FETCH=1 GIT_ALLOW_PROTOCOL='' GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
+    git -C "$root" -c protocol.allow=never "$@" </dev/null 2>/dev/null
+}
+
+# The commit HEAD points at, or nothing: unborn branch, git error, odd output.
+head_commit() {
+  _c=$(safe_git rev-parse --verify -q --end-of-options 'HEAD^{commit}') || return 0
+  printf '%s' "$_c" | grep -Eqx '[0-9a-f]{40}([0-9a-f]{24})?' && printf '%s' "$_c"
+  return 0
+}
+
+# "true" when any of $files differs from its blob at commit $1 or cannot be
+# checked, "false" otherwise. Blob against blob, never git status: status runs
+# the repo's fsmonitor and clean filters. --no-filters makes a filtered, LFS or
+# eol-converted file read dirty, which only hides the panel's revision actions.
+files_dirty() {
+  # The event's own `files` array is cut from $files by jq on a single space
+  # only (never a newline), so a newline inside $files would land in a single
+  # `files` entry there while this read loop, working line by line, silently
+  # treats it as two separate names — checking files that were never actually
+  # named. In doubt dirty is true, so a literal newline is caught up front.
+  # $(printf '\n') would be stripped by the command substitution itself, so
+  # the newline has to be a literal byte in the case pattern.
+  case $files in
+    *'
+'*) echo true; return 0 ;;
+  esac
+  printf '%s\n' "$files" | tr ' ' '\n' | {
+    _checked=0
+    while IFS= read -r _f; do
+      [ -n "$_f" ] || continue
+      _checked=$((_checked + 1))
+      case "/$_f/" in //*|*/../*) echo true; exit 0 ;; esac
+      _p="$root/$_f"
+      { [ -f "$_p" ] && [ ! -L "$_p" ] && [ -r "$_p" ]; } || { echo true; exit 0; }
+      # $_f's own symlink-ness is checked above, but a symlinked ancestor directory
+      # (e.g. a tracked dir replaced by a symlink with the same relative name, its
+      # target holding a same-named file with identical content) resolves -f/-L on
+      # $_p just fine while reading a different file than the one git tracks. $root
+      # is already physical (learner_repo_root), so $_dir, built by string
+      # concatenation from it, is the lexical path with no symlink anywhere in it;
+      # resolving $_dir's parent with cd -P and requiring it come back identical
+      # rejects any symlink on the way, whether it points outside root (escapes
+      # entirely) or to another real directory inside root (same escape, just with
+      # a same-repo decoy) — both are a git-status typechange, so both read dirty.
+      _dir=${_p%/*}
+      _rp=$(cd -P "$_dir" 2>/dev/null && pwd -P) || { echo true; exit 0; }
+      [ "$_rp" = "$_dir" ] || { echo true; exit 0; }
+      _want=$(safe_git rev-parse --verify -q --end-of-options "$1:$_f") || { echo true; exit 0; }
+      _got=$(GIT_NO_LAZY_FETCH=1 GIT_ALLOW_PROTOCOL='' GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
+        git -C "$root" -c protocol.allow=never hash-object --no-filters --stdin <"$_p" 2>/dev/null) \
+        || { echo true; exit 0; }
+      [ "$_want" = "$_got" ] || { echo true; exit 0; }
+    done
+    # A --files made only of spaces (or otherwise splitting to zero entries)
+    # checked nothing above: that is doubt too, so it is dirty, not vacuously
+    # clean.
+    [ "$_checked" -gt 0 ] && echo false || echo true
+  }
+}
+
 cmd_asked() {
   style=''; mode=''; level=''; domain=''; files=''; prompt=''; anchor=''; session=''
   have_prompt=0
@@ -104,18 +171,26 @@ cmd_asked() {
   root=$(learner_repo_root)
   id=$(new_id)
 
+  commit=''; dirty=''
+  if [ -n "$root" ]; then
+    commit=$(head_commit)
+    [ -z "$commit" ] || dirty=$(files_dirty "$commit")
+  fi
+
   line=$(jq -nc \
     --arg id "$id" --arg ts "$(now_utc)" --arg session "$session" --arg root "$root" \
     --arg style "$style" --arg mode "$mode" --arg level "$lvl" --arg domain "$domain" \
     --arg files "$files" --arg prompt "$prompt" --argjson max "$PROMPT_MAX" \
-    --arg afile "$afile" --arg aline "$aline" '
+    --arg afile "$afile" --arg aline "$aline" \
+    --arg commit "$commit" --arg dirty "$dirty" '
     {v: 1, type: "question.asked", id: $id, ts: $ts, session: $session,
      repo: (if $root == "" then null else ($root | split("/") | last) end),
      root: (if $root == "" then null else $root end),
      style: $style, mode: $mode, level: $level, domain: $domain,
      files: ($files | split(" ") | map(select(. != ""))),
      prompt: ($prompt | .[0:$max])}
-    + (if $afile == "" then {} else {anchor: {file: $afile, line: ($aline | tonumber)}} end)') \
+    + (if $afile == "" then {} else {anchor: {file: $afile, line: ($aline | tonumber)}} end)
+    + (if $commit == "" then {} else {commit: $commit, dirty: ($dirty != "false")} end)') \
     || exit 1
   append "$line"
   printf '%s\n' "$id"
