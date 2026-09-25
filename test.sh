@@ -3,6 +3,10 @@
 # Tests for the learning-mode hooks + installer.
 # Plain sh/bash, no framework. Requires: jq, git. Run: ./test.sh
 set -u
+# Nothing here reads the terminal: every input a test needs is piped in. From a
+# terminal, an installer consent prompt or a stray interactive shell would
+# otherwise wait on the keyboard and hang the suite.
+exec </dev/null
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PLUG="$ROOT/plugins/learner"
@@ -5683,11 +5687,18 @@ grep -qF 'ls -t "$TMPDIR"/claude-learner-*.session' "$CMD" \
 # match and the recipe's own `2>/dev/null` hides why. The failing case is an
 # armed watcher with no review fired yet: `.coach-base/` is not created until
 # the first emission, so only `.coach-armed` exists on disk.
-RECIPE=$(sed -n '/^```bash$/,/^```$/p' "$CMD" | sed '1d;$d')
+RECIPE=$(awk '/^```bash$/ { f = 1; next } f && /^```$/ { exit } f' "$CMD")
+# The recipe is the first bash block only. A later block, or a stray fence line,
+# reaching zsh -c turns its backticks into a command substitution that runs
+# bash interactively and hangs the suite when stdin is a terminal.
+case "$RECIPE" in
+  *'```'*|*coach-watch.sh*) ko "coach.md's session-id recipe is extracted alone, without another block or a fence" ;;
+  *) ok "coach.md's session-id recipe is extracted alone, without another block or a fence" ;;
+esac
 if command -v zsh >/dev/null 2>&1; then
   SIDDIR=$(mktemp -d)
   : > "$SIDDIR/claude-learner-zshsid42.coach-armed"
-  out=$(TMPDIR="$SIDDIR" zsh -c "$RECIPE")
+  out=$(TMPDIR="$SIDDIR" zsh -c "$RECIPE" </dev/null)
   rm -rf "$SIDDIR"
   [ "$out" = "zshsid42" ] \
     && ok "coach.md's session-id recipe resolves the id under zsh when only .coach-armed exists" \
