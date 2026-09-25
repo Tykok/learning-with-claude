@@ -88,9 +88,22 @@ head_commit() {
 # the repo's fsmonitor and clean filters. --no-filters makes a filtered, LFS or
 # eol-converted file read dirty, which only hides the panel's revision actions.
 files_dirty() {
+  # The event's own `files` array is cut from $files by jq on a single space
+  # only (never a newline), so a newline inside $files would land in a single
+  # `files` entry there while this read loop, working line by line, silently
+  # treats it as two separate names — checking files that were never actually
+  # named. In doubt dirty is true, so a literal newline is caught up front.
+  # $(printf '\n') would be stripped by the command substitution itself, so
+  # the newline has to be a literal byte in the case pattern.
+  case $files in
+    *'
+'*) echo true; return 0 ;;
+  esac
   printf '%s\n' "$files" | tr ' ' '\n' | {
+    _checked=0
     while IFS= read -r _f; do
       [ -n "$_f" ] || continue
+      _checked=$((_checked + 1))
       case "/$_f/" in //*|*/../*) echo true; exit 0 ;; esac
       _p="$root/$_f"
       { [ -f "$_p" ] && [ ! -L "$_p" ] && [ -r "$_p" ]; } || { echo true; exit 0; }
@@ -113,7 +126,10 @@ files_dirty() {
         || { echo true; exit 0; }
       [ "$_want" = "$_got" ] || { echo true; exit 0; }
     done
-    echo false
+    # A --files made only of spaces (or otherwise splitting to zero entries)
+    # checked nothing above: that is doubt too, so it is dirty, not vacuously
+    # clean.
+    [ "$_checked" -gt 0 ] && echo false || echo true
   }
 }
 

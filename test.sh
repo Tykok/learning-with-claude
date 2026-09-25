@@ -6767,6 +6767,42 @@ git -C "$EVR" add link.txt; git -C "$EVR" -c user.email=t@t -c user.name=t commi
   && ok "back to a clean checkout, dirty is false again" \
   || ko "back to a clean checkout, dirty is false again ($(tail -n1 "$EVLOG"))"
 
+# FINAL REVIEW 2: a newline inside --files is a false negative — the jq that
+# writes `files` splits on a single space only, so "p\nq" lands as one entry,
+# but files_dirty's own read loop splits on newlines too and silently checks
+# "p" and "q" as two separate, individually clean files.
+printf 'p\n' > "$EVR/p"; printf 'q\n' > "$EVR/q"
+git -C "$EVR" add p q; git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm pq
+[ "$(dirty_for "$(printf 'p\nq')")" = true ] \
+  && ok "a newline inside --files reads dirty even when the named files are clean" \
+  || ko "a newline inside --files reads dirty even when the named files are clean"
+
+# FINAL REVIEW 3: --files made only of spaces splits to zero entries (files:[]
+# in the event), and the naive read loop then falls through its "echo false"
+# without ever checking anything — vacuously clean. Checking nothing is doubt,
+# so it must read dirty.
+[ "$(dirty_for ' ')" = true ] \
+  && ok "a --files made only of spaces reads dirty, not vacuously clean" \
+  || ko "a --files made only of spaces reads dirty, not vacuously clean"
+
+# FINAL REVIEW 4: `dirty_for ../a.txt` above, and the committed `link.txt ->
+# a.txt` symlink test before it, both pass even with their guards removed —
+# see the final report for the RED evidence (git's own tree-ish:path parser
+# already refuses any ".." path with "fatal: ... is outside repository", and
+# a committed symlink's blob is the target string "a.txt", which never equals
+# a.txt's own content either way). This case is the discriminating one for
+# `[ ! -L "$_p" ]` alone: a committed *regular* file replaced on disk by a
+# symlink to a file with byte-identical content, so only that guard stands
+# between this and a false "clean" (confirmed by removing it locally).
+printf 'identical\n' > "$EVR/sym.txt"
+git -C "$EVR" add sym.txt; git -C "$EVR" -c user.email=t@t -c user.name=t commit -qm sym
+printf 'identical\n' > "$EVR/symtarget.txt"
+rm "$EVR/sym.txt"; ln -s symtarget.txt "$EVR/sym.txt"
+[ "$(dirty_for sym.txt)" = true ] \
+  && ok "a committed file replaced by a symlink to identical content still reads dirty" \
+  || ko "a committed file replaced by a symlink to identical content still reads dirty"
+rm -f "$EVR/sym.txt" "$EVR/symtarget.txt"
+
 # A tracked directory replaced by a symlink to an outside directory holding an
 # identical file must never read clean: the file itself is unchanged, but the
 # path now escapes root, and git status would show d gone and an untracked
