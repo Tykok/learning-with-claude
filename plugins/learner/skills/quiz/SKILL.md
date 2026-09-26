@@ -1,6 +1,6 @@
 ---
 description: Quiz the dev on the current branch's diff — one question at a time, at their configured level, updating the learning record after each answer. Use for "learner quiz", "quiz me", "quiz me on the branch", "interroge-moi", "quiz sur la branche", "pose-moi des questions sur cette branche".
-allowed-tools: Read, Write, Edit, Grep, Bash
+allowed-tools: Read, Grep, Write(~/.claude/learner/**), Edit(~/.claude/learner/**), Bash(sh *learner-event.sh *), Bash(git diff *), Bash(git merge-base *), Bash(git rev-parse *), Bash(git show *), Bash(git status *), Bash(mkdir -p *learner), Bash(date *), Bash(grep -n *)
 ---
 
 # Quiz mode

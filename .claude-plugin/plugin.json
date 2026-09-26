@@ -11,7 +11,6 @@
   "homepage": "https://tykok.github.io/learning-with-claude/",
   "repository": "https://github.com/Tykok/learning-with-claude",
   "license": "GPL-3.0-or-later",
-  "icon": "./plugins/learner/assets/icon.svg",
   "keywords": [
     "learning",
     "quiz",
@@ -22,6 +21,13 @@
   ],
   "skills": "./plugins/learner/skills",
   "userConfig": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub token for sync",
+      "description": "Personal access token learner sync uses to create and update its one secret gist. A fine-grained token with only the Gists permission (read and write) is enough. Learner never reads the credential gh keeps on this machine; leave empty and sync stays off.",
+      "sensitive": true,
+      "required": false
+    },
     "machine_name": {
       "type": "string",
       "title": "Machine name for sync",

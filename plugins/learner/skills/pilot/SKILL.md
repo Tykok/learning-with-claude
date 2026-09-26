@@ -1,7 +1,7 @@
 ---
 name: pilot
 description: Delegation-habit tracking, read from the transcript itself. Invoke as "pilot" with a subcommand — bare "pilot" (dashboard: index per axis, profile, active manoeuvre), "pilot on"/"pilot off" (opt in/out), "pilot brief" (run the weekly brief now), "pilot score" (drain the scoring queue now), "pilot why <date>" (show the quotes behind a row), "pilot forget [--all|--before <date>]" (purge stored quotes). Also reachable through "learner pilot …". Trigger on "pilot", "learner pilot", "pilot on", "pilot off", "pilot brief", "pilot score", "pilot why", "pilot forget", "my delegation score", "am I still driving", "cognitive debt", "mon score de délégation", "est-ce que je délègue trop", "dette cognitive".
-allowed-tools: Read, Write, Edit, Grep, Bash, Task
+allowed-tools: Read, Grep, Write(~/.claude/learner/**), Edit(~/.claude/learner/**), Write(~/.claude/learner.json), Edit(~/.claude/learner.json), Bash(date *), Task
 ---
 
 # Pilot

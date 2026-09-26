@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Usage — Claude Learner</title>
 <meta name="description" content="The three shapes a Claude Learner question can take, and what you can ask the learner skill for directly.">
-<link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -293,7 +292,10 @@
 
   <p><code>learner export</code> (Notion) is unaffected by any of this: it stays the
   human-readable view of your record, not a restore path. The gist carries the raw state, and
-  needs <code>gh</code>, authenticated (<code>gh auth login</code>). Worth making a habit:
+  needs <code>gh</code> and a GitHub token you hand over — a fine-grained token with only the
+  Gists permission: the <code>github_token</code> plugin option (stored in your system
+  keychain), or <code>LEARNER_GITHUB_TOKEN</code> for a curl, Homebrew or apt install. Learner
+  never reads the credential <code>gh auth login</code> stored. Worth making a habit:
   <code>learner sync push</code> before you switch machines, so the record you left behind is
   the one you pick back up.</p>
 
@@ -346,7 +348,7 @@
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and sixteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fifteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

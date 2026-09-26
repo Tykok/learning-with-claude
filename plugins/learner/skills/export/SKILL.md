@@ -1,6 +1,6 @@
 ---
 description: Push the learning recap into a Notion database. Use for "learner export", "exporter vers Notion", "export my learning record to Notion".
-allowed-tools: Read, Grep, Bash, mcp__claude_ai_Notion, mcp__notionApi, mcp__notion
+allowed-tools: Read, Grep, Write(~/.claude/learner/export.json), Edit(~/.claude/learner/export.json), Bash(cat *), Bash(date *), Bash(jq -e *), mcp__claude_ai_Notion__notion-fetch, mcp__claude_ai_Notion__notion-create-database, mcp__claude_ai_Notion__notion-query-data-sources, mcp__claude_ai_Notion__notion-create-pages, mcp__claude_ai_Notion__notion-update-page
 ---
 
 # Export mode

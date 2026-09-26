@@ -19,7 +19,7 @@ subcommands, and uninstall are all documented there, across five pages joined by
 are hand-written HTML sharing one stylesheet, so `docs/` in a clone reads identically offline.
 This README only gets you installed.
 
-Sixteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
+Fifteen POSIX `sh` hooks plus nine skills — a `learner` hub, one per subcommand (`quiz`,
 `status`, `improve`, `coach`, `export`, `sync`, `update`) and `pilot`, invocable as `/learner:quiz` and
 friends in a plugin install: `SessionStart` flags a broken install and, on a
 second entry, notifies once a day when a newer version is out; `PostToolUse` records edited
@@ -123,7 +123,11 @@ side still has it), unions the `Session history` table, and lets Claude merge th
 sections. `learner export` (Notion) is unchanged by any of this — it stays the human-readable
 view, not a restore path; the gist carries the raw state.
 
-Requires `gh`, authenticated (`gh auth login`). Habit worth keeping: `learner sync push` before
+Requires `gh` and a GitHub token you hand over — a fine-grained token with only the Gists
+permission: the `github_token` plugin option (stored in your system keychain), or
+`LEARNER_GITHUB_TOKEN` for a curl, Homebrew or apt install. Learner never reads the credential
+`gh auth login` stored. The option reaches the sync skill's shell commands for the session as
+`LEARNER_GITHUB_TOKEN`, handed on at session start. Habit worth keeping: `learner sync push` before
 you switch machines, so the record you left behind is the one you pick back up.
 ## Agent salvo — questions while the subagents work
 
@@ -146,12 +150,10 @@ instead of during the wait — the questions are still asked.
 - **`jq`** on `PATH`. Required to install (the hook-wiring merge needs it) and required by
   every hook at run time except the update-check notifier, which has no `jq` dependency by
   design — without it the rest are inert, and `SessionStart` says so.
-- **`bash`** on `PATH` to install, by either path: `install.sh` is a bash script, and the
-  one-liner checks for `bash` up front rather than fetching a payload it could not hand over.
-  This is separate from the shell the hooks need, below.
-- **`curl`** on `PATH` — needed once for the apt repository's trust-anchor setup, and for the
-  one-line install further below. **`tar`** is needed for the one-line install only. Neither is
-  needed by the clone-and-run path.
+- **`bash`** on `PATH` to install: `install.sh` is a bash script. This is separate from the
+  shell the hooks need, below.
+- **`curl`** on `PATH` — needed once for the apt repository's trust-anchor setup. The
+  clone-and-run path does not need it.
 - **`curl` is also used at run time**, by the update-check hook only, to look for a newer
   version once every 24h. Its absence there is silent, not an error — unlike `jq`, `curl` is
   never a hard requirement for anything already installed.
@@ -238,6 +240,10 @@ cd learning-with-claude
 ./install.sh --yes                                    # never prompt; defaults for anything unset
 ```
 
+To install a release rather than whatever `main` says today, clone its tag:
+`git clone --depth 1 --branch v0.5.0 https://github.com/Tykok/learning-with-claude`. There is
+no path that pipes a download into a shell: every install runs an `install.sh` you have on disk and can read first.
+
 - `--level D|J|C|S|E` — your level: the letter, or the full word from the levels table on
   [the site](docs/config.html), in any case.
 - `--synthesis off|rare|normal|often` — how often a synthesis question replaces a granular one.
@@ -252,44 +258,6 @@ existing config. **It writes nothing into any repository** — every path it tou
 `settings.json` carries the literal `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, so moving your
 config directory later needs no reinstall.
 
-### Alternative: the curl one-liner
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
-```
-
-It asks for your level, how often you want a synthesis question, and how many holes a `fill`
-exercise leaves — then writes everything under your Claude Code config directory; this is what
-it fetches and runs under the hood. To skip the prompts, pass the same flags `install.sh`
-takes; `bootstrap.sh` forwards them through unchanged:
-
-```bash
-curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis normal --blanks 2
-```
-
-To install a specific revision instead of whatever `main` says today, name the ref twice — once
-in the URL the shell runs, once in `LEARNER_REF` for the payload it fetches. `$REF` is anything
-git resolves: a release tag, a branch name, or a commit SHA.
-
-```bash
-REF=v0.1.0   # or a branch name, or a commit SHA
-curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
-  | LEARNER_REF="$REF" sh
-```
-
-`LEARNER_REF` pins the payload, not `bootstrap.sh` itself — your shell has already read that
-from the URL by the time the variable is visible. Pinning only one of the two still runs
-whatever `main` says, which is why the ref appears in both places.
-
-On trust: the fetch is plain HTTPS from `codeload.github.com`, and `LEARNER_REF` pins the
-payload to an exact ref rather than tracking `main`. Be clear about what that does *not* cover —
-`LEARNER_REF` says nothing about `bootstrap.sh` itself, which the first form above still fetches
-from `/main/`, so pinning only the payload still runs whatever `main` says today. That is why the
-pinned form names the ref in the URL as well. A checksum baked into `bootstrap.sh` would not add
-anything either way — the script and the archive it fetches share an origin, so anyone able to
-change one can change the other. If that boundary matters to you, the clone-and-run path above
-never crosses it: you read `install.sh` before you run it.
-
 One more thing: the hook wiring is read when a Claude Code session starts, so installing while
 a session is already open changes nothing in it — quit and start a new session afterward.
 
@@ -300,7 +268,7 @@ a session is already open changes nothing in it — quit and start a new session
 shellcheck --severity=warning plugins/learner/hooks/*.sh install.sh uninstall.sh bootstrap.sh test.sh scripts/bump-formula.sh packaging/deb/build.sh packaging/apt-repo/assemble-site.sh
 ```
 
-The `plugins/learner/hooks/*.sh` glob covers all sixteen shipped hook files, including `learner-config.sh`. CI
+The `plugins/learner/hooks/*.sh` glob covers all fifteen shipped hook files, including `learner-config.sh`. CI
 (`.github/workflows/ci.yml`) runs both commands, byte for byte as written above, on every push
 to `main` and every pull request — an assertion in `test.sh` reads that workflow file and
 keeps the two in step. CI also runs `claude plugin validate` on the marketplace, on the

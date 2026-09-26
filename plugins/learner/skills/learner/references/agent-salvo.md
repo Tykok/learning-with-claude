@@ -55,7 +55,7 @@ All four sources are in scope. The order is what to reach for first when several
 1. **The delegated task** — from `task:`. Why this slice was split off, what its output has to
    satisfy, which failure mode it invites. No other channel can reach this material, and it is
    fresh for exactly as long as the agent runs.
-2. **The branch diff** — as `references/quiz.md` resolves the base ref.
+2. **The branch diff** — as `../quiz/SKILL.md` resolves the base ref.
 3. **The code the agents are about to touch** — read it *now*, before it changes: what it
    currently guarantees, what the change could break, what the callers assume.
 4. **Open weak spots** — a `To improve` entry from `memory.md`, even unrelated to the task.

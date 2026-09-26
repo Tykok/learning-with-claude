@@ -13,7 +13,8 @@ already covered survive a machine switch exactly like a weak spot does.
 | `error` | What to say |
 |---------|-------------|
 | `jq-missing` / `gh-missing` | Name the missing tool and stop. |
-| `gh-unauthenticated` | `gh auth login`, then re-run. |
+| `github-token-missing` | Sync needs a GitHub token the dev hands over — Learner never uses the one `gh auth login` stored. Plugin install: set the `github_token` option (`/plugin` → learner → configure), a fine-grained token with only the Gists permission, then start a new session. Other installs: export `LEARNER_GITHUB_TOKEN`. |
+| `gh-unauthenticated` | GitHub rejected the token: it expired or lacks the Gists permission. Replace it, then re-run. |
 | `empty-record` | There is nothing recorded yet — run `learner quiz` first. |
 | `remote-ahead` | The other machine pushed since the last sync: run `learner sync pull` first. Do not retry the push. |
 | `needs-pull` | Either this machine is pointed at a gist it has never pulled, or its `libs.md` now holds fewer rows than the base manifest's `counts.libsRows` — step 4's union below was skipped on the last pull. Run `learner sync pull` and do the union before retrying. |

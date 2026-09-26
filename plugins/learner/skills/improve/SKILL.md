@@ -1,6 +1,6 @@
 ---
 description: Coach one recorded weak spot to mastery, grounded in this repo's real code, then mark it resolved. Use for "learner improve", "level me up", "help me get better at X", "m'améliorer sur", "je veux progresser sur".
-allowed-tools: Read, Write, Edit, Grep, Bash
+allowed-tools: Read, Grep, Write(~/.claude/learner/**), Edit(~/.claude/learner/**), Bash(sh *learner-event.sh *), Bash(git diff *), Bash(git merge-base *), Bash(git rev-parse *), Bash(git show *), Bash(git status *), Bash(mkdir -p *learner), Bash(date *), Bash(grep -n *)
 ---
 
 # Improve mode
