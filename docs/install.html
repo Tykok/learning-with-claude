@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install — Claude Learner</title>
 <meta name="description" content="What Claude Learner needs, the ways to install it, what lands where, and which platforms can run it.">
-<link rel="preload" href="assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -49,7 +48,6 @@
       <li><a href="#apt">apt (Debian/Ubuntu)</a></li>
       <li><a href="#homebrew">Homebrew</a></li>
       <li><a href="#clone">Clone and run</a></li>
-      <li><a href="#alternative">Alternative: the curl one-liner</a></li>
       <li><a href="#installed">What gets installed, and where</a></li>
       <li><a href="#platforms">Platforms</a></li>
     </ol>
@@ -63,11 +61,8 @@
     update-check notifier, which has no <code>jq</code> dependency by design. Without it
     the rest are inert, and <code>SessionStart</code> says so once.</li>
     <li><strong><code>bash</code> on <code>PATH</code> to install</strong> —
-    <code>install.sh</code> is a bash script. The one-liner checks for bash before it
-    fetches anything, rather than downloading a payload it could not hand over.</li>
-    <li><strong><code>curl</code> and <code>tar</code></strong> — for the one-liner only;
-    the clone-and-run path needs neither.</li>
-    <li><strong><code>curl</code> is also used at run time</strong> — by the update-check
+    <code>install.sh</code> is a bash script.</li>
+    <li><strong><code>curl</code> is used at run time</strong> — by the update-check
     hook only, once every 24h, to look for a newer version. Its absence there is silent,
     not an error — unlike <code>jq</code>, <code>curl</code> is never a hard requirement
     for anything already installed.</li>
@@ -148,6 +143,11 @@ cd learning-with-claude
 ./install.sh --yes                 # never prompt; defaults for anything unset
 ./install.sh --level S --synthesis normal --blanks 2    # non-interactive, one shot</code></pre>
 
+  <p>To install a release rather than whatever <code>main</code> says today, clone its tag:
+  <code>git clone --depth 1 --branch v0.5.0 https://github.com/Tykok/learning-with-claude</code>.
+  There is no path that pipes a download into a shell: every install runs an <code>install.sh</code>
+  you have on disk and can read first.</p>
+
   <ul>
     <li><code>--level D|J|C|S|E</code> — the letter, or the full word from the
     <a href="config.html#levels">levels table</a>, in any case. It has no default: on a
@@ -175,34 +175,6 @@ cd learning-with-claude
   <p>Hook wiring is read once, when a Claude Code session starts. Installing (or
   re-installing) while a session is already open changes nothing in it — quit and start a
   new session for the hooks to take effect.</p>
-
-  <h2 id="alternative">Alternative: the curl one-liner</h2>
-
-<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh</code></pre>
-
-  <p>It asks for your level, how often a synthesis question should replace a granular
-  one, and how many holes a <code>fill</code> exercise leaves, then writes everything
-  under your Claude Code config directory — this is what it fetches and runs under the
-  hood. To skip the prompts, pass the flags
-  <code>install.sh</code> takes — <code>bootstrap.sh</code> forwards them through
-  untouched and owns no defaults of its own:</p>
-
-<pre><code>curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh \
-  | sh -s -- --level S --synthesis normal --blanks 2</code></pre>
-
-  <p>To install a specific revision rather than whatever <code>main</code> says today,
-  name the ref twice — once in the URL your shell reads, once in <code>LEARNER_REF</code>
-  for the payload that URL then fetches. Anything git resolves works: a release tag, a
-  branch name, or a commit SHA.</p>
-
-<pre><code>REF=v0.1.0   # a tag, a branch name, or a commit SHA
-curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bootstrap.sh" \
-  | LEARNER_REF="$REF" sh</code></pre>
-
-  <p><code>LEARNER_REF</code> pins the payload, not <code>bootstrap.sh</code> itself —
-  your shell has already read that from the URL by the time the variable is visible.
-  Pinning only one of the two still runs whatever <code>main</code> says, which is why
-  the ref appears in both places.</p>
 
   <h2 id="installed">What gets installed, and where</h2>
 
@@ -236,7 +208,6 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
       <tr><td><code>$CFG/hooks/pilot-nudge.sh</code></td><td><code>UserPromptSubmit</code> — reminds the dev of a live Pilot manoeuvre; never exits 2, so it can never block or erase a prompt</td></tr>
       <tr><td><code>$CFG/hooks/learner-sync.sh</code></td><td>Utility — carries the learning record (<code>memory.md</code>, <code>recap.md</code>, <code>learner.json</code>) between machines through a private gist</td></tr>
       <tr><td><code>$CFG/hooks/learner-agent-track.sh</code></td><td>Counts the subagents in flight so the salvo knows when you are waiting</td></tr>
-      <tr><td><code>$CFG/hooks/learner-self-update.sh</code></td><td>Utility — re-installs a curl install at a tagged release, run by <code>learner update</code></td></tr>
       <tr><td><code>$CFG/hooks/learner-event.sh</code></td><td>Utility — the only writer of <code>learner/events.jsonl</code>, the append-only event log the Learner IDE extensions read</td></tr>
       <tr><td><code>$CFG/settings.json</code></td><td>Hook wiring, merged in; a <code>.bak</code> of the pre-Learner file is kept beside it</td></tr>
       <tr><td><code>$CFG/learner.json</code></td><td>Your global config</td></tr>
@@ -257,7 +228,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   </table>
   </div>
 
-  <p>Sixteen hook files ship and twelve are wired, into <code>SessionStart</code>
+  <p>Fifteen hook files ship and twelve are wired, into <code>SessionStart</code>
   (three times — <code>learner-onboard.sh</code>, <code>learner-update-check.sh</code>
   and <code>pilot-brief.sh</code> all fire there), <code>PreToolUse</code>
   (<code>coach-gate.sh</code> on the <code>Write|Edit|NotebookEdit</code> matcher, plus
@@ -268,14 +239,13 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
   <code>learner-cleanup.sh</code> and <code>pilot-record.sh</code>, the latter at a
   raised <code>timeout</code> of 15 since it reads a whole transcript) and
   <code>UserPromptSubmit</code> (twice — <code>pilot-nudge.sh</code> and
-  <code>coach-armed-check.sh</code>). Four ship unwired:
+  <code>coach-armed-check.sh</code>). Three ship unwired:
   <code>learner-config.sh</code> is sourced-only, and Claude Code never invokes it
   directly; <code>coach-watch.sh</code> is never a static entry either —
   <code>learner-onboard.sh</code> arms it as a <code>Monitor</code> at session start,
-  only once coach mode is on; and <code>learner-sync.sh</code> and
-  <code>learner-self-update.sh</code> are never wired to a hook event at all — their skills
-  invoke them directly, only when the dev types <code>learner sync</code> or
-  <code>learner update</code>. Twelve of the other thirteen source
+  only once coach mode is on; and <code>learner-sync.sh</code> is never wired to a hook
+  event at all — the skill invokes it directly, only when the dev types
+  <code>learner sync</code>. Twelve of the other thirteen source
   <code>learner-config.sh</code> — every hook but <code>learner-cleanup.sh</code>,
   which needs none of it.</p>
 
@@ -318,7 +288,7 @@ curl -fsSL "https://raw.githubusercontent.com/Tykok/learning-with-claude/$REF/bo
         </svg>
         Claude Learner
       </a>
-      <p>The <code>learner</code> skill and sixteen POSIX <code>sh</code> hooks that quiz you on the code you just
+      <p>The <code>learner</code> skill and fifteen POSIX <code>sh</code> hooks that quiz you on the code you just
       wrote with Claude Code.</p>
     </div>
     <div>

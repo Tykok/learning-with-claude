@@ -1,13 +1,13 @@
 ---
-description: Check whether a newer Learner version is out and refresh the install, honouring how it was installed (plugin, curl, Homebrew, apt). Use for "learner update", "mets à jour learner".
-allowed-tools: Read, Bash
+description: Check whether a newer Learner version is out and say how to refresh the install, honouring how it was installed (plugin, curl, Homebrew, apt). Use for "learner update", "mets à jour learner".
+allowed-tools: Read, Bash(cat *), Bash(curl -fsSL --max-time 5 *)
 ---
 
 # Update mode
 
-`learner update` — check the remote version, and if it is newer, re-run the installer pinned
-to it. Read-only until step 2 decides an update is actually needed: nothing is written,
-locally or remotely, when the dev is already current.
+`learner update` — check the remote version, and if it is newer, tell the dev how to update
+for the way Learner was installed. Read-only throughout: nothing is written, locally or
+remotely, and nothing is downloaded but the one-line `VERSION` file.
 
 ## 1. Check whether this is a Claude Code plugin install
 
@@ -26,8 +26,8 @@ this file.
 
 A plugin install never runs `install.sh`, so `$CFG/skills/learner/VERSION` and
 `$CFG/skills/learner/INSTALL_ORIGIN` (steps 2 and 3 below) never exist for it — proceeding
-past this check would either misreport "no version installed" or, worse, curl-bootstrap a
-second, traditional install directly on top of a plugin install that already works.
+past this check would either misreport "no version installed" or, worse, point the dev at a
+second, traditional install on top of a plugin install that already works.
 
 ## 2. Read, validate and compare
 
@@ -49,7 +49,7 @@ so "0.9.0" vs "0.10.0" comes out right where reading the two strings as text wou
 empty `$LOCAL` means this install predates versioning — treat it as older than anything, which
 is exactly what the `[ -n "$LOCAL" ]` guard does: it skips the comparison and falls straight
 through to step 4. Validate before comparing, and before anything else touches `$REMOTE`: step
-4 builds a URL out of it, and a malformed value must never reach that unchecked. A `curl`
+4 prints a tag and a command out of it, and a malformed value must never reach that unchecked. A `curl`
 failure on the fetch above is not silence, unlike the background check — the dev asked for
 this directly, so report it in one line and stop rather than falling through with an empty
 `$REMOTE` that `learner_version_valid` would then (correctly) reject anyway.
@@ -81,30 +81,21 @@ Both guidance branches point at `learner-install` rather than re-deriving `insta
 flags here — a third copy of "here's how to pass --level" would drift from the other two the
 same way two implementations of the installer itself would.
 
-## 4. Re-run the installer, pinned (origin: curl only)
+## 4. Print the re-install command (origin: curl only)
 
-```bash
-sh "$CFG/hooks/learner-self-update.sh" "$REMOTE"
+Print, and stop. Nothing is fetched and nothing is run — this protocol never downloads code
+and executes it; the dev runs the release's own `install.sh`, read from a pinned checkout:
+
+```
+Installed via curl or a clone. v$REMOTE is out. To update, run:
+  git clone --depth 1 --branch v$REMOTE https://github.com/Tykok/learning-with-claude.git learner-v$REMOTE
+  bash learner-v$REMOTE/install.sh
 ```
 
-`learner-self-update.sh` ships with the install, beside the other hooks: this step runs a
-local, readable file rather than fetching a script from the network and executing it. It
-downloads the release tarball for tag `v$REMOTE` — never `main` — and runs that tarball's
-`install.sh`. It fetches to a file before extracting, not a streamed pipe: without
-`pipefail`, a failed fetch would read as an empty archive and surface as the wrong error.
-
-If it exits non-zero, relay its `error:` line in one sentence. The likeliest one is
-`no released tag vX.Y.Z yet`, and that gap is real, not theoretical: `VERSION` on `main` and
-the release tag are two separate git pushes, so the file can say a version is out before the
-matching tag exists. CI's tag-vs-VERSION guard only runs on the tag push, so it cannot catch
-that window from the other side. Report the named reason instead of "nothing happened."
+Pin the tag `v$REMOTE` — never `main` — which is why step 2 validated `$REMOTE` before it got
+here. If the clone fails with `Remote branch v$REMOTE not found`, the gap is real, not
+theoretical: `VERSION` on `main` and the release tag are two separate git pushes, so the file
+can say a version is out before the matching tag exists — try again later.
 
 No flags are needed: `learner.json` already exists — this is always a re-install, never a
-first one — so `install.sh`'s onboarding prompts stay gated off and no terminal is needed.
-
-## 5. Confirm (origin: curl only)
-
-Re-read `$CFG/skills/learner/VERSION`. If it now reads `$REMOTE`, report the new version in one
-line. If it still reads the old value, say the update did not take — never claim success on an
-assumption. Step 3's `brew`/`apt` branches, and step 1's plugin branch, already stopped before
-this point — there is nothing here to confirm for them.
+first one — so `install.sh`'s onboarding prompts stay gated off.

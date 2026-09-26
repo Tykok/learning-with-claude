@@ -42,8 +42,20 @@ usage() { printf '{"ok":false,"error":"usage"}\n'; exit 2; }
 
 need_jq() { command -v jq >/dev/null 2>&1 || fail jq-missing; }
 
+# The GitHub token is one the dev hands over, never one read off the machine:
+# the github_token plugin option (userConfig, sensitive), or LEARNER_GITHUB_TOKEN
+# on a curl/Homebrew/apt install. gh runs against an empty config directory of
+# its own, so it never falls back to the credential `gh auth login` stored.
 need_gh() {
   command -v gh >/dev/null 2>&1 || fail gh-missing
+  _tok="${CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN:-${LEARNER_GITHUB_TOKEN:-}}"
+  [ -n "$_tok" ] || fail github-token-missing
+  GH_TOKEN="$_tok"
+  GH_CONFIG_DIR="$DATA_DIR/gh-config"
+  GH_NO_UPDATE_NOTIFIER=1
+  export GH_TOKEN GH_CONFIG_DIR GH_NO_UPDATE_NOTIFIER
+  unset GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN _tok
+  mkdir -p "$GH_CONFIG_DIR" || fail gh-unauthenticated
   gh auth status >/dev/null 2>&1 || fail gh-unauthenticated
 }
 
@@ -244,6 +256,8 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   if [ -f "$EV_FILE" ]; then cp "$EV_FILE" "$_sd/events.jsonl"; else ( : > "$_sd/events.jsonl" ) 2>/dev/null || :; fi
   # pushedFrom is the machine_name plugin option (userConfig), never read off
   # the machine itself: the dev chooses what label, if any, leaves with the gist.
+  # The option reaches hooks only; learner-onboard.sh hands it on to the Bash
+  # commands the sync skill runs as LEARNER_MACHINE_NAME.
   # eventLines counts the snapshot copy just made, not the live $EV_FILE: a
   # session can append to the live log between the cp above and this count,
   # and the manifest must describe exactly what is about to be uploaded, not
@@ -251,7 +265,7 @@ snapshot_into() {  # DIR — the gist files, or fail empty-record
   jq -nc \
     --argjson schema "$SYNC_SCHEMA" \
     --arg at "$(now_utc)" \
-    --arg from "${CLAUDE_PLUGIN_OPTION_MACHINE_NAME:-unknown}" \
+    --arg from "${CLAUDE_PLUGIN_OPTION_MACHINE_NAME:-${LEARNER_MACHINE_NAME:-unknown}}" \
     --arg ver "$(read_version)" \
     --argjson mem "$(bullet_lines "$MEM_FILE")" \
     --argjson theme "$(bullet_lines "$REC_FILE")" \

@@ -1,6 +1,6 @@
 ---
 description: Read-only summary of the dev's learning record — current level, Learner version, coach status, and the broad themes still to improve. Use for "learner status", "my level", "what should I improve", "mon niveau", "ce que je dois améliorer", "où j'en suis".
-allowed-tools: Read, Grep, Bash
+allowed-tools: Read, Grep, Bash(jq -r *), Bash(cat *), Bash(ls -dt *)
 ---
 
 # Status mode
@@ -34,4 +34,4 @@ allowed-tools: Read, Grep, Bash
    handful of bullets: broad competency themes grouped by domain, skipping anything already under
    `Mastered`. Summarise; never dump the file. No tables, no history.
 
-Levels are in `../learner/SKILL.md` § Levels; config keys in that same file § Config.
+Levels are in `../learner/SKILL.md` § Levels; config keys in `../learner/references/config.md`.

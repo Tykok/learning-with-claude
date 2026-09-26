@@ -63,6 +63,36 @@ your own source files and restores it. Everything else — your record, the conf
 lives under your Claude Code config directory (`~/.claude/learner/`). Nothing leaves the machine
 unless you run `sync` or `export` yourself.
 
+## What it connects to, and what it runs
+
+Every file in this directory is plain text: POSIX `sh` hooks, Markdown skills, JSON manifests.
+No binary, image, font or compiled asset ships, and nothing is downloaded and executed.
+
+| Feature | Runs | Connects to | When |
+|---------|------|-------------|------|
+| Quiz loop (`Stop`, `PostToolUse`, `SessionStart`, `SessionEnd` hooks) | the shipped hooks, `git`, `jq` | nothing — local files only | every session |
+| `coach` | the shipped hooks, `git` | nothing | only after `coach on` |
+| `pilot` | the shipped hooks; reads the session transcript | nothing | only after `pilot on` |
+| `sync` | `hooks/learner-sync.sh`, `gh` | the GitHub Gist API, with the token you set | only when you run `sync` |
+| `export` | the Notion MCP tools you already connected | your Notion workspace | only when you run `export` |
+| `update` | `curl` for the one-line `VERSION` file | `raw.githubusercontent.com` | only when you run `update`; it prints the re-install command, never runs it |
+
+Plugin options (`/plugin` → learner → configure), both optional and stored as sensitive values
+in your system keychain:
+
+- `github_token` — the token `sync` uses. A fine-grained token with only the Gists permission
+  (read and write) is enough. Learner never reads the credential `gh auth login` stored.
+- `machine_name` — the label `sync` records as `pushedFrom`. Learner never reads the hostname.
+
+Claude Code hands plugin options to hooks only, so `SessionStart` passes these two on to the
+`sync` skill's shell commands through `CLAUDE_ENV_FILE`, as `LEARNER_GITHUB_TOKEN` and
+`LEARNER_MACHINE_NAME`, for the current session. Leave `github_token` empty and nothing is
+passed on.
+
+Each skill's `allowed-tools` pre-approves only what it needs: the shipped scripts, read-only
+`git`, and writes under `~/.claude/learner/`. Anything else — including the `fill` exercise's
+edit to one of your source files — goes through your normal permission prompt.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](./LICENSE).

@@ -1,6 +1,6 @@
 ---
 description: Learning mode — the hub of the `learner` skills: dispatch table, the five levels, and every config key. Also the entry point for the Stop hook's 🎓 Learner trigger line and for the agent salvo's trigger line while a subagent is in flight, and for `learner config`, `learner off`/`on` and `learner help`. Use for "learner", "mode apprentissage", "learner config", "learner off", "learner on", "learner help", "level=S", or any bare Learner setting change.
-allowed-tools: Read, Write, Edit, Grep, Bash
+allowed-tools: Read, Grep, Write(~/.claude/learner/**), Edit(~/.claude/learner/**), Write(~/.claude/learner.json), Edit(~/.claude/learner.json), Write(.claude/learner.local.json), Edit(.claude/learner.local.json), Bash(sh *learner-event.sh *), Bash(git diff *), Bash(git merge-base *), Bash(git rev-parse *), Bash(git show *), Bash(git status *), Bash(mkdir -p *learner), Bash(date *), Bash(grep -n *), Bash(jq -e *)
 ---
 
 # Learner

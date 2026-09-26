@@ -2823,31 +2823,30 @@ grep -qF '/plugin update learner' "$UPD" \
   && ok "update.md points a plugin install at /plugin update" \
   || ko "update.md points a plugin install at /plugin update"
 
-# Step 4 runs the shipped, readable learner-self-update.sh, never a script fetched
-# off the network and executed.
-grep -qF 'learner-self-update.sh' "$UPD" \
-  && ! grep -qE 'curl[^`]*bootstrap\.sh' "$UPD" \
-  && ok "update.md re-installs through the shipped learner-self-update.sh" \
-  || ko "update.md re-installs through the shipped learner-self-update.sh"
+# Step 4 prints a pinned clone-and-install command for the dev to run; the skill
+# never fetches code and executes it, and no self-update script ships.
+grep -qF 'git clone --depth 1 --branch v$REMOTE' "$UPD" \
+  && grep -qF 'bash learner-v$REMOTE/install.sh' "$UPD" \
+  && ! grep -qE 'curl[^`]*bootstrap\.sh|learner-self-update|\| *(ba)?sh' "$UPD" \
+  && ok "update.md prints a pinned re-install command instead of running downloaded code" \
+  || ko "update.md prints a pinned re-install command instead of running downloaded code"
 
-SELFUP="$PLUG/hooks/learner-self-update.sh"
-SU="$WORK/selfupdate"; mkdir -p "$SU"
-printf '{"level":"S"}\n' > "$SU/learner.json"
-tar -czf "$WORK/su-payload.tgz" -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
-CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file://$WORK/su-payload.tgz" sh "$SELFUP" 9.9.9 >/dev/null 2>&1 </dev/null
-{ [ -f "$SU/hooks/learner-self-update.sh" ] && [ -f "$SU/skills/learner/SKILL.md" ]; } \
-  && ok "learner-self-update.sh re-installs from the release tarball" \
-  || ko "learner-self-update.sh re-installs from the release tarball"
+[ ! -e "$PLUG/hooks/learner-self-update.sh" ] \
+  && ok "no download-and-run self-update script ships in the plugin" \
+  || ko "no download-and-run self-update script ships in the plugin"
 
-CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file:///nonexistent" sh "$SELFUP" '1.2.3/../x' >/dev/null 2>&1 \
-  && ko "learner-self-update.sh rejects a malformed version" \
-  || ok "learner-self-update.sh rejects a malformed version"
-
-out=$(CLAUDE_CONFIG_DIR="$SU" LEARNER_URL="file://$WORK/no-such.tgz" sh "$SELFUP" 9.9.9 2>&1) \
-  && ko "learner-self-update.sh fails when the tag has no tarball" \
-  || { printf '%s' "$out" | grep -qF 'no released tag v9.9.9' \
-    && ok "learner-self-update.sh fails when the tag has no tarball" \
-    || ko "learner-self-update.sh fails when the tag has no tarball (got: $out)"; }
+# Least privilege: no skill pre-approves a bare Bash, Write or Edit, or a whole
+# MCP server. Each grant names the command prefix or path it needs; the rest
+# (a fill exercise's edit to the dev's own file included) goes through the
+# dev's normal permission prompt.
+for sk in "$PLUG"/skills/*/SKILL.md; do
+  at=$(sed -n 's/^allowed-tools: //p' "$sk" | head -1)
+  bare=$(printf '%s\n' "$at" | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
+    | grep -xE 'Bash|Write|Edit|NotebookEdit|Bash\(\*\)|(Write|Edit)\((\*\*|/\*\*|~/\*\*|//\*\*)\)|mcp__([A-Za-z0-9-]|_[A-Za-z0-9-])+')
+  [ -n "$at" ] && [ -z "$bare" ] \
+    && ok "$(basename "$(dirname "$sk")") scopes every Bash/Write/Edit/MCP grant in allowed-tools" \
+    || ko "$(basename "$(dirname "$sk")") scopes every Bash/Write/Edit/MCP grant in allowed-tools (bare: $bare)"
+done
 
 # Every skill's SKILL.md, not just learner's — derived from skills/*/SKILL.md
 # rather than a second hardcoded path, so a third skill inherits this budget
@@ -3034,17 +3033,15 @@ grep -qE 'recapEvery|trouBlanks|(^|[^A-Za-z])trackGlobs|"language"|intermediaire
   && ko "README mentions no removed key or old level" \
   || ok "README mentions no removed key or old level"
 
-grep -qF 'bootstrap.sh' "$RM" \
-  && ok "README documents the one-line install" \
-  || ko "README documents the one-line install"
+# No download-and-run install is documented: every path runs an install.sh the
+# dev has on disk. bootstrap.sh stays in the repo for old links only.
+! grep -qE 'curl[^|]*\|[[:space:]]*(LEARNER_REF="[^"]*"[[:space:]]+)?(ba)?sh' "$RM" "$SITE_INSTALL" \
+  && ok "README and install.html document no curl | sh install" \
+  || ko "README and install.html document no curl | sh install"
 
-grep -qF 'LEARNER_REF' "$RM" \
-  && ok "README documents pinning a ref" \
-  || ko "README documents pinning a ref"
-
-grep -qF 'sh -s --' "$RM" \
-  && ok "README documents the non-interactive one-liner form" \
-  || ko "README documents the non-interactive one-liner form"
+grep -qF 'git clone --depth 1 --branch v' "$RM" \
+  && ok "README documents installing a pinned release from a clone" \
+  || ko "README documents installing a pinned release from a clone"
 
 # Named and pinned to the bullet it was kept for, not to the bare word: the README no
 # longer mentions Windows/WSL/Git Bash at all (that moved to the site), but a bare
@@ -3142,24 +3139,16 @@ grep -qF 'update-check hook' "$RM" \
   && ok "README notes curl as a soft run-time dependency for the update-check hook" \
   || ko "README notes curl as a soft run-time dependency for the update-check hook"
 
-# The install one-liner appears in two files by design. Pin them to each other so
-# they cannot drift: this is the whole reason the split is acceptable.
-ONELINER='curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh'
-{ grep -qF "$ONELINER" "$RM" && grep -qF "$ONELINER" "$SITE_INSTALL"; } \
-  && ok "the install one-liner is identical in the README and on install.html" \
-  || ko "the install one-liner is identical in the README and on install.html"
-
 apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
 homebrew_h2=$(grep -n '<h2 id="homebrew">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
 clone_h2=$(grep -n '<h2 id="clone">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
-alt_h2=$(grep -n '<h2 id="alternative">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
 
-{ [ -n "$apt_h2" ] && [ -n "$homebrew_h2" ] && [ -n "$clone_h2" ] && [ -n "$alt_h2" ] \
+{ [ -n "$apt_h2" ] && [ -n "$homebrew_h2" ] && [ -n "$clone_h2" ] \
   && [ "$apt_h2" -lt "$homebrew_h2" ] \
   && [ "$homebrew_h2" -lt "$clone_h2" ] \
-  && [ "$clone_h2" -lt "$alt_h2" ]; } \
-  && ok "install.html orders sections as apt, Homebrew, clone, then the curl alternative" \
-  || ko "install.html orders sections as apt, Homebrew, clone, then the curl alternative"
+  && ! grep -q '<h2 id="alternative">' "$SITE_INSTALL"; } \
+  && ok "install.html orders sections as apt, Homebrew, then clone, with no curl alternative" \
+  || ko "install.html orders sections as apt, Homebrew, then clone, with no curl alternative"
 
 plugin_h2=$(grep -n '<h2 id="plugin">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
 apt_h2=$(grep -n '<h2 id="apt">' "$SITE_INSTALL" | head -1 | cut -d: -f1)
@@ -3203,14 +3192,13 @@ grep -qF 'learner-install --level' "$RM" \
 apt_line=$(grep -n '^### apt (Debian/Ubuntu)$' "$RM" | head -1 | cut -d: -f1)
 brew_line=$(grep -n '^### Homebrew' "$RM" | head -1 | cut -d: -f1)
 clone_line=$(grep -n '^### Clone and run$' "$RM" | head -1 | cut -d: -f1)
-alt_line=$(grep -n '^### Alternative: the curl one-liner$' "$RM" | head -1 | cut -d: -f1)
 
-{ [ -n "$apt_line" ] && [ -n "$brew_line" ] && [ -n "$clone_line" ] && [ -n "$alt_line" ] \
+{ [ -n "$apt_line" ] && [ -n "$brew_line" ] && [ -n "$clone_line" ] \
   && [ "$apt_line" -lt "$brew_line" ] \
   && [ "$brew_line" -lt "$clone_line" ] \
-  && [ "$clone_line" -lt "$alt_line" ]; } \
-  && ok "README orders Install as apt, Homebrew, clone, then the curl alternative" \
-  || ko "README orders Install as apt, Homebrew, clone, then the curl alternative"
+  && ! grep -q '^### Alternative: the curl one-liner$' "$RM"; } \
+  && ok "README orders Install as apt, Homebrew, then clone, with no curl alternative" \
+  || ko "README orders Install as apt, Homebrew, then clone, with no curl alternative"
 
 grep -qF 'sudo apt install learner' "$RM" \
   && ok "README documents installing directly from the apt repository" \
@@ -4325,20 +4313,26 @@ n_seg=$(jq '[.. | .command? // empty] | map(select(test("/plugins/learner/hooks/
 # Wholesale, not field by field. Checking only name and version left description,
 # keywords, displayName, author, homepage, repository, license and $schema unguarded —
 # and the root manifest is the one a root-pinned catalogue entry renders and searches,
-# so a stale description there is a stale listing in front of real users. `skills` and
-# `icon` are the fields meant to differ: the payload has no `skills`, the root delegates,
-# and `icon` is a path relative to each manifest's own plugin root.
-{ [ "$(jq -S 'del(.skills, .icon)' "$ROOT_PLUGIN_JSON")" = "$(jq -S 'del(.skills, .icon)' "$PLUGIN_JSON")" ]; } \
-  && ok "the root fallback manifest is the payload's, but for the skills delegation and icon path" \
-  || ko "the root fallback manifest is the payload's, but for the skills delegation and icon path"
+# so a stale description there is a stale listing in front of real users. `skills` is
+# the one field meant to differ: the payload has no `skills`, the root delegates.
+{ [ "$(jq -S 'del(.skills)' "$ROOT_PLUGIN_JSON")" = "$(jq -S 'del(.skills)' "$PLUGIN_JSON")" ]; } \
+  && ok "the root fallback manifest is the payload's, but for the skills delegation" \
+  || ko "the root fallback manifest is the payload's, but for the skills delegation"
 
-# Both icon paths must land on the one shipped file, or one listing shows no icon.
-root_icon="$ROOT/$(jq -r '.icon // empty' "$ROOT_PLUGIN_JSON")"
-plug_icon="$PLUG/$(jq -r '.icon // empty' "$PLUGIN_JSON")"
-{ [ -f "$plug_icon" ] && [ -f "$root_icon" ] && cmp -s "$plug_icon" "$root_icon" \
-  && grep -q '<svg' "$plug_icon"; } \
-  && ok "both manifests' icon paths resolve to the shipped SVG" \
-  || ko "both manifests' icon paths resolve to the shipped SVG"
+# Only fields Claude Code reads: `icon` came from another manifest format and
+# Claude Code strips it, so a review flags it. Keep every key on the known list.
+for mf in "$ROOT_PLUGIN_JSON" "$PLUGIN_JSON"; do
+  extra=$(jq -r 'keys[] | select(IN("$schema","name","displayName","version","description","author","homepage","repository","license","keywords","skills","hooks","userConfig") | not)' "$mf")
+  [ -z "$extra" ] \
+    && ok "$(basename "$(dirname "$(dirname "$mf")")")/plugin.json carries only fields Claude Code reads" \
+    || ko "$(basename "$(dirname "$(dirname "$mf")")")/plugin.json carries only fields Claude Code reads (extra: $extra)"
+done
+
+# The sync token is one the dev hands over through a sensitive option, never
+# the credential gh keeps on the machine.
+jq -e '.userConfig.github_token | .type == "string" and .sensitive == true and .required == false' "$PLUGIN_JSON" >/dev/null \
+  && ok "plugin.json declares github_token as an optional sensitive userConfig option" \
+  || ko "plugin.json declares github_token as an optional sensitive userConfig option"
 
 # pushedFrom is a label the dev chooses, never read off the machine: the option
 # must exist and be marked sensitive.
@@ -5767,6 +5761,9 @@ GHFAKE
 chmod +x "$WORK/bin/gh"
 export GH_LOG="$WORK/gh.log"
 PATH="$WORK/bin:$PATH"; export PATH
+# The token is one the dev hands over (plugin option or LEARNER_GITHUB_TOKEN);
+# every sync test below runs with one set, as a configured install would.
+export LEARNER_GITHUB_TOKEN="test-token"
 
 out=$(sh "$SYNC" 2>/dev/null); rc=$?
 { [ "$rc" = 2 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "usage" ]; } \
@@ -5782,6 +5779,46 @@ out=$(GH_AUTH=1 sh "$SYNC" status 2>/dev/null); rc=$?
 { [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "gh-unauthenticated" ]; } \
   && ok "sync reports an unauthenticated gh instead of guessing" \
   || ko "sync reports an unauthenticated gh instead of guessing (rc=$rc out=$out)"
+
+out=$(LEARNER_GITHUB_TOKEN='' CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN='' sh "$SYNC" status 2>/dev/null); rc=$?
+{ [ "$rc" = 1 ] && [ "$(printf '%s' "$out" | jq -r .error)" = "github-token-missing" ]; } \
+  && ok "sync with no token handed over stops instead of reading gh's stored credential" \
+  || ko "sync with no token handed over stops instead of reading gh's stored credential (rc=$rc out=$out)"
+
+# gh must see the dev's token and a config dir of Learner's own, never
+# ~/.config/gh where `gh auth login` keeps its credential. The plugin option
+# wins over the env var.
+mkdir -p "$WORK/bin-envgh"
+cat > "$WORK/bin-envgh/gh" <<'GHENV'
+#!/bin/sh
+printf '%s|%s|%s\n' "$GH_TOKEN" "$GH_CONFIG_DIR" "${GITHUB_TOKEN:-unset}" >> "$GH_ENV_LOG"
+exit 0
+GHENV
+chmod +x "$WORK/bin-envgh/gh"
+: > "$WORK/gh-env.log"
+GH_ENV_LOG="$WORK/gh-env.log" GITHUB_TOKEN=ambient CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN=opt-token \
+  PATH="$WORK/bin-envgh:$PATH" sh "$SYNC" status >/dev/null 2>&1
+line=$(head -1 "$WORK/gh-env.log")
+case "$line" in
+  "opt-token|$CLAUDE_CONFIG_DIR/learner/gh-config|unset") ok "sync hands gh the plugin option token, its own config dir, and drops an ambient GITHUB_TOKEN" ;;
+  *) ko "sync hands gh the plugin option token, its own config dir, and drops an ambient GITHUB_TOKEN (got: $line)" ;;
+esac
+
+# The option reaches hooks only; learner-onboard.sh hands both sync options on to
+# the skill's Bash commands through CLAUDE_ENV_FILE, quoted so any value survives.
+ENVF="$WORK/tmp/claude-env"; mkdir -p "$WORK/tmp"; : > "$ENVF"
+printf '{}' | CLAUDE_ENV_FILE="$ENVF" CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN="t'ok en" \
+  CLAUDE_PLUGIN_OPTION_MACHINE_NAME="my mac" sh "$PLUG/hooks/learner-onboard.sh" >/dev/null 2>&1
+got=$(sh -c '. "$1"; printf "%s|%s" "$LEARNER_GITHUB_TOKEN" "$LEARNER_MACHINE_NAME"' _ "$ENVF")
+[ "$got" = "t'ok en|my mac" ] \
+  && ok "learner-onboard.sh hands the sync options on through CLAUDE_ENV_FILE" \
+  || ko "learner-onboard.sh hands the sync options on through CLAUDE_ENV_FILE (got: $got)"
+: > "$ENVF"
+printf '{}' | CLAUDE_ENV_FILE="$ENVF" CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN='' CLAUDE_PLUGIN_OPTION_MACHINE_NAME='' \
+  sh "$PLUG/hooks/learner-onboard.sh" >/dev/null 2>&1
+[ ! -s "$ENVF" ] \
+  && ok "learner-onboard.sh writes nothing to CLAUDE_ENV_FILE when no option is set" \
+  || ko "learner-onboard.sh writes nothing to CLAUDE_ENV_FILE when no option is set"
 
 # Collision-proof gh-missing test: symlink only what status path needs,
 # leave gh out. This prevents `gh auth status` real call even if jq and gh share a directory.

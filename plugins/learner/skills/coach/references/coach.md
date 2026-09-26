@@ -179,7 +179,7 @@ they do not, say nothing further about it.
 
 ## `learner coach on`
 
-Writing `coach: true` (per `../learner/SKILL.md`'s § Config edit procedure) is not the whole
+Writing `coach: true` (per `../learner/references/config.md` § Editing) is not the whole
 job: also remove `$TMPDIR/claude-learner-<session-id>.coach-stopped` if it exists, resolving
 `<session-id>` per § Resolving `<session-id>` above when it is not already sitting in context.
 The idle cut-off leaves that marker behind, and the only other place that clears it is a watcher

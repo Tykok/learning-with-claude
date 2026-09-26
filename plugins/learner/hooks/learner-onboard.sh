@@ -6,6 +6,22 @@
 # install.sh at all, so this hook is the only place either kind of first-run gets a nudge.
 # Output goes to additionalContext, which is not rendered in the console.
 
+# --- plugin options, handed on to the skills' Bash commands -----------------
+# userConfig values reach hooks as CLAUDE_PLUGIN_OPTION_*, but never the Bash
+# commands a skill runs, and learner-sync.sh runs from the sync skill. So the
+# two options it reads go on through CLAUDE_ENV_FILE, which Claude Code sources
+# before every Bash command of this session. Only what the dev set, and before
+# any early exit below so a broken level never switches sync off with it.
+learner_env_export() { # <name> <value>
+  printf "export %s='%s'\n" "$1" "$(printf '%s' "$2" | sed "s/'/'\\\\''/g")" >> "$CLAUDE_ENV_FILE"
+}
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  [ -z "${CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN:-}" ] \
+    || learner_env_export LEARNER_GITHUB_TOKEN "$CLAUDE_PLUGIN_OPTION_GITHUB_TOKEN" 2>/dev/null
+  [ -z "${CLAUDE_PLUGIN_OPTION_MACHINE_NAME:-}" ] \
+    || learner_env_export LEARNER_MACHINE_NAME "$CLAUDE_PLUGIN_OPTION_MACHINE_NAME" 2>/dev/null
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Learner is installed but `jq` is not on PATH, so all of its hooks are inert. Tell the user, in one line, to install jq (brew install jq / apt-get install jq), then continue with their request."}}'
   exit 0

@@ -1,6 +1,6 @@
 ---
 description: Carry the learning record — memory.md, recap.md, events.jsonl and the global learner.json — between machines through one private gist. Covers "sync push", "sync pull", "sync status", "sync use <gist>". Use for "learner sync", "synchroniser ma progression", "sauvegarder ma progression", "récupérer ma progression", "back up my learning record".
-allowed-tools: Read, Write, Edit, Grep, Bash
+allowed-tools: Read, Bash(sh *learner-sync.sh *)
 ---
 
 # Sync mode
