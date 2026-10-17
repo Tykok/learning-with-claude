@@ -2,16 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Fetch Learner and hand over to its installer.
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Tykok/learning-with-claude/main/bootstrap.sh | sh
-#   curl -fsSL .../bootstrap.sh | sh -s -- --level S --synthesis often
+# Usage (read the script first; do not pipe a remote copy straight into a shell):
+#   sh bootstrap.sh --level S --synthesis often
 #
-# To install a specific revision, name it twice — LEARNER_REF pins the payload
-# fetched below, not this script, which the shell has already read from the URL
-# above. <ref> is anything git resolves: a release tag, a branch name, or a
-# commit SHA.
+# LEARNER_REF pins the payload fetched below. <ref> is anything git resolves: a
+# release tag, a branch name, or a commit SHA. Prefer a pinned release tag:
 #
-#   curl -fsSL .../v0.1.0/bootstrap.sh | LEARNER_REF=v0.1.0 sh
+#   LEARNER_REF=v0.5.0 sh bootstrap.sh --level S
 #
 # install.sh is not self-contained: it copies eleven payload files and sources
 # hooks/learner-config.sh, so it cannot be piped into a shell on its own. This
@@ -80,7 +77,7 @@ if [ "$HAVE_TTY" = 0 ] && [ ! -f "$CFG_DIR/learner.json" ]; then
     *" --level "*|*" --level="*) ;;
     *) die "no terminal available, so the level cannot be asked for.
        Re-run with the level set, e.g.:
-       curl -fsSL https://raw.githubusercontent.com/$REPO/$REF/bootstrap.sh | LEARNER_REF=$REF sh -s -- --level S" ;;
+       sh bootstrap.sh --level S   (from a reviewed clone of $REPO at $REF)" ;;
   esac
 fi
 

@@ -1,6 +1,6 @@
 ---
 description: Check whether a newer Learner version is out and say how to refresh the install, honouring how it was installed (plugin, curl, Homebrew, apt). Use for "learner update", "mets à jour learner".
-allowed-tools: Read, Bash(cat *), Bash(curl -fsSL --max-time 5 *)
+allowed-tools: Read, Bash(cat *), Bash(curl -fsSL --max-time 5 https://raw.githubusercontent.com/Tykok/learning-with-claude/main/VERSION)
 ---
 
 # Update mode
@@ -34,7 +34,7 @@ second, traditional install on top of a plugin install that already works.
 ```bash
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 LOCAL=$(cat "$CFG/skills/learner/VERSION" 2>/dev/null)
-REMOTE=$(curl -fsSL --max-time 5 "${LEARNER_VERSION_URL:-https://raw.githubusercontent.com/Tykok/learning-with-claude/main/VERSION}")
+REMOTE=$(curl -fsSL --max-time 5 https://raw.githubusercontent.com/Tykok/learning-with-claude/main/VERSION)
 . "$CFG/hooks/learner-config.sh"
 learner_version_valid "$REMOTE" || { echo "remote VERSION is malformed: '$REMOTE'"; exit 1; }
 if [ -n "$LOCAL" ] && ! learner_version_gt "$REMOTE" "$LOCAL"; then
