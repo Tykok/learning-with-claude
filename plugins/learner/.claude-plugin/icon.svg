@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Gradient background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="url(#bgGradient)"/>
+
+  <!-- Book pages -->
+  <rect x="160" y="140" width="192" height="232" fill="white" opacity="0.95" rx="8"/>
+
+  <!-- Left page shadow -->
+  <rect x="160" y="140" width="96" height="232" fill="#1e40af" opacity="0.15" rx="8"/>
+
+  <!-- Page lines (reading marks) -->
+  <line x1="190" y1="180" x2="320" y2="180" stroke="#1e40af" stroke-width="7" opacity="0.8"/>
+  <line x1="190" y1="220" x2="320" y2="220" stroke="#1e40af" stroke-width="7" opacity="0.8"/>
+  <line x1="190" y1="260" x2="320" y2="260" stroke="#1e40af" stroke-width="7" opacity="0.8"/>
+  <line x1="190" y1="300" x2="320" y2="300" stroke="#1e40af" stroke-width="7" opacity="0.8"/>
+  <line x1="190" y1="340" x2="280" y2="340" stroke="#1e40af" stroke-width="7" opacity="0.6"/>
+
+  <!-- Bookmark ribbon -->
+  <rect x="310" y="140" width="12" height="180" fill="#f59e0b" rx="2"/>
+
+  <!-- Spine highlight -->
+  <rect x="155" y="135" width="8" height="242" fill="#0f766e" opacity="0.3" rx="2"/>
+</svg>
